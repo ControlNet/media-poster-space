@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parallax Horizon - Premium Media Wall</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-base: #020202;
+            --poster-w: 200px;
+            --poster-h: 300px;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-base);
+            color: #ffffff;
+            font-family: 'Outfit', sans-serif;
+            overflow: hidden;
+        }
+
+        /* Ambitent lighting background */
+        #ambient-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            transition: background 4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0.15;
+            filter: blur(120px);
+        }
+
+        /* 3D Scene Wrapper */
+        .scene {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            perspective: 2000px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        .horizon-grid {
+            position: relative;
+            transform-style: preserve-3d;
+            transform: rotateX(15deg) rotateY(-10deg);
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            width: 140vw;
+            animation: scene-float 30s infinite alternate ease-in-out;
+        }
+
+        @keyframes scene-float {
+            0% {
+                transform: rotateX(12deg) rotateY(-8deg) translateZ(0);
+            }
+
+            100% {
+                transform: rotateX(18deg) rotateY(-12deg) translateZ(100px);
+            }
+        }
+
+        .row {
+            display: flex;
+            gap: 40px;
+            animation: scroll-h var(--duration, 60s) infinite linear;
+            width: max-content;
+        }
+
+        .row:nth-child(even) {
+            animation-direction: reverse;
+        }
+
+        @keyframes scroll-h {
+            0% {
+                transform: translateX(0);
+            }
+
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+
+        .poster-card {
+            width: var(--poster-w);
+            height: var(--poster-h);
+            border-radius: 16px;
+            background: #111;
+            overflow: hidden;
+            flex-shrink: 0;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .poster-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: grayscale(20%) brightness(0.8);
+            transition: filter 0.8s ease;
+        }
+
+        .poster-card:hover {
+            transform: translateZ(50px) scale(1.05);
+            filter: brightness(1.1) grayscale(0%);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Dynamic Glass Info */
+        .glass-overlay {
+            position: fixed;
+            bottom: 50px;
+            left: 50px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 30px 45px;
+            border-radius: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            animation: ui-drift 20s infinite alternate ease-in-out;
+        }
+
+        @keyframes ui-drift {
+            0% {
+                transform: translateY(0) translateX(0);
+            }
+
+            100% {
+                transform: translateY(-10px) translateX(10px);
+            }
+        }
+
+        .time-text {
+            font-size: 6rem;
+            font-weight: 100;
+            line-height: 1;
+            letter-spacing: -2px;
+            background: linear-gradient(180deg, #fff 40%, #888 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .date-text {
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 6px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+
+        .vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.8) 100%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="ambient-glow"></div>
+    <div class="vignette"></div>
+
+    <div class="scene">
+        <div class="horizon-grid" id="grid">
+            <!-- Dynamically Populated -->
+        </div>
+    </div>
+
+    <div class="glass-overlay">
+        <div class="time-text" id="clock">16:45</div>
+        <div class="date-text" id="date">FEB 27, 2026</div>
+    </div>
+
+    <script>
+        const posters = [
+            "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=800",
+            "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=800",
+            "https://images.unsplash.com/photo-1509248961158-e54f6934749c?q=80&w=800",
+            "https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=800",
+            "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=800",
+            "https://images.unsplash.com/photo-1506466010722-395aa2bef877?q=80&w=800",
+            "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?q=80&w=800",
+            "https://images.unsplash.com/photo-1535016120720-40c646bebbdc?q=80&w=800"
+        ];
+
+        function init() {
+            const grid = document.getElementById('grid');
+            const rowCount = 5;
+
+            for (let r = 0; r < rowCount; r++) {
+                const row = document.createElement('div');
+                row.className = 'row';
+                row.style.setProperty('--duration', `${50 + Math.random() * 40}s`);
+
+                // Content for scrolling logic: duplicate list many times
+                const content = [...posters, ...posters, ...posters, ...posters].sort(() => Math.random() - 0.5);
+
+                content.forEach(src => {
+                    const card = document.createElement('div');
+                    card.className = 'poster-card';
+                    card.innerHTML = `<img src="${src}" alt="Poster">`;
+                    row.appendChild(card);
+                });
+
+                grid.appendChild(row);
+            }
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+            document.getElementById('date').innerText = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // Periodically update ambient glow based on "dominant" poster colors (sampled randomly here)
+        function updateGlow() {
+            const colors = ['#1a2a4a', '#2a1a2a', '#1a2a1a', '#2a2a1a', '#0a1a2a'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            document.getElementById('ambient-glow').style.background = `radial-gradient(circle at 70% 30%, ${randomColor} 0%, transparent 70%)`;
+        }
+
+        window.onload = () => {
+            init();
+            updateClock();
+            setInterval(updateClock, 1000);
+            updateGlow();
+            setInterval(updateGlow, 8000);
+        };
+    </script>
+</body>
+
+</html>

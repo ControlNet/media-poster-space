@@ -1,0 +1,61 @@
+@font-face {
+  font-family: "Soehne Breit";
+  src:
+    local("Soehne Breit"),
+    local("Söhne Breit"),
+    url("/fonts/soehne-breit.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+}
+
+@font-face {
+  font-family: "Soehne Buch";
+  src:
+    local("Soehne Buch"),
+    local("Söhne Buch"),
+    url("/fonts/soehne-buch.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 300 700;
+}
+
+:root {
+  color-scheme: dark;
+  --mps-color-canvas: #080c14;
+  --mps-color-surface: #101728;
+  --mps-color-surface-raised: #182238;
+  --mps-color-border: #33425e;
+  --mps-color-foreground: #f4efe4;
+  --mps-color-foreground-muted: #b9b3a6;
+  --mps-color-foreground-emphasis: #fcf8f0;
+  --mps-color-foreground-support: #d8deea;
+  --mps-color-orbit-glow: rgba(122, 217, 255, 0.42);
+  --mps-color-orbit-glow-halo: rgba(122, 217, 255, 0.2);
+  --mps-color-telemetry: #7ad9ff;
+  --mps-color-telemetry-muted: #456f87;
+  --mps-color-telemetry-soft: #24394b;
+  --mps-overlay-depth-near: rgba(12, 24, 44, 0.72);
+  --mps-overlay-depth-far: rgba(3, 8, 18, 0.9);
+  --mps-color-accent: #d2a65a;
+  --mps-color-accent-muted: #523f26;
+  --mps-color-accent-soft: #776240;
+  --mps-color-accent-foreground: #121620;
+  --mps-color-accent-ring: #dcbc7c;
+  --mps-elevation-orbit: 0 0 0 1px rgba(122, 217, 255, 0.28), 0 0 40px rgba(122, 217, 255, 0.26), 0 0 74px rgba(8, 19, 35, 0.88);
+
+  --mps-font-display: "Soehne Breit", "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
+  --mps-font-body: "Soehne Buch", "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --mps-font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+[data-brand-font="fallback"] {
+  --mps-font-display: "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
+  --mps-font-body: "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+}
+
+[data-testid="app-shell"] {
+  background: var(--mps-color-canvas);
+  color: var(--mps-color-foreground);
+  font-family: var(--mps-font-body);
+}

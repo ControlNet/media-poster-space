@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>艺术海报墙屏保</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-dark: #050505;
+            /* 强制定义海报宽度 */
+            --poster-w: 240px;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-dark);
+            color: #ffffff;
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 核心背景：动态模糊 */
+        #dynamic-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background-size: cover;
+            background-position: center;
+            filter: blur(80px) brightness(0.15);
+            transition: background-image 3s ease-in-out;
+            transform: scale(1.1);
+        }
+
+        /* 环境暗角 */
+        .vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            background: radial-gradient(circle, transparent 20%, rgba(0,0,0,0.9) 100%);
+            pointer-events: none;
+        }
+
+        /* 滚动容器：核心修复，不允许缩小 */
+        .wall-container {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            gap: 30px;
+            padding: 40px;
+            height: 100vh;
+            perspective: 1200px;
+            opacity: 0.7;
+            justify-content: center;
+            width: max-content; /* 确保容器随内容扩展，不挤压 */
+            margin: 0 auto;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            animation: scroll linear infinite;
+            flex-shrink: 0; /* 禁止列被挤压 */
+            width: var(--poster-w); /* 显式指定列宽 */
+        }
+
+        /* 不同列速度不一 */
+        .col-1 { animation-duration: 80s; }
+        .col-2 { animation-duration: 110s; margin-top: -200px; }
+        .col-3 { animation-duration: 95s; }
+        .col-4 { animation-duration: 125s; margin-top: -400px; }
+        .col-5 { animation-duration: 85s; }
+        .col-6 { animation-duration: 105s; }
+
+        @keyframes scroll {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+
+        /* 核心修复：强制标准海报 2:3 比例 */
+        .poster-item {
+            width: var(--poster-w) !important;
+            height: calc(var(--poster-w) * 1.5) !important; /* 直接计算高度，不依赖 aspect-ratio 的宽容度 */
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+            transition: all 1.2s cubic-bezier(0.23, 1, 0.32, 1);
+            position: relative;
+            background-color: #1a1a1a;
+            flex-shrink: 0; /* 再次确保不会在垂直方向由于任何原因被缩减 */
+        }
+
+        .poster-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 关键：裁剪并填充，不拉伸 */
+            display: block;
+            filter: grayscale(15%) contrast(1.1);
+        }
+
+        /* 呼吸光效 */
+        .poster-item::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            box-shadow: inset 0 0 60px rgba(255,255,255,0.03);
+            pointer-events: none;
+        }
+
+        /* 时间插件 */
+        .clock-overlay {
+            position: fixed;
+            bottom: 60px;
+            left: 60px;
+            z-index: 100;
+            text-shadow: 0 0 50px rgba(0,0,0,0.9);
+            pointer-events: none;
+        }
+
+        .time {
+            font-size: 8rem;
+            font-weight: 200;
+            line-height: 1;
+            letter-spacing: -4px;
+            margin-bottom: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .date {
+            font-size: 1.5rem;
+            font-weight: 300;
+            color: rgba(255,255,255,0.4);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        /* 专注模式：亮起 */
+        .focus-glow {
+            filter: grayscale(0%) brightness(1.2) !important;
+            transform: translateZ(80px) scale(1.1);
+            box-shadow: 0 0 60px rgba(255,255,255,0.15);
+            z-index: 50;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="dynamic-bg"></div>
+    <div class="vignette"></div>
+
+    <div class="wall-container" id="wall">
+        <!-- JS 动态生成 -->
+    </div>
+
+    <div class="clock-overlay">
+        <div class="time" id="clock">00:00</div>
+        <div class="date" id="date">2026年2月27日</div>
+    </div>
+
+    <script>
+        // 增加更多高清海报素材，确保比例
+        const posters = [
+            "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=800",
+            "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=800",
+            "https://images.unsplash.com/photo-1509248961158-e54f6934749c?q=80&w=800",
+            "https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=800",
+            "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=800",
+            "https://images.unsplash.com/photo-1506466010722-395aa2bef877?q=80&w=800",
+            "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?q=80&w=800",
+            "https://images.unsplash.com/photo-1535016120720-40c646bebbdc?q=80&w=800",
+            "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=800",
+            "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=800",
+            "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=800",
+            "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=800"
+        ];
+
+        const wall = document.getElementById('wall');
+        const bg = document.getElementById('dynamic-bg');
+
+        function initWall() {
+            // 根据屏幕宽度计算需要的列数，并适当增加冗余列
+            const columnWidthWithGap = 270; // 240px + 30px gap
+            const columnCount = Math.max(6, Math.ceil(window.innerWidth / columnWidthWithGap) + 2);
+            
+            wall.innerHTML = ''; 
+
+            for (let i = 0; i < columnCount; i++) {
+                const col = document.createElement('div');
+                col.className = `column col-${(i % 6) + 1}`;
+                
+                // 随机排序以增加视觉多样性
+                const colPosters = [...posters].sort(() => Math.random() - 0.5);
+                const fullList = [...colPosters, ...colPosters]; // 两倍数据确保无缝
+                
+                fullList.forEach(url => {
+                    const item = document.createElement('div');
+                    item.className = 'poster-item';
+                    item.innerHTML = `<img src="${url}" loading="lazy" onerror="this.src='https://via.placeholder.com/240x360/111/fff?text=Poster'">`;
+                    col.appendChild(item);
+                });
+                
+                wall.appendChild(col);
+            }
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('clock').textContent = `${h}:${m}`;
+            
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('date').textContent = now.toLocaleDateString('zh-CN', options);
+        }
+
+        function atmosphereEffect() {
+            const allPosters = document.querySelectorAll('.poster-item');
+            if (allPosters.length === 0) return;
+
+            // 选取当前可见区域的海报，避免背景切换到不可见的图
+            const randomPoster = allPosters[Math.floor(Math.random() * allPosters.length)];
+            
+            document.querySelector('.focus-glow')?.classList.remove('focus-glow');
+            randomPoster.classList.add('focus-glow');
+            
+            const img = randomPoster.querySelector('img');
+            if (img && img.src && !img.src.includes('placeholder')) {
+                bg.style.backgroundImage = `url(${img.src})`;
+            }
+        }
+
+        window.onload = () => {
+            initWall();
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            atmosphereEffect();
+            setInterval(atmosphereEffect, 10000);
+        };
+
+        let resizeTimer;
+        window.onresize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(initWall, 250);
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>艺术海报墙 - 横向影院</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-dark: #000000;
+            --poster-w: 300px; /* 更大的宽度 */
+            --poster-h: 450px;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-dark);
+            color: #ffffff;
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 沉浸式背景：取当前海报色调 */
+        #dynamic-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background-size: cover;
+            background-position: center;
+            filter: blur(120px) brightness(0.2);
+            transition: background-image 5s ease-in-out;
+            transform: scale(1.1);
+        }
+
+        /* 顶部和底部的电影遮幅 */
+        .cinematic-overlay {
+            position: fixed;
+            left: 0;
+            width: 100%;
+            height: 15vh;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            z-index: 10;
+            pointer-events: none;
+        }
+        .cinematic-overlay.bottom {
+            bottom: 0;
+            top: auto;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        }
+
+        /* 横向传送带 */
+        .scroller-wrapper {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            width: 100%;
+            overflow: visible;
+            z-index: 5;
+        }
+
+        .scroller-content {
+            display: flex;
+            gap: 60px;
+            padding: 0 10vw;
+            animation: scroll-h 120s linear infinite;
+            width: max-content;
+        }
+
+        @keyframes scroll-h {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .poster-card {
+            width: var(--poster-w);
+            height: var(--poster-h);
+            flex-shrink: 0;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            transition: all 1s cubic-bezier(0.22, 1, 0.36, 1);
+            background: #111;
+        }
+
+        .poster-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: brightness(0.7);
+            transition: all 1s ease;
+        }
+
+        /* 当海报靠近屏幕中心时的效果 (通过JS逻辑模拟) */
+        .poster-card.highlight {
+            transform: scale(1.15);
+            box-shadow: 0 0 80px rgba(255,255,255,0.1);
+            z-index: 20;
+        }
+        .poster-card.highlight img {
+            filter: brightness(1);
+        }
+
+        /* 时钟：右下角流线设计 */
+        .info-panel {
+            position: fixed;
+            bottom: 50px;
+            right: 60px;
+            z-index: 100;
+            text-align: right;
+            pointer-events: none;
+        }
+
+        .time-box {
+            font-size: 6rem;
+            font-weight: 200;
+            line-height: 1;
+            margin-bottom: 5px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .date-box {
+            font-size: 1.1rem;
+            letter-spacing: 5px;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #e50914;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 10px #e50914;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="dynamic-bg"></div>
+    <div class="cinematic-overlay"></div>
+    <div class="cinematic-overlay bottom"></div>
+
+    <div class="scroller-wrapper">
+        <div class="scroller-content" id="scroller">
+            <!-- 由 JS 填充 -->
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <div class="time-box" id="clock">00:00</div>
+        <div class="date-box">
+            <span class="status-dot"></span>
+            <span id="date">FEBRUARY 27, 2026</span>
+        </div>
+    </div>
+
+    <script>
+        const posters = [
+            "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=800",
+            "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?q=80&w=800",
+            "https://images.unsplash.com/photo-1509248961158-e54f6934749c?q=80&w=800",
+            "https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=800",
+            "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=800",
+            "https://images.unsplash.com/photo-1506466010722-395aa2bef877?q=80&w=800",
+            "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?q=80&w=800",
+            "https://images.unsplash.com/photo-1535016120720-40c646bebbdc?q=80&w=800",
+            "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=800",
+            "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=800",
+            "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=800",
+            "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=800"
+        ];
+
+        const scroller = document.getElementById('scroller');
+        const bg = document.getElementById('dynamic-bg');
+
+        function initScroller() {
+            // 复制三次以确保长距离无缝滚动
+            const content = [...posters, ...posters, ...posters];
+            scroller.innerHTML = content.map(url => `
+                <div class="poster-card">
+                    <img src="${url}" loading="lazy">
+                </div>
+            `).join('');
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('clock').textContent = `${h}:${m}`;
+            
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('date').textContent = now.toLocaleDateString('zh-CN', options);
+        }
+
+        // 检测屏幕中心的海报并高亮
+        function checkHighlight() {
+            const centerX = window.innerWidth / 2;
+            const cards = document.querySelectorAll('.poster-card');
+            
+            let closestCard = null;
+            let minDistance = Infinity;
+
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const cardCenter = rect.left + rect.width / 2;
+                const distance = Math.abs(centerX - cardCenter);
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestCard = card;
+                }
+                card.classList.remove('highlight');
+            });
+
+            if (closestCard) {
+                closestCard.classList.add('highlight');
+                const img = closestCard.querySelector('img').src;
+                bg.style.backgroundImage = `url(${img})`;
+            }
+        }
+
+        window.onload = () => {
+            initScroller();
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // 实时监测中心高亮
+            setInterval(checkHighlight, 500);
+        };
+    </script>
+</body>
+</html>

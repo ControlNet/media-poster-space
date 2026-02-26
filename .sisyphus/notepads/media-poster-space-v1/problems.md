@@ -1,0 +1,5 @@
+- Plan lines 125+ call for an AGPL license at the repo root, but no license file (glob for `LICENSE*` returned nothing). Need a confirmation of the exact AGPL version/text to use before bootstrapping the file.
+- There are no `package.json`, `pnpm-workspace.yaml`, or `turbo.json` files yet (glob for `*` only returned AGENTS and metadata). Need to confirm whether there are additional naming requirements/package scopes/packages beyond the `@mps/<name>` filters referenced in the plan before settling on the bootstrap manifests.
+- 2026-02-23: No new unresolved Task 2 problems after contract audit and verification; existing unresolved notes above predate this task.
+- 2026-02-23: No new unresolved Task 3 blockers; Jellyfin provider implementation and verification completed within scoped files.
+- 2026-02-23: Unresolved workspace tooling issue remains for Task 4 command shape: `pnpm -w --filter @mps/web test -- design-tokens` still routes `design-tokens` into root turbo task selection and fails; package-scoped equivalent commands are required until root script strategy is adjusted.

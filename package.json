@@ -1,0 +1,25 @@
+{
+  "name": "media-poster-space",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@8.10.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "turbo": "turbo",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "build": "turbo run build",
+    "build:release": "turbo run build:release && node scripts/release/write-stable-release-docs.mjs",
+    "verify:release-artifacts": "node scripts/release/verify-release-artifacts.mjs",
+    "verify:docs-parity": "node scripts/verify-docs-parity.mjs",
+    "e2e": "turbo run e2e",
+    "e2e:web": "turbo run e2e --filter=@mps/web"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.4"
+  }
+}

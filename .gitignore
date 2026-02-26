@@ -1,0 +1,64 @@
+# --- Node.js & pnpm ---
+node_modules/
+.pnpm-debug.log*
+pnpm-debug.log*
+
+# --- Build & Cache ---
+dist/
+dist-release/
+build/
+release/
+.turbo/
+.cache/
+.vite/
+.parcel-cache
+target/
+src-tauri/target/
+tmp/
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# --- Testing & Artifacts ---
+playwright-report/
+test-results/
+coverage/
+# Ignore images in root which look like test artifacts
+/*.png
+# But keep designs if they are part of the project
+!/designs/*.png
+
+# --- Python ---
+__pycache__/
+.ruff_cache/
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- IDEs & Editors ---
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# --- Custom/Internal Tools ---
+.sisyphus/evidence
+
+# --- Logs ---
+logs/
+*.log
+*-log.txt
+network-log.txt

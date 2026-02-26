@@ -1,0 +1,27 @@
+{
+  "name": "@mps/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "lint": "echo \"@mps/web lint placeholder\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "pnpm run typecheck && vitest run --passWithNoTests && vite build",
+    "build:release": "node ../../scripts/release/package-web-release.mjs",
+    "e2e": "playwright test --config=playwright.config.ts --project=web-chromium",
+    "e2e:web": "playwright test --config=playwright.config.ts --project=web-chromium e2e/gates && node ../../scripts/verify-thresholds.mjs --platform web --metrics ../../.sisyphus/evidence/task-16-web-gates.metrics.json"
+  },
+  "dependencies": {
+    "@mps/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.10.10",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

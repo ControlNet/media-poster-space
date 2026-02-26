@@ -1,0 +1,698 @@
+{
+  "manifestVersion": 1,
+  "name": "wall-behavior-contracts",
+  "description": "Deterministic wall contracts across route semantics, selectors, timing, OLED guards, and gate evidence wiring.",
+  "forceFail": {
+    "envVar": "MPS_CONTRACT_FORCE_FAIL",
+    "supportedValues": [
+      "selector",
+      "route",
+      "timing",
+      "oled",
+      "evidence"
+    ]
+  },
+  "groups": {
+    "route": {
+      "description": "Freeze /wall route entry + deterministic scene URL semantics.",
+      "checks": [
+        {
+          "id": "scene-route.pathname",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const WALL_SCENE_PATHNAME = \"/wall\";"
+        },
+        {
+          "id": "scene-route.mode-query-key",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const WALL_SCENE_MODE_QUERY_PARAM = \"mode\";"
+        },
+        {
+          "id": "scene-route.mode-test-value",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const WALL_SCENE_TEST_MODE = \"test\";"
+        },
+        {
+          "id": "scene-route.seed-query-key",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const WALL_SCENE_SEED_QUERY_PARAM = \"seed\";"
+        },
+        {
+          "id": "scene-route.profile-query-key",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const WALL_SCENE_PROFILE_QUERY_PARAM = \"profile\";"
+        },
+        {
+          "id": "scene-route.mode-test-seed",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "seed: \"mode-test\","
+        },
+        {
+          "id": "scene-route.mode-test-profile",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "profile: \"balanced\""
+        },
+        {
+          "id": "scene-route.cinematic-seed-source",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const seed = parseSeed(url.searchParams.get(WALL_SCENE_SEED_QUERY_PARAM));"
+        },
+        {
+          "id": "scene-route.cinematic-profile-source",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "const profile = parseCinematicProfile(url.searchParams.get(WALL_SCENE_PROFILE_QUERY_PARAM));"
+        },
+        {
+          "id": "scene-route.requires-seed-and-profile",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "if (!seed || !profile) {"
+        },
+        {
+          "id": "scene-route.cinematic-mode",
+          "file": "apps/web/src/scene/route.ts",
+          "contains": "mode: \"cinematic\","
+        },
+        {
+          "id": "web-onboarding.wall-path-constant",
+          "file": "apps/web/src/onboarding/runtime.ts",
+          "contains": "const WALL_PATHNAME = \"/wall\""
+        },
+        {
+          "id": "desktop-onboarding.wall-path-constant",
+          "file": "apps/desktop/src/onboarding/runtime.ts",
+          "contains": "const WALL_PATHNAME = \"/wall\""
+        },
+        {
+          "id": "web-onboarding.wall-entry-pushstate",
+          "file": "apps/web/src/onboarding/runtime.ts",
+          "contains": "window.history.pushState({}, \"\", WALL_PATHNAME)"
+        },
+        {
+          "id": "desktop-onboarding.wall-entry-pushstate",
+          "file": "apps/desktop/src/onboarding/runtime.ts",
+          "contains": "window.history.pushState({}, \"\", WALL_PATHNAME)"
+        },
+        {
+          "id": "docs.route-primary-wall-path",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Primary wall entry path is `/wall` after onboarding handoff."
+        },
+        {
+          "id": "docs.route-mode-test",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- `/wall?mode=test`"
+        },
+        {
+          "id": "docs.route-seeded-profile",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- `/wall?seed=<seed>&profile=<balanced|showcase>`"
+        },
+        {
+          "id": "route-consumer.web-test-mode-route",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/wall?mode=test"
+        },
+        {
+          "id": "route-consumer.web-cinematic-showcase-route",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/wall?seed=baseline-1&profile=showcase"
+        },
+        {
+          "id": "route-consumer.web-cinematic-balanced-route",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/wall?seed=baseline-1&profile=balanced"
+        },
+        {
+          "id": "route-consumer.web-invalid-mode-route",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/wall?mode=demo"
+        },
+        {
+          "id": "route-consumer.web-missing-profile-route",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/wall?seed=baseline-1"
+        },
+        {
+          "id": "route-consumer.web-non-wall-path",
+          "file": "apps/web/test/renderer-runtime.test.ts",
+          "contains": "https://mps.local/?mode=test"
+        },
+        {
+          "id": "route-consumer.web-risk-trigger-test-mode",
+          "file": "apps/web/test/oled-risk-trigger.test.ts",
+          "contains": "https://mps.local/wall?mode=test"
+        },
+        {
+          "id": "route-consumer.web-risk-trigger-cinematic",
+          "file": "apps/web/test/oled-risk-trigger.test.ts",
+          "contains": "https://mps.local/wall?seed=baseline-1&profile=showcase"
+        }
+      ]
+    },
+    "selector": {
+      "description": "Freeze required selector producers + test consumers for Web and Desktop.",
+      "contracts": [
+        {
+          "id": "selector.wall-scene",
+          "selector": "wall-scene",
+          "producers": [
+            {
+              "file": "apps/web/src/scene/wall-scene.ts",
+              "contains": "rootElement.dataset.testid = \"wall-scene\";"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/wall-smoke.spec.ts",
+              "contains": "page.getByTestId(\"wall-scene\")"
+            },
+            {
+              "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+              "contains": "page.getByTestId(\"wall-scene\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.scene-layer-front",
+          "selector": "scene-layer-front",
+          "producers": [
+            {
+              "file": "apps/web/src/scene/wall-scene.ts",
+              "contains": "createLayerCanvas(\"scene-layer-front\", 3);"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/wall-smoke.spec.ts",
+              "contains": "page.getByTestId(\"scene-layer-front\")"
+            },
+            {
+              "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+              "contains": "page.getByTestId(\"scene-layer-front\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.scene-layer-back",
+          "selector": "scene-layer-back",
+          "producers": [
+            {
+              "file": "apps/web/src/scene/wall-scene.ts",
+              "contains": "createLayerCanvas(\"scene-layer-back\", 1);"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/wall-smoke.spec.ts",
+              "contains": "page.getByTestId(\"scene-layer-back\")"
+            },
+            {
+              "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+              "contains": "page.getByTestId(\"scene-layer-back\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.scene-fallback-css",
+          "selector": "scene-fallback-css",
+          "producers": [
+            {
+              "file": "apps/web/src/scene/wall-scene.ts",
+              "contains": "fallbackLayer.dataset.testid = \"scene-fallback-css\";"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/wall-smoke.spec.ts",
+              "contains": "page.getByTestId(\"scene-fallback-css\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.poster-wall-root",
+          "selector": "poster-wall-root",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/route-shell.ts",
+              "contains": "const root = createElement(\"main\", { testId: \"poster-wall-root\" })"
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "const root = createElement(\"main\", { testId: \"poster-wall-root\" })"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"poster-wall-root\")"
+            },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "expect(document.querySelector('[data-testid=\"poster-wall-root\"]')).toBeTruthy()"
+            }
+          ]
+        },
+        {
+          "id": "selector.manual-refresh-button",
+          "selector": "manual-refresh-button",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/controls-section.ts",
+              "contains": "testId: \"manual-refresh-button\""
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "testId: \"manual-refresh-button\""
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"manual-refresh-button\")"
+            },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "clickByTestId(\"manual-refresh-button\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.reconnect-guide",
+          "selector": "reconnect-guide",
+          "producers": [
+            {
+              "file": "apps/web/src/onboarding/runtime.ts",
+              "contains": "? createElement(\"section\", { testId: \"reconnect-guide\" })"
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "? createElement(\"section\", { testId: \"reconnect-guide\" })"
+            }
+          ],
+          "consumers": [
+        {
+          "file": "apps/web/e2e/onboarding-auth.spec.ts",
+          "contains": "page.getByTestId(\"reconnect-guide\")"
+        },
+        {
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "document.querySelector('[data-testid=\"reconnect-guide\"]')"
+        }
+          ]
+        },
+        {
+          "id": "selector.detail-card",
+          "selector": "detail-card",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/detail-card.ts",
+              "contains": "const detailCard = createElement(\"aside\", { testId: \"detail-card\" })"
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "const detailCard = createElement(\"aside\", { testId: \"detail-card\" })"
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"detail-card\")"
+            },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "getElement(\"detail-card\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.exit-hotspot",
+          "selector": "exit-hotspot",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/detail-card.ts",
+              "contains": "testId: \"exit-hotspot\""
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "testId: \"exit-hotspot\""
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"exit-hotspot\")"
+            },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "clickByTestId(\"exit-hotspot\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.wall-controls-container",
+          "selector": "wall-controls-container",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/controls-section.ts",
+              "contains": "const controlsContainer = createElement(\"div\", { testId: \"wall-controls-container\" })"
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "const controlsContainer = createElement(\"div\", { testId: \"wall-controls-container\" })"
+            }
+          ],
+          "consumers": [
+        {
+          "file": "apps/web/e2e/onboarding-auth.spec.ts",
+          "contains": "page.locator('[data-testid=\"wall-controls-container\"]:visible')"
+        },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "getElement(\"wall-controls-container\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.diagnostics-open",
+          "selector": "diagnostics-open",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/controls-section.ts",
+              "contains": "testId: \"diagnostics-open\""
+            },
+            {
+              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "contains": "testId: \"diagnostics-open\""
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"diagnostics-open\")"
+            },
+            {
+              "file": "apps/desktop/test/onboarding-auth.test.ts",
+              "contains": "clickByTestId(\"diagnostics-open\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.wall-fullscreen-button",
+          "selector": "wall-fullscreen-button",
+          "producers": [
+            {
+              "file": "apps/web/src/wall/controls-section.ts",
+              "contains": "testId: \"wall-fullscreen-button\""
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"wall-fullscreen-button\")"
+            }
+          ]
+        },
+        {
+          "id": "selector.wall-fullscreen-warning",
+          "selector": "wall-fullscreen-warning",
+          "producers": [
+            {
+              "file": "apps/web/src/onboarding/runtime.ts",
+              "contains": "testId: \"wall-fullscreen-warning\""
+            }
+          ],
+          "consumers": [
+            {
+              "file": "apps/web/e2e/onboarding-auth.spec.ts",
+              "contains": "page.getByTestId(\"wall-fullscreen-warning\")"
+            }
+          ]
+        }
+      ]
+    },
+    "timing": {
+      "description": "Wall idle-hide and transition duration constants are fixed and bounded by tests.",
+      "checks": [
+        {
+          "id": "web.wall-idle-hide-constant",
+          "file": "packages/core/src/wall/constants.ts",
+          "contains": "export const WALL_IDLE_HIDE_MS = 8_000;"
+        },
+        {
+          "id": "desktop.wall-idle-hide-constant",
+          "file": "packages/core/src/wall/constants.ts",
+          "contains": "export const WALL_IDLE_HIDE_MS = 8_000;"
+        },
+        {
+          "id": "web.transition-constant",
+          "file": "packages/core/src/wall/constants.ts",
+          "contains": "export const WALL_DEFAULT_TRANSITION_MS = 280;"
+        },
+        {
+          "id": "desktop.transition-constant",
+          "file": "packages/core/src/wall/constants.ts",
+          "contains": "export const WALL_DEFAULT_TRANSITION_MS = 280;"
+        },
+        {
+          "id": "web.wall-idle-hide-wiring",
+          "file": "apps/web/src/onboarding/runtime.ts",
+          "contains": "}, WALL_IDLE_HIDE_MS)"
+        },
+        {
+          "id": "desktop.wall-idle-hide-wiring",
+          "file": "apps/desktop/src/onboarding/runtime.ts",
+          "contains": "idleHideMs: WALL_IDLE_HIDE_MS,"
+        },
+        {
+          "id": "web.transition-wiring-controls",
+          "file": "apps/web/src/wall/controls-section.ts",
+          "contains": "controlsContainer.style.transitionDuration = `${options.transitionMs}ms`"
+        },
+        {
+          "id": "web.transition-wiring-detail",
+          "file": "apps/web/src/wall/detail-card.ts",
+          "contains": "detailCard.style.transitionDuration = `${options.detailCardTransitionMs}ms`"
+        },
+        {
+          "id": "desktop.transition-wiring-controls",
+          "file": "apps/desktop/src/onboarding/runtime.ts",
+          "contains": "controlsContainer.style.transitionDuration = `${DETAIL_CARD_TRANSITION_MS}ms`"
+        },
+        {
+          "id": "desktop.transition-wiring-detail",
+          "file": "apps/desktop/src/onboarding/runtime.ts",
+          "contains": "detailCard.style.transitionDuration = `${DETAIL_CARD_TRANSITION_MS}ms`"
+        },
+        {
+          "id": "web.test-transition-bound-lower",
+          "file": "apps/web/e2e/onboarding-auth.spec.ts",
+          "contains": "toBeGreaterThanOrEqual(240)"
+        },
+        {
+          "id": "web.test-transition-bound-upper",
+          "file": "apps/web/e2e/onboarding-auth.spec.ts",
+          "contains": "toBeLessThanOrEqual(320)"
+        },
+        {
+          "id": "web.test-idle-hide-window",
+          "file": "apps/web/e2e/onboarding-auth.spec.ts",
+          "contains": "await page.waitForTimeout(8_100)"
+        },
+        {
+          "id": "desktop.test-transition-bound-lower",
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "expect(transitionMs).toBeGreaterThanOrEqual(240)"
+        },
+        {
+          "id": "desktop.test-transition-bound-upper",
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "expect(transitionMs).toBeLessThanOrEqual(320)"
+        },
+        {
+          "id": "desktop.test-controls-transition-bound-lower",
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "expect(controlsTransitionMs).toBeGreaterThanOrEqual(240)"
+        },
+        {
+          "id": "desktop.test-controls-transition-bound-upper",
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "expect(controlsTransitionMs).toBeLessThanOrEqual(320)"
+        },
+        {
+          "id": "desktop.test-idle-hide-window",
+          "file": "apps/desktop/test/onboarding-auth.test.ts",
+          "contains": "vi.advanceTimersByTime(8_000)"
+        },
+        {
+          "id": "docs.idle-hide-window",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Wall controls + detail card auto-hide after 8 seconds of idle time."
+        },
+        {
+          "id": "docs.transition-bounds",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Interaction transitions should remain in the 240-320ms range."
+        }
+      ]
+    },
+    "oled": {
+      "description": "OLED protection thresholds and cadence contracts are fixed.",
+      "checks": [
+        {
+          "id": "oled.threshold-focus-constant",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "focusStaticMsMax: 12_000,"
+        },
+        {
+          "id": "oled.threshold-highlight-constant",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "highlightStaticMsMax: 15_000,"
+        },
+        {
+          "id": "oled.threshold-highlight-area-constant",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "highlightAreaRatioMax: 0.12"
+        },
+        {
+          "id": "oled.relayout-balanced-cadence",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "balanced: 90_000,"
+        },
+        {
+          "id": "oled.relayout-showcase-cadence",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "showcase: 60_000"
+        },
+        {
+          "id": "oled.micro-shift-cadence",
+          "file": "packages/core/src/oled/cinematic-drift.ts",
+          "contains": "export const OLED_MICRO_SHIFT_CADENCE_MS = 45_000;"
+        },
+        {
+          "id": "oled.web-radius-guard-wiring",
+          "file": "apps/web/src/scene/wall-scene.ts",
+          "contains": "OLED_THRESHOLD_GUARDS.highlightAreaRatioMax"
+        },
+        {
+          "id": "oled.web-metrics-export-wiring",
+          "file": "apps/web/src/scene/wall-scene.ts",
+          "contains": "thresholds: OLED_THRESHOLD_GUARDS"
+        },
+        {
+          "id": "oled.test-risk-trigger-over-focus-threshold",
+          "file": "apps/web/test/oled-risk-trigger.test.ts",
+          "contains": "focusStaticMs: 12_050,"
+        },
+        {
+          "id": "oled.test-highlight-area-guard-reference",
+          "file": "apps/web/test/oled-risk-trigger.test.ts",
+          "contains": "OLED_THRESHOLD_GUARDS.highlightAreaRatioMax"
+        },
+        {
+          "id": "docs.oled-focus-threshold",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Focus-card static duration <= 12s"
+        },
+        {
+          "id": "docs.oled-highlight-threshold",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Highlight static duration <= 15s"
+        },
+        {
+          "id": "docs.oled-highlight-area-threshold",
+          "file": "docs/poster-wall-design-principles.md",
+          "contains": "- Highlight area ratio <= 12%"
+        }
+      ]
+    },
+    "evidence": {
+      "description": "Fixed-seed evidence artifacts and threshold verifier wiring stay deterministic.",
+      "checks": [
+        {
+          "id": "threshold-verifier.fixed-seed",
+          "file": "scripts/verify-thresholds.mjs",
+          "contains": "const REQUIRED_SEED = \"v1-fixed-seed\""
+        },
+        {
+          "id": "threshold-verifier.force-fail-env",
+          "file": "scripts/verify-thresholds.mjs",
+          "contains": "const forced = (process.env.MPS_GATE_FORCE_FAIL ?? \"\").trim()"
+        },
+        {
+          "id": "web-gate.fixed-seed",
+          "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+          "contains": "const FIXED_SEED = \"v1-fixed-seed\""
+        },
+        {
+          "id": "web-gate.seeded-render-input",
+          "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+          "contains": "const renderInput = `/wall?seed=${encodeURIComponent(seed)}&profile=${SEED_PROOF_PROFILE}`"
+        },
+        {
+          "id": "web-gate.metrics-path",
+          "file": "apps/web/e2e/gates/mandatory-v1-gates.spec.ts",
+          "contains": "task-16-web-gates.metrics.json"
+        },
+        {
+          "id": "desktop-gate.fixed-seed",
+          "file": "apps/desktop/test/gates/mandatory-v1-gates.test.ts",
+          "contains": "const FIXED_SEED = \"v1-fixed-seed\""
+        },
+        {
+          "id": "desktop-gate.seeded-render-input",
+          "file": "apps/desktop/test/gates/mandatory-v1-gates.test.ts",
+          "contains": "renderInput: `desktop-seeded-evidence-frame?seed=${encodeURIComponent(seed)}`"
+        },
+        {
+          "id": "desktop-gate.metrics-path",
+          "file": "apps/desktop/test/gates/mandatory-v1-gates.test.ts",
+          "contains": "task-16-desktop-gates.metrics.json"
+        },
+        {
+          "id": "web-package.threshold-verifier-wiring",
+          "file": "apps/web/package.json",
+          "contains": "verify-thresholds.mjs --platform web --metrics ../../.sisyphus/evidence/task-16-web-gates.metrics.json"
+        },
+        {
+          "id": "desktop-package.threshold-verifier-wiring",
+          "file": "apps/desktop/package.json",
+          "contains": "verify-thresholds.mjs --platform desktop --metrics ../../.sisyphus/evidence/task-16-desktop-gates.metrics.json"
+        },
+        {
+          "id": "docs.quality-gates-fixed-seed",
+          "file": "docs/quality-gates.md",
+          "contains": "fixed seed `v1-fixed-seed`"
+        },
+        {
+          "id": "docs.quality-gates-web-metrics",
+          "file": "docs/quality-gates.md",
+          "contains": ".sisyphus/evidence/task-16-web-gates.metrics.json"
+        },
+        {
+          "id": "docs.quality-gates-desktop-metrics",
+          "file": "docs/quality-gates.md",
+          "contains": ".sisyphus/evidence/task-16-desktop-gates.metrics.json"
+        },
+        {
+          "id": "docs.evidence-protocol-fixed-seed",
+          "file": "docs/evidence-protocol.md",
+          "contains": "fixed seed `v1-fixed-seed`"
+        },
+        {
+          "id": "docs.evidence-protocol-web-metrics",
+          "file": "docs/evidence-protocol.md",
+          "contains": ".sisyphus/evidence/task-16-web-gates.metrics.json"
+        },
+        {
+          "id": "docs.evidence-protocol-desktop-metrics",
+          "file": "docs/evidence-protocol.md",
+          "contains": ".sisyphus/evidence/task-16-desktop-gates.metrics.json"
+        },
+        {
+          "id": "docs.evidence-protocol-force-fail-sample",
+          "file": "docs/evidence-protocol.md",
+          "contains": "MPS_GATE_FORCE_FAIL=logout-cleanup pnpm -w turbo run e2e:web e2e:desktop"
+        }
+      ]
+    }
+  }
+}

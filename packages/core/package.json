@@ -1,0 +1,29 @@
+{
+  "name": "@mps/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types/index.ts",
+    "./provider": "./src/provider/index.ts",
+    "./ingestion": "./src/ingestion/index.ts",
+    "./scheduler": "./src/scheduler/index.ts",
+    "./oled": "./src/oled/index.ts",
+    "./validation": "./src/validation/index.ts",
+    "./tokens": "./src/tokens/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "echo \"@mps/core lint placeholder\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "echo \"@mps/core build placeholder\"",
+    "e2e": "echo \"@mps/core e2e placeholder\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.10",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

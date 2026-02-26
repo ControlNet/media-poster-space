@@ -1,0 +1,55 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "lint": {
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["lint"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["typecheck"],
+      "outputs": []
+    },
+    "build": {
+      "dependsOn": ["test"],
+      "outputs": []
+    },
+    "build:release": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": [
+        "release/**",
+        "CHANGELOG.md"
+      ]
+    },
+    "e2e": {
+      "dependsOn": ["build"],
+      "env": [
+        "MPS_GATE_FORCE_FAIL"
+      ],
+      "outputs": [
+        ".sisyphus/evidence/playwright/**"
+      ]
+    },
+    "e2e:web": {
+      "dependsOn": ["build"],
+      "env": [
+        "MPS_GATE_FORCE_FAIL"
+      ],
+      "outputs": [
+        ".sisyphus/evidence/**"
+      ]
+    },
+    "e2e:desktop": {
+      "dependsOn": ["build"],
+      "env": [
+        "MPS_GATE_FORCE_FAIL"
+      ],
+      "outputs": [
+        ".sisyphus/evidence/**"
+      ]
+    }
+  }
+}

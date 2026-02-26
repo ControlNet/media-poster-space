@@ -1,0 +1,84 @@
+name: quality-gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      gate_force_fail:
+        description: "Optional forced gate failure mode for regression evidence"
+        required: false
+        default: ""
+
+env:
+  CI: "true"
+  TURBO_TELEMETRY_DISABLED: "1"
+  MPS_GATE_FORCE_FAIL: ${{ github.event.inputs.gate_force_fail || '' }}
+
+jobs:
+  quality:
+    name: lint-typecheck-test-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Run quality gates
+        run: pnpm -w turbo run lint typecheck test build
+
+      - name: Verify docs parity
+        run: pnpm -w verify:docs-parity --strict
+
+  web-e2e-smoke:
+    name: web-e2e-smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @mps/web exec playwright install --with-deps chromium
+
+      - name: Run V1 e2e gates
+        run: pnpm -w turbo run e2e:web e2e:desktop
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-web-artifacts
+          path: .sisyphus/evidence/playwright/**
+          if-no-files-found: warn
+          retention-days: 14
