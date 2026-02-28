@@ -74,12 +74,12 @@
         {
           "id": "web-onboarding.wall-path-constant",
           "file": "apps/web/src/onboarding/runtime.ts",
-          "contains": "const WALL_PATHNAME = \"/wall\""
+          "contains": "const WALL_PATHNAME = ONBOARDING_WALL_PATHNAME"
         },
         {
           "id": "desktop-onboarding.wall-path-constant",
           "file": "apps/desktop/src/onboarding/runtime.ts",
-          "contains": "const WALL_PATHNAME = \"/wall\""
+          "contains": "const WALL_PATHNAME = ONBOARDING_WALL_PATHNAME"
         },
         {
           "id": "web-onboarding.wall-entry-pushstate",
@@ -232,11 +232,7 @@
           "selector": "poster-wall-root",
           "producers": [
             {
-              "file": "apps/web/src/wall/route-shell.ts",
-              "contains": "const root = createElement(\"main\", { testId: \"poster-wall-root\" })"
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/route-shell.ts",
               "contains": "const root = createElement(\"main\", { testId: \"poster-wall-root\" })"
             }
           ],
@@ -256,11 +252,7 @@
           "selector": "manual-refresh-button",
           "producers": [
             {
-              "file": "apps/web/src/wall/controls-section.ts",
-              "contains": "testId: \"manual-refresh-button\""
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/controls-section.ts",
               "contains": "testId: \"manual-refresh-button\""
             }
           ],
@@ -280,12 +272,8 @@
           "selector": "reconnect-guide",
           "producers": [
             {
-              "file": "apps/web/src/onboarding/runtime.ts",
-              "contains": "? createElement(\"section\", { testId: \"reconnect-guide\" })"
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
-              "contains": "? createElement(\"section\", { testId: \"reconnect-guide\" })"
+              "file": "packages/core/src/wall/ui/status-callouts.ts",
+              "contains": "const reconnectGuide = createElement(\"section\", { testId: \"reconnect-guide\" })"
             }
           ],
           "consumers": [
@@ -304,11 +292,7 @@
           "selector": "detail-card",
           "producers": [
             {
-              "file": "apps/web/src/wall/detail-card.ts",
-              "contains": "const detailCard = createElement(\"aside\", { testId: \"detail-card\" })"
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/detail-card.ts",
               "contains": "const detailCard = createElement(\"aside\", { testId: \"detail-card\" })"
             }
           ],
@@ -328,11 +312,7 @@
           "selector": "exit-hotspot",
           "producers": [
             {
-              "file": "apps/web/src/wall/detail-card.ts",
-              "contains": "testId: \"exit-hotspot\""
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/detail-card.ts",
               "contains": "testId: \"exit-hotspot\""
             }
           ],
@@ -352,11 +332,7 @@
           "selector": "wall-controls-container",
           "producers": [
             {
-              "file": "apps/web/src/wall/controls-section.ts",
-              "contains": "const controlsContainer = createElement(\"div\", { testId: \"wall-controls-container\" })"
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/controls-section.ts",
               "contains": "const controlsContainer = createElement(\"div\", { testId: \"wall-controls-container\" })"
             }
           ],
@@ -376,11 +352,7 @@
           "selector": "diagnostics-open",
           "producers": [
             {
-              "file": "apps/web/src/wall/controls-section.ts",
-              "contains": "testId: \"diagnostics-open\""
-            },
-            {
-              "file": "apps/desktop/src/onboarding/runtime.ts",
+              "file": "packages/core/src/wall/ui/controls-section.ts",
               "contains": "testId: \"diagnostics-open\""
             }
           ],
@@ -400,7 +372,7 @@
           "selector": "wall-fullscreen-button",
           "producers": [
             {
-              "file": "apps/web/src/wall/controls-section.ts",
+              "file": "packages/core/src/wall/ui/controls-section.ts",
               "contains": "testId: \"wall-fullscreen-button\""
             }
           ],
@@ -455,7 +427,7 @@
         {
           "id": "web.wall-idle-hide-wiring",
           "file": "apps/web/src/onboarding/runtime.ts",
-          "contains": "}, WALL_IDLE_HIDE_MS)"
+          "contains": "idleHideMs: WALL_IDLE_HIDE_MS,"
         },
         {
           "id": "desktop.wall-idle-hide-wiring",
@@ -464,23 +436,23 @@
         },
         {
           "id": "web.transition-wiring-controls",
-          "file": "apps/web/src/wall/controls-section.ts",
+          "file": "packages/core/src/wall/ui/controls-section.ts",
           "contains": "controlsContainer.style.transitionDuration = `${options.transitionMs}ms`"
         },
         {
           "id": "web.transition-wiring-detail",
-          "file": "apps/web/src/wall/detail-card.ts",
+          "file": "packages/core/src/wall/ui/detail-card.ts",
           "contains": "detailCard.style.transitionDuration = `${options.detailCardTransitionMs}ms`"
         },
         {
           "id": "desktop.transition-wiring-controls",
-          "file": "apps/desktop/src/onboarding/runtime.ts",
-          "contains": "controlsContainer.style.transitionDuration = `${DETAIL_CARD_TRANSITION_MS}ms`"
+          "file": "packages/core/src/runtime/onboarding-wall-route.ts",
+          "contains": "transitionMs: options.detailCardTransitionMs,"
         },
         {
           "id": "desktop.transition-wiring-detail",
           "file": "apps/desktop/src/onboarding/runtime.ts",
-          "contains": "detailCard.style.transitionDuration = `${DETAIL_CARD_TRANSITION_MS}ms`"
+          "contains": "detailCardTransitionMs: DETAIL_CARD_TRANSITION_MS,"
         },
         {
           "id": "web.test-transition-bound-lower",

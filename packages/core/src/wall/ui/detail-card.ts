@@ -1,12 +1,15 @@
 import {
   WALL_DETAIL_CARD_MAX_WIDTH,
   WALL_DETAIL_CARD_MIN_WIDTH,
-  WALL_DETAIL_CARD_WIDTH,
-  type MediaItem
-} from "@mps/core"
+  WALL_DETAIL_CARD_WIDTH
+} from "../constants"
+import type { MediaItem } from "../../types/media"
 
 import type { ElementFactory } from "./element-factory"
-import { formatDetailMeta, hasText } from "./state-model"
+import {
+  formatWallDetailMeta,
+  hasWallText
+} from "./types"
 
 export function createWallDetailCard(
   createElement: ElementFactory,
@@ -107,8 +110,8 @@ export function createWallDetailCard(
     detailPosterChip.style.boxShadow = "inset 0 -24px 40px rgba(5, 8, 18, 0.55)"
   }
 
-  const detailMetaText = selectedPoster ? formatDetailMeta(selectedPoster) : ""
-  const detailMeta = hasText(detailMetaText)
+  const detailMetaText = selectedPoster ? formatWallDetailMeta(selectedPoster) : ""
+  const detailMeta = hasWallText(detailMetaText)
     ? createElement("p", { textContent: detailMetaText, testId: "detail-card-meta" })
     : null
   if (detailMeta) {
@@ -120,7 +123,7 @@ export function createWallDetailCard(
     detailMeta.style.textTransform = "uppercase"
   }
 
-  const detailOverview = selectedPoster && hasText(selectedPoster.overview)
+  const detailOverview = selectedPoster && hasWallText(selectedPoster.overview)
     ? createElement("p", { textContent: selectedPoster.overview, testId: "detail-card-overview" })
     : null
   if (detailOverview) {

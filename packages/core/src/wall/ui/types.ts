@@ -1,7 +1,24 @@
-import {
-  resolveWallDetailCardPlacement,
-  type MediaItem
-} from "@mps/core"
+import { resolveWallDetailCardPlacement } from "../detail-card-placement"
+import type { MediaItem } from "../../types/media"
+
+export interface WallPreferences {
+  density: "cinematic" | "compact"
+  rememberServer: boolean
+  rememberUsername: boolean
+  rememberPasswordRequested: boolean
+}
+
+export interface WallHandoff {
+  selectedLibraryIds: string[]
+  preferences: WallPreferences
+}
+
+export interface WallDiagnosticsSample {
+  fps: number
+  memoryMb: number | null
+  reconnectAttempt: number
+  reconnectNextDelayMs: number | null
+}
 
 function formatRuntimeMinutes(runtimeMs: number | undefined): string | null {
   if (typeof runtimeMs !== "number" || runtimeMs <= 0) {
@@ -12,7 +29,7 @@ function formatRuntimeMinutes(runtimeMs: number | undefined): string | null {
   return `${minutes} min`
 }
 
-export function formatDetailMeta(item: MediaItem): string {
+export function formatWallDetailMeta(item: MediaItem): string {
   const segments: string[] = []
 
   if (typeof item.year === "number") {
@@ -33,11 +50,11 @@ export function formatDetailMeta(item: MediaItem): string {
   return segments.join(" • ")
 }
 
-export function hasText(value: string | undefined): value is string {
+export function hasWallText(value: string | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0
 }
 
-export function resolveDetailCardPlacement(activeIndex: number, totalItems: number): {
+export function resolveWallDetailPlacement(activeIndex: number, totalItems: number): {
   left: string
   top: string
 } {

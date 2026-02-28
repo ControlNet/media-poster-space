@@ -5,17 +5,18 @@ export function createWallControlsSection(
   options: {
     ingestionStatus: "idle" | "refreshing" | "ready" | "error"
     diagnosticsOpen: boolean
-    fullscreenActive: boolean
     controlsHidden: boolean
     transitionMs: number
     onRefresh: () => void
-    onToggleFullscreen: () => void
     onToggleDiagnostics: () => void
     onLogout: () => void
-    fullscreenWarning: HTMLElement | null
     diagnosticsPanel: HTMLElement | null
     ingestionError: HTMLElement | null
     reconnectGuide: HTMLElement | null
+    showFullscreenControl?: boolean
+    fullscreenActive?: boolean
+    onToggleFullscreen?: () => void
+    fullscreenWarning?: HTMLElement | null
   }
 ): HTMLElement {
   function applyControlButtonSkin(
@@ -62,15 +63,6 @@ export function createWallControlsSection(
   attachButtonHover(refreshButton)
   refreshButton.disabled = options.ingestionStatus === "refreshing"
   refreshButton.addEventListener("click", options.onRefresh)
-
-  const fullscreenButton = createElement("button", {
-    textContent: options.fullscreenActive ? "Exit fullscreen" : "Enter fullscreen",
-    testId: "wall-fullscreen-button"
-  }) as HTMLButtonElement
-  fullscreenButton.type = "button"
-  applyControlButtonSkin(fullscreenButton, "neutral")
-  attachButtonHover(fullscreenButton)
-  fullscreenButton.addEventListener("click", options.onToggleFullscreen)
 
   const diagnosticsButton = createElement("button", {
     textContent: options.diagnosticsOpen ? "Hide diagnostics" : "Open diagnostics",
@@ -170,7 +162,20 @@ export function createWallControlsSection(
 
   controlsHeader.append(controlsHeading, controlsSubheading)
   controlsContainer.append(controlsHeader)
-  primaryCluster.append(refreshButton, fullscreenButton)
+
+  primaryCluster.append(refreshButton)
+  if (options.showFullscreenControl && options.onToggleFullscreen) {
+    const fullscreenButton = createElement("button", {
+      textContent: options.fullscreenActive ? "Exit fullscreen" : "Enter fullscreen",
+      testId: "wall-fullscreen-button"
+    }) as HTMLButtonElement
+    fullscreenButton.type = "button"
+    applyControlButtonSkin(fullscreenButton, "neutral")
+    attachButtonHover(fullscreenButton)
+    fullscreenButton.addEventListener("click", options.onToggleFullscreen)
+    primaryCluster.append(fullscreenButton)
+  }
+
   supportCluster.append(diagnosticsButton, logoutButton)
   controlsRow.append(primaryCluster, supportCluster)
   controlsContainer.append(controlsRow)

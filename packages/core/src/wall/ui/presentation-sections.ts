@@ -1,7 +1,7 @@
-import type { MediaItem } from "@mps/core"
+import type { MediaItem } from "../../types/media"
 
 import type { ElementFactory } from "./element-factory"
-import type { WallHandoff } from "./state-model"
+import type { WallHandoff } from "./types"
 
 export function createWallHeadingSection(
   createElement: ElementFactory,
@@ -42,7 +42,7 @@ export function createWallHeadingSection(
   libraries.style.boxShadow = "inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
 
   const preferences = createElement("p", {
-    textContent: `Density: ${handoff.preferences.density}; remember server: ${handoff.preferences.rememberServer ? "yes" : "no"}; remember username: ${handoff.preferences.rememberUsername ? "yes" : "no"}.`
+    textContent: `Density: ${handoff.preferences.density}; remember server: ${handoff.preferences.rememberServer ? "yes" : "no"}; remember username: ${handoff.preferences.rememberUsername ? "yes" : "no"}; remember password: ${handoff.preferences.rememberPasswordRequested ? "yes" : "no"}.`
   })
   preferences.style.margin = "0"
   preferences.style.gridColumn = "1"

@@ -1,11 +1,5 @@
-import {
-  DIAGNOSTICS_RETENTION_MAX_AGE_MS,
-  DIAGNOSTICS_RETENTION_MAX_BYTES,
-  DIAGNOSTICS_SAMPLING_INTERVAL_MS,
-  type DiagnosticsSample
-} from "../features/diagnostics/runtime-diagnostics"
 import type { ElementFactory } from "./element-factory"
-import type { WallHandoff } from "./state-model"
+import type { WallDiagnosticsSample, WallHandoff } from "./types"
 
 export function createWallDiagnosticsSection(
   createElement: ElementFactory,
@@ -20,13 +14,16 @@ export function createWallDiagnosticsSection(
     reconnectAttempt: number
     reconnectNextDelayMs: number | null
     detailProfile: "balanced" | "showcase"
-    diagnosticsLatestSample: DiagnosticsSample | null
+    diagnosticsLatestSample: WallDiagnosticsSample | null
     diagnosticsRetentionSnapshot: {
       count: number
       byteSize: number
     }
     diagnosticsLastExportAt: string | null
     diagnosticsExportError: string | null
+    samplingIntervalMs: number
+    retentionMaxAgeMs: number
+    retentionMaxBytes: number
     onToggleDetailProfile: () => void
     onExportCrashReport: () => void
   }
@@ -90,7 +87,7 @@ export function createWallDiagnosticsSection(
   diagnosticsIngestion.style.lineHeight = "1.45"
 
   const diagnosticsSamplingInterval = createElement("p", {
-    textContent: `Sampling interval: ${DIAGNOSTICS_SAMPLING_INTERVAL_MS}ms`,
+    textContent: `Sampling interval: ${options.samplingIntervalMs}ms`,
     testId: "wall-diagnostics-sampling-interval"
   })
   applyTelemetryChipStyle(diagnosticsSamplingInterval, "neutral")
@@ -125,8 +122,8 @@ export function createWallDiagnosticsSection(
 
   const diagnosticsRetention = createElement("p", {
     textContent:
-      `Retention policy: ${Math.round(DIAGNOSTICS_RETENTION_MAX_AGE_MS / (24 * 60 * 60 * 1_000))}d / `
-      + `${Math.round(DIAGNOSTICS_RETENTION_MAX_BYTES / (1024 * 1024))}MB; `
+      `Retention policy: ${Math.round(options.retentionMaxAgeMs / (24 * 60 * 60 * 1_000))}d / `
+      + `${Math.round(options.retentionMaxBytes / (1024 * 1024))}MB; `
       + `logs=${options.diagnosticsRetentionSnapshot.count}; bytes=${options.diagnosticsRetentionSnapshot.byteSize}.`,
     testId: "wall-diagnostics-retention-policy"
   })

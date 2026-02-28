@@ -73,7 +73,13 @@ function assertNotIncludes(haystack, needle, context) {
 function inferRepositoryTruth(repositorySignals) {
   return {
     "Password persistence": {
-      desktop: repositorySignals.desktopRuntime.includes('testId: "remember-password-checkbox"')
+      desktop: (
+        repositorySignals.desktopRuntime.includes('testId: "remember-password-checkbox"')
+        || (
+          repositorySignals.desktopRuntime.includes("createOnboardingFormView({")
+          && repositorySignals.coreOnboardingForm.includes('testId: "remember-password-checkbox"')
+        )
+      )
         ? "Yes (encrypted storage)"
         : "No",
       web: repositorySignals.webRuntime.includes("canPersistPassword: false") ? "No" : "Yes"
@@ -100,8 +106,14 @@ function inferRepositoryTruth(repositorySignals) {
         : "No"
     },
     "Offline cached startup": {
-      desktop: repositorySignals.desktopRuntime.includes("hydratePosterCache(runtimeKey)") ? "Yes" : "No",
-      web: repositorySignals.webRuntime.includes("hydratePosterCache(runtimeKey)") ? "Yes" : "No"
+      desktop: repositorySignals.desktopRuntime.includes("createOnboardingIngestionController({")
+        && repositorySignals.coreOnboardingIngestion.includes("hydratePosterCache(runtimeKey)")
+        ? "Yes"
+        : "No",
+      web: repositorySignals.webRuntime.includes("createOnboardingIngestionController({")
+        && repositorySignals.coreOnboardingIngestion.includes("hydratePosterCache(runtimeKey)")
+        ? "Yes"
+        : "No"
     },
     "PWA install": {
       desktop: "No",
@@ -143,6 +155,8 @@ async function main() {
     webRuntime,
     webControlsSection,
     desktopRuntime,
+    coreOnboardingForm,
+    coreOnboardingIngestion,
     desktopBridge,
     webPackage
   ] = await Promise.all([
@@ -152,8 +166,10 @@ async function main() {
     readText(requiredDocs.feedbackWorkflow),
     readText(requiredDocs.evidenceProtocol),
     readText(path.join(repositoryRoot, "apps/web/src/onboarding/runtime.ts")),
-    readText(path.join(repositoryRoot, "apps/web/src/wall/controls-section.ts")),
+    readText(path.join(repositoryRoot, "packages/core/src/wall/ui/controls-section.ts")),
     readText(path.join(repositoryRoot, "apps/desktop/src/onboarding/runtime.ts")),
+    readText(path.join(repositoryRoot, "packages/core/src/runtime/onboarding-form.ts")),
+    readText(path.join(repositoryRoot, "packages/core/src/runtime/onboarding-ingestion.ts")),
     readText(path.join(repositoryRoot, "apps/desktop/src/features/platform/tauri-bridge.ts")),
     readText(path.join(repositoryRoot, "apps/web/package.json"))
   ])
@@ -162,6 +178,8 @@ async function main() {
     webRuntime,
     webControlsSection,
     desktopRuntime,
+    coreOnboardingForm,
+    coreOnboardingIngestion,
     desktopBridge,
     webHasPwaAssets:
       webPackage.includes("manifest.webmanifest")

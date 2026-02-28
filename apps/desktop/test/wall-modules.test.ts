@@ -14,7 +14,7 @@ import {
   persistDesktopDisplaySelection
 } from "../src/features/platform/wall-platform-adapter"
 import type { DesktopDisplayOption, DesktopPlatformBridge } from "../src/features/platform/tauri-bridge"
-import { createWallInteractionController } from "../src/wall/interaction-controller"
+import { createWallInteractionController } from "@mps/core"
 
 function createPlatformBridgeMock(overrides: Partial<DesktopPlatformBridge> = {}): DesktopPlatformBridge {
   return {
