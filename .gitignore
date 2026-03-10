@@ -62,3 +62,4 @@ logs/
 *.log
 *-log.txt
 network-log.txt
+.perles/
