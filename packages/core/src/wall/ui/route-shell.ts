@@ -1,100 +1,88 @@
 import type { ElementFactory } from "./element-factory"
 
+const WALL_PARALLAX_STYLE_ID = "mps-wall-parallax-style"
+
+function ensureWallParallaxStyles(): void {
+  if (typeof document === "undefined") {
+    return
+  }
+
+  if (document.getElementById(WALL_PARALLAX_STYLE_ID)) {
+    return
+  }
+
+  const style = document.createElement("style")
+  style.id = WALL_PARALLAX_STYLE_ID
+  style.textContent = [
+    "@keyframes mps-wall-scene-float {",
+    "0% { transform: rotateX(12deg) rotateY(-8deg) translateZ(0); }",
+    "100% { transform: rotateX(18deg) rotateY(-12deg) translateZ(100px); }",
+    "}",
+    "@keyframes mps-wall-row-scroll {",
+    "0% { transform: translateX(0); }",
+    "100% { transform: translateX(var(--mps-row-shift-end, -50%)); }",
+    "}",
+    "@keyframes mps-wall-ui-drift {",
+    "0% { transform: translateY(0) translateX(0); }",
+    "100% { transform: translateY(-10px) translateX(10px); }",
+    "}"
+  ].join("\n")
+  document.head.append(style)
+}
+
 export function createWallRouteShell(createElement: ElementFactory): {
   root: HTMLElement
   wallCard: HTMLElement
 } {
+  ensureWallParallaxStyles()
+
   const root = createElement("main", { testId: "poster-wall-root" })
   root.style.minHeight = "100vh"
-  root.style.display = "flex"
-  root.style.justifyContent = "center"
-  root.style.alignItems = "center"
-  root.style.padding = "clamp(0.9rem, 2vw, 1.5rem)"
+  root.style.display = "grid"
+  root.style.placeItems = "center"
+  root.style.padding = "0"
   root.style.position = "relative"
   root.style.overflow = "hidden"
   root.style.isolation = "isolate"
+  root.style.perspective = "2000px"
   root.style.background = [
-    "radial-gradient(circle at 17% 24%, var(--mps-color-orbit-glow-halo) 0%, transparent 43%)",
-    "radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--mps-color-telemetry-soft) 72%, transparent) 0%, transparent 56%)",
-    "linear-gradient(155deg, var(--mps-overlay-depth-far) 0%, var(--mps-color-canvas) 58%, #05070f 100%)"
+    "radial-gradient(circle at 70% 30%, rgba(26, 42, 74, 0.42) 0%, transparent 70%)",
+    "linear-gradient(165deg, #020202 0%, #03050c 58%, #020202 100%)"
   ].join(",")
   root.style.color = "var(--mps-color-foreground)"
   root.style.fontFamily = "var(--mps-font-body)"
 
-  const orbitHaloNear = createElement("div")
-  orbitHaloNear.setAttribute("aria-hidden", "true")
-  orbitHaloNear.style.position = "absolute"
-  orbitHaloNear.style.inset = "auto auto -26vmax -20vmax"
-  orbitHaloNear.style.width = "58vmax"
-  orbitHaloNear.style.aspectRatio = "1 / 1"
-  orbitHaloNear.style.borderRadius = "999px"
-  orbitHaloNear.style.pointerEvents = "none"
-  orbitHaloNear.style.opacity = "0.85"
-  orbitHaloNear.style.filter = "blur(2px)"
-  orbitHaloNear.style.background = [
-    "radial-gradient(circle at center, var(--mps-color-orbit-glow-halo) 0%, rgba(122, 217, 255, 0.08) 38%, transparent 70%)",
-    "conic-gradient(from 200deg, transparent 0deg, rgba(122, 217, 255, 0.16) 120deg, transparent 205deg, rgba(210, 166, 90, 0.22) 290deg, transparent 360deg)"
-  ].join(",")
+  const ambientGlow = createElement("div")
+  ambientGlow.setAttribute("aria-hidden", "true")
+  ambientGlow.style.position = "fixed"
+  ambientGlow.style.inset = "0"
+  ambientGlow.style.zIndex = "0"
+  ambientGlow.style.pointerEvents = "none"
+  ambientGlow.style.opacity = "0.15"
+  ambientGlow.style.filter = "blur(120px)"
+  ambientGlow.style.transition = "background 4s cubic-bezier(0.4, 0, 0.2, 1)"
+  ambientGlow.style.background = "radial-gradient(circle at 70% 30%, rgba(26, 42, 74, 1) 0%, transparent 70%)"
 
-  const orbitHaloFar = createElement("div")
-  orbitHaloFar.setAttribute("aria-hidden", "true")
-  orbitHaloFar.style.position = "absolute"
-  orbitHaloFar.style.inset = "-28vmax -16vmax auto auto"
-  orbitHaloFar.style.width = "56vmax"
-  orbitHaloFar.style.aspectRatio = "1 / 1"
-  orbitHaloFar.style.borderRadius = "999px"
-  orbitHaloFar.style.pointerEvents = "none"
-  orbitHaloFar.style.opacity = "0.54"
-  orbitHaloFar.style.mixBlendMode = "screen"
-  orbitHaloFar.style.background = "radial-gradient(circle at 45% 44%, var(--mps-color-orbit-glow) 0%, rgba(122, 217, 255, 0.12) 34%, transparent 74%)"
+  const horizonVignette = createElement("div")
+  horizonVignette.setAttribute("aria-hidden", "true")
+  horizonVignette.style.position = "fixed"
+  horizonVignette.style.inset = "0"
+  horizonVignette.style.pointerEvents = "none"
+  horizonVignette.style.zIndex = "5"
+  horizonVignette.style.background = "radial-gradient(circle at center, transparent 40%, rgba(0, 0, 0, 0.62) 100%)"
 
   const wallCard = createElement("section")
-  wallCard.style.width = "min(90rem, 100%)"
-  wallCard.style.minHeight = "min(88vh, 52rem)"
-  wallCard.style.display = "grid"
-  wallCard.style.gridTemplateColumns = "minmax(14rem, 0.72fr) minmax(0, 1.28fr)"
-  wallCard.style.gridAutoRows = "min-content"
-  wallCard.style.alignContent = "start"
-  wallCard.style.columnGap = "clamp(0.8rem, 2vw, 1.2rem)"
-  wallCard.style.rowGap = "0.72rem"
-  wallCard.style.padding = "clamp(0.9rem, 2vw, 1.2rem)"
-  wallCard.style.position = "relative"
-  wallCard.style.overflow = "hidden"
-  wallCard.style.border = "1px solid color-mix(in srgb, var(--mps-color-border) 72%, var(--mps-color-orbit-glow-halo))"
-  wallCard.style.borderRadius = "var(--mps-radius-lg)"
-  wallCard.style.background = [
-    "linear-gradient(152deg, var(--mps-overlay-depth-near) 0%, color-mix(in srgb, var(--mps-color-surface) 78%, black) 34%, color-mix(in srgb, var(--mps-color-surface-raised) 72%, black) 100%)",
-    "radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--mps-color-telemetry-soft) 64%, transparent) 0%, transparent 38%)"
-  ].join(",")
-  wallCard.style.boxShadow = "var(--mps-elevation-orbit), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
-  wallCard.style.backdropFilter = "blur(6px)"
+  wallCard.style.width = "100%"
+  wallCard.style.height = "100vh"
+  wallCard.style.position = "absolute"
+  wallCard.style.inset = "0"
+  wallCard.style.display = "flex"
+  wallCard.style.alignItems = "center"
+  wallCard.style.justifyContent = "center"
+  wallCard.style.overflow = "visible"
+  wallCard.style.zIndex = "2"
 
-  const orbitalMeridian = createElement("div")
-  orbitalMeridian.setAttribute("aria-hidden", "true")
-  orbitalMeridian.style.position = "absolute"
-  orbitalMeridian.style.inset = "0"
-  orbitalMeridian.style.pointerEvents = "none"
-  orbitalMeridian.style.zIndex = "0"
-  orbitalMeridian.style.background = [
-    "repeating-radial-gradient(circle at 104% 50%, transparent 0 3.7rem, rgba(122, 217, 255, 0.11) 3.7rem 3.82rem)",
-    "linear-gradient(90deg, transparent 0%, rgba(122, 217, 255, 0.08) 30%, rgba(122, 217, 255, 0.14) 45%, transparent 72%)"
-  ].join(",")
-
-  const telemetryGrid = createElement("div")
-  telemetryGrid.setAttribute("aria-hidden", "true")
-  telemetryGrid.style.position = "absolute"
-  telemetryGrid.style.inset = "0"
-  telemetryGrid.style.pointerEvents = "none"
-  telemetryGrid.style.zIndex = "0"
-  telemetryGrid.style.opacity = "0.22"
-  telemetryGrid.style.backgroundImage = [
-    "linear-gradient(to right, rgba(122, 217, 255, 0.14) 1px, transparent 1px)",
-    "linear-gradient(to bottom, rgba(122, 217, 255, 0.08) 1px, transparent 1px)"
-  ].join(",")
-  telemetryGrid.style.backgroundSize = "2.6rem 2.6rem"
-
-  root.append(orbitHaloNear, orbitHaloFar)
-  wallCard.append(orbitalMeridian, telemetryGrid)
+  root.append(ambientGlow, horizonVignette)
 
   return {
     root,

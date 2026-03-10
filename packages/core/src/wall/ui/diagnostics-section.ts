@@ -39,23 +39,23 @@ export function createWallDiagnosticsSection(
     : "n/a"
 
   diagnosticsPanel.style.display = "grid"
-  diagnosticsPanel.style.gap = "0.68rem"
-  diagnosticsPanel.style.padding = "0.86rem"
-  diagnosticsPanel.style.borderRadius = "0.76rem"
+  diagnosticsPanel.style.gap = "0.72rem"
+  diagnosticsPanel.style.padding = "0.9rem"
+  diagnosticsPanel.style.borderRadius = "1rem"
   diagnosticsPanel.style.border = "1px solid color-mix(in srgb, var(--mps-color-orbit-glow-halo) 68%, var(--mps-color-border))"
   diagnosticsPanel.style.background = [
-    "linear-gradient(154deg, color-mix(in srgb, var(--mps-overlay-depth-near) 82%, black) 0%, color-mix(in srgb, var(--mps-overlay-depth-far) 78%, black) 100%)",
+    "linear-gradient(154deg, color-mix(in srgb, var(--mps-overlay-depth-near) 80%, black) 0%, color-mix(in srgb, var(--mps-overlay-depth-far) 84%, black) 100%)",
     "radial-gradient(circle at 96% -8%, color-mix(in srgb, var(--mps-color-orbit-glow-halo) 52%, transparent) 0%, transparent 48%)"
   ].join(",")
-  diagnosticsPanel.style.boxShadow = "0 14px 28px rgba(3, 8, 18, 0.26), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
-  diagnosticsPanel.style.backdropFilter = "blur(6px)"
+  diagnosticsPanel.style.boxShadow = "0 18px 36px rgba(0, 0, 0, 0.38), inset 0 0 0 1px rgba(122, 217, 255, 0.12)"
+  diagnosticsPanel.style.backdropFilter = "blur(16px)"
 
   function applyTelemetryChipStyle(chip: HTMLElement, variant: "neutral" | "emphasis"): void {
     chip.style.margin = "0"
-    chip.style.padding = "0.52rem 0.58rem"
-    chip.style.borderRadius = "0.54rem"
+    chip.style.padding = "0.54rem 0.6rem"
+    chip.style.borderRadius = "0.74rem"
     chip.style.border = "1px solid color-mix(in srgb, var(--mps-color-border) 68%, var(--mps-color-telemetry-muted))"
-    chip.style.background = "color-mix(in srgb, var(--mps-overlay-depth-near) 76%, black)"
+    chip.style.background = "color-mix(in srgb, var(--mps-overlay-depth-near) 78%, black)"
 
     if (variant === "emphasis") {
       chip.style.color = "var(--mps-color-foreground-support)"
@@ -156,7 +156,7 @@ export function createWallDiagnosticsSection(
   diagnosticsSubheading.style.margin = "0"
   diagnosticsSubheading.style.fontFamily = "var(--mps-font-mono)"
   diagnosticsSubheading.style.fontSize = "0.66rem"
-  diagnosticsSubheading.style.letterSpacing = "0.1em"
+  diagnosticsSubheading.style.letterSpacing = "0.12em"
   diagnosticsSubheading.style.textTransform = "uppercase"
   diagnosticsSubheading.style.color = "var(--mps-color-foreground-muted)"
 
@@ -174,15 +174,15 @@ export function createWallDiagnosticsSection(
   }) as HTMLButtonElement
   profileToggle.type = "button"
   profileToggle.style.width = "fit-content"
-  profileToggle.style.padding = "0.5rem 0.72rem"
-  profileToggle.style.borderRadius = "0.52rem"
+  profileToggle.style.padding = "0.52rem 0.74rem"
+  profileToggle.style.borderRadius = "0.74rem"
   profileToggle.style.border = "1px solid color-mix(in srgb, var(--mps-color-border) 64%, var(--mps-color-telemetry-muted))"
   profileToggle.style.background = "linear-gradient(135deg, color-mix(in srgb, var(--mps-color-surface-raised) 82%, black) 0%, color-mix(in srgb, var(--mps-color-surface) 86%, black) 100%)"
   profileToggle.style.color = "var(--mps-color-foreground-support)"
   profileToggle.style.textTransform = "uppercase"
   profileToggle.style.fontSize = "0.72rem"
-  profileToggle.style.letterSpacing = "0.05em"
-  profileToggle.style.boxShadow = "inset 0 0 0 1px rgba(122, 217, 255, 0.08)"
+  profileToggle.style.letterSpacing = "0.06em"
+  profileToggle.style.boxShadow = "0 10px 22px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
   profileToggle.addEventListener("click", options.onToggleDetailProfile)
 
   const diagnosticsExportButton = createElement("button", {
@@ -191,15 +191,15 @@ export function createWallDiagnosticsSection(
   }) as HTMLButtonElement
   diagnosticsExportButton.type = "button"
   diagnosticsExportButton.style.width = "fit-content"
-  diagnosticsExportButton.style.padding = "0.5rem 0.72rem"
-  diagnosticsExportButton.style.borderRadius = "0.52rem"
+  diagnosticsExportButton.style.padding = "0.52rem 0.74rem"
+  diagnosticsExportButton.style.borderRadius = "0.74rem"
   diagnosticsExportButton.style.border = "1px solid color-mix(in srgb, var(--mps-color-accent-ring) 66%, var(--mps-color-border))"
   diagnosticsExportButton.style.background = "linear-gradient(135deg, color-mix(in srgb, var(--mps-color-accent-muted) 76%, black) 0%, color-mix(in srgb, var(--mps-color-accent-soft) 65%, black) 100%)"
   diagnosticsExportButton.style.color = "var(--mps-color-foreground-emphasis)"
   diagnosticsExportButton.style.textTransform = "uppercase"
   diagnosticsExportButton.style.fontSize = "0.72rem"
-  diagnosticsExportButton.style.letterSpacing = "0.05em"
-  diagnosticsExportButton.style.boxShadow = "0 8px 16px rgba(12, 24, 44, 0.24), inset 0 0 0 1px rgba(122, 217, 255, 0.08)"
+  diagnosticsExportButton.style.letterSpacing = "0.06em"
+  diagnosticsExportButton.style.boxShadow = "0 12px 24px rgba(12, 24, 44, 0.32), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
   diagnosticsExportButton.addEventListener("click", options.onExportCrashReport)
 
   const diagnosticsExportStatus = createElement("p", {

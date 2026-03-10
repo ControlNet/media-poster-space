@@ -1,7 +1,4 @@
-import {
-  createWallPosterSelectionTransition,
-  type WallInteractionTransitionResult
-} from "../wall"
+import { type WallInteractionTransitionResult } from "../wall"
 import type { CreateOnboardingWallRouteViewOptions } from "./onboarding-wall-route"
 
 export interface OnboardingWallCallbackState {
@@ -9,6 +6,10 @@ export interface OnboardingWallCallbackState {
   diagnosticsOpen: boolean
   activePosterIndex: number | null
   wallControlsHidden: boolean
+}
+
+export function shouldSuppressIdleHideTransitionWhenDiagnosticsOpen(state: Pick<OnboardingWallCallbackState, "diagnosticsOpen">): boolean {
+  return state.diagnosticsOpen
 }
 
 export function createOnboardingWallRouteCallbacks(options: {
@@ -25,7 +26,6 @@ export function createOnboardingWallRouteCallbacks(options: {
   CreateOnboardingWallRouteViewOptions,
   | "onToggleDetailProfile"
   | "onExportCrashReport"
-  | "onPosterSelect"
   | "onReturnToOnboarding"
   | "onRefresh"
   | "onToggleDiagnostics"
@@ -38,19 +38,6 @@ export function createOnboardingWallRouteCallbacks(options: {
       options.onRenderRequest()
     },
     onExportCrashReport: options.onExportCrashReport,
-    onPosterSelect: (index) => {
-      const shouldRender = options.applyWallInteractionTransition(
-        createWallPosterSelectionTransition({
-          activePosterIndex: options.state.activePosterIndex,
-          wallControlsHidden: options.state.wallControlsHidden
-        }, index)
-      )
-      options.scheduleIdleHide()
-
-      if (shouldRender) {
-        options.onRenderRequest()
-      }
-    },
     onReturnToOnboarding: () => {
       options.navigateToOnboarding()
       options.onRenderRequest()

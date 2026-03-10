@@ -48,7 +48,6 @@ export interface CreateOnboardingWallRouteViewOptions {
   retentionMaxBytes: number
   onToggleDetailProfile: () => void
   onExportCrashReport: () => void
-  onPosterSelect: (index: number) => void
   onReturnToOnboarding: () => void
   onRefresh: () => void
   onToggleDiagnostics: () => void
@@ -80,8 +79,7 @@ export function createOnboardingWallRouteView(
   })
 
   const posterGrid = createWallPosterGridSection(options.createElement, {
-    items: options.state.ingestionItems,
-    onPosterSelect: options.onPosterSelect
+    items: options.state.ingestionItems
   })
 
   const diagnosticsPanel = createWallDiagnosticsSection(options.createElement, {
@@ -157,15 +155,7 @@ export function createOnboardingWallRouteView(
     onClose: options.onCloseDetailCard
   })
 
-  wallCard.append(
-    heading,
-    libraries,
-    preferences,
-    ingestionSummary,
-    posterGrid,
-    detailCard,
-    controlsContainer
-  )
-  root.append(wallCard)
+  wallCard.append(posterGrid)
+  root.append(wallCard, controlsContainer, heading, libraries, preferences, ingestionSummary, detailCard)
   return root
 }
