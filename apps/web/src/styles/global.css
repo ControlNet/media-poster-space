@@ -54,8 +54,18 @@
   --mps-font-body: "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
 }
 
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
 [data-testid="app-shell"] {
   background: var(--mps-color-canvas);
   color: var(--mps-color-foreground);
   font-family: var(--mps-font-body);
+  width: 100%;
+  height: 100%;
 }
