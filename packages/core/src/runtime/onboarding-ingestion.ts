@@ -10,6 +10,19 @@ import type {
 } from "../types"
 import type { DiagnosticsLogEntry } from "./diagnostics"
 import type { OnboardingBaseState } from "./onboarding-shared"
+import {
+  consumeRuntimePosterQueueItem,
+  createRuntimePosterQueueRefillRuntime,
+  createRuntimePosterQueueState,
+  enqueueRuntimePosterQueueItems,
+  getRuntimePosterQueueRefillIntent,
+  type RuntimePosterQueueRefillReason,
+  type RuntimePosterQueueState
+} from "./poster-queue"
+import type {
+  RuntimePosterQueueRefillFetchAdapter,
+  RuntimePosterQueueRefillFetchAdapterState
+} from "./poster-queue-refill-adapter"
 
 export interface OnboardingPosterCacheEntry {
   key: string
@@ -60,6 +73,13 @@ export interface CreateOnboardingIngestionControllerOptions<Snapshot = unknown> 
     activePosterIndex: number | null,
     itemCount: number
   ) => number | null
+  createQueueRefillFetchAdapter?: (options: {
+    session: ProviderSession
+    selectedLibraryIds: readonly string[]
+    cursor: string | null
+    updatedSince: string | null
+  }) => RuntimePosterQueueRefillFetchAdapter
+  onStreamReadyTransition?: (transition: OnboardingPosterStreamReadyTransition) => void
   reconnectInitialBackoffMs: number
   reconnectMaxBackoffMs: number
   reconnectGuideThresholdMs: number
@@ -77,19 +97,235 @@ export interface OnboardingIngestionController {
     session: ProviderSession,
     selectedLibraryIds: readonly string[]
   ) => void
+  consumeNextPosterForStream: () => Promise<MediaItem | null>
   refreshNow: () => Promise<void>
+}
+
+export interface OnboardingPosterStreamReadyTransition {
+  poster: MediaItem
+  queueSize: number
+  refillReason: RuntimePosterQueueRefillReason | null
 }
 
 export function createOnboardingIngestionController<Snapshot = unknown>(
   options: CreateOnboardingIngestionControllerOptions<Snapshot>
 ): OnboardingIngestionController {
   const now = options.now ?? Date.now
+  const providerErrorCategories: readonly ProviderErrorCategory[] = [
+    "auth",
+    "network",
+    "timeout",
+    "cors",
+    "unknown"
+  ]
 
   let ingestionRuntime: MediaIngestionRuntime | null = null
   let ingestionRuntimeKey: string | null = null
   let reconnectTimerId: ReturnType<typeof setTimeout> | null = null
   let reconnectStartedAtMs: number | null = null
   let reconnectBackoffMs = options.reconnectInitialBackoffMs
+  let posterQueueState: RuntimePosterQueueState = createRuntimePosterQueueState()
+  let posterQueueRefillRuntime = createRuntimePosterQueueRefillRuntime()
+  let queueRefillSourceItems: MediaItem[] = []
+  let queueRefillSourceCursor = 0
+  let queueRefillFetchAdapter: RuntimePosterQueueRefillFetchAdapter | null = null
+  let queueLifecycleNonce = 0
+
+  function isProviderErrorCategory(value: unknown): value is ProviderErrorCategory {
+    if (typeof value !== "string") {
+      return false
+    }
+
+    return providerErrorCategories.includes(value as ProviderErrorCategory)
+  }
+
+  function resetQueueState(): void {
+    queueLifecycleNonce += 1
+    posterQueueState = createRuntimePosterQueueState()
+    posterQueueRefillRuntime = createRuntimePosterQueueRefillRuntime()
+    queueRefillSourceItems = []
+    queueRefillSourceCursor = 0
+    queueRefillFetchAdapter = null
+  }
+
+  function syncWallItemsFromQueue(): void {
+    options.state.ingestionItems = [...posterQueueState.items]
+    options.state.ingestionItemCount = posterQueueState.items.length
+  }
+
+  function setQueueRefillSourceItems(items: readonly MediaItem[]): void {
+    queueRefillSourceItems = [...items]
+    queueRefillSourceCursor = 0
+  }
+
+  function takeQueueRefillSourceItems(requestedCount: number, options: {
+    allowWrap: boolean
+  }): MediaItem[] {
+    const normalizedCount = Number.isFinite(requestedCount)
+      ? Math.max(Math.trunc(requestedCount), 0)
+      : 0
+
+    if (normalizedCount === 0 || queueRefillSourceItems.length === 0) {
+      return []
+    }
+
+    const fetchedItems: MediaItem[] = []
+    for (let index = 0; index < normalizedCount; index += 1) {
+      if (queueRefillSourceCursor >= queueRefillSourceItems.length) {
+        if (!options.allowWrap) {
+          break
+        }
+
+        queueRefillSourceCursor = 0
+      }
+
+      const nextItem = queueRefillSourceItems[queueRefillSourceCursor]
+      if (!nextItem) {
+        break
+      }
+
+      fetchedItems.push(nextItem)
+      queueRefillSourceCursor += 1
+    }
+
+    return fetchedItems
+  }
+
+  function seedPosterQueueFromSource(): void {
+    const bootstrapIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState })
+    if (!bootstrapIntent.shouldRefill || bootstrapIntent.requestedCount === 0) {
+      syncWallItemsFromQueue()
+      return
+    }
+
+    const bootstrapItems = takeQueueRefillSourceItems(bootstrapIntent.requestedCount, {
+      allowWrap: false
+    })
+    if (bootstrapItems.length === 0) {
+      syncWallItemsFromQueue()
+      return
+    }
+
+    posterQueueState = enqueueRuntimePosterQueueItems({
+      state: posterQueueState,
+      items: bootstrapItems
+    }).nextState
+    syncWallItemsFromQueue()
+  }
+
+  async function fetchQueueRefillItems(requestedCount: number): Promise<readonly MediaItem[]> {
+    if (queueRefillFetchAdapter) {
+      return queueRefillFetchAdapter.fetchItems(requestedCount)
+    }
+
+    return takeQueueRefillSourceItems(requestedCount, {
+      allowWrap: true
+    })
+  }
+
+  function toQueueRefillFetchAdapterStateSnapshot(): RuntimePosterQueueRefillFetchAdapterState | null {
+    if (!queueRefillFetchAdapter) {
+      return null
+    }
+
+    return queueRefillFetchAdapter.getState()
+  }
+
+  async function refillPosterQueueIfNeeded(source: "ingestion-ready" | "stream-consume"): Promise<void> {
+    if (!options.isWallRouteActive()) {
+      return
+    }
+
+    const refillIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState })
+    if (!refillIntent.shouldRefill || refillIntent.reason === null || refillIntent.requestedCount === 0) {
+      return
+    }
+
+    const lifecycleNonceAtStart = queueLifecycleNonce
+    options.appendDiagnosticsLog({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      event: "queue.refill-requested",
+      details: {
+        source,
+        reason: refillIntent.reason,
+        requestedCount: refillIntent.requestedCount,
+        queueSize: posterQueueState.items.length,
+        inFlight: posterQueueRefillRuntime.hasInFlightRefill()
+      }
+    })
+
+    try {
+      const refillResult = await posterQueueRefillRuntime.refillIfNeeded({
+        state: posterQueueState,
+        fetchItems: fetchQueueRefillItems
+      })
+
+      if (queueLifecycleNonce !== lifecycleNonceAtStart) {
+        return
+      }
+
+      posterQueueState = refillResult.nextState
+      syncWallItemsFromQueue()
+      options.state.activePosterIndex = options.normalizeWallActivePosterIndex(
+        options.state.activePosterIndex,
+        options.state.ingestionItems.length
+      )
+
+      if (ingestionRuntimeKey) {
+        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+      }
+
+      options.appendDiagnosticsLog({
+        timestamp: new Date().toISOString(),
+        level: "info",
+        event: "queue.refill-completed",
+        details: {
+          source,
+          reason: refillResult.reason,
+          requestedCount: refillResult.requestedCount,
+          fetchedCount: refillResult.fetchedCount,
+          acceptedCount: refillResult.acceptedCount,
+          duplicateCount: refillResult.duplicateCount,
+          starvation: refillResult.starvation,
+          queueSize: posterQueueState.items.length,
+          adapterState: toQueueRefillFetchAdapterStateSnapshot()
+        }
+      })
+
+      options.onRenderRequest()
+    } catch (error) {
+      if (queueLifecycleNonce !== lifecycleNonceAtStart) {
+        return
+      }
+
+      const providerErrorCategory =
+        typeof error === "object"
+        && error !== null
+        && "providerError" in error
+        && typeof error.providerError === "object"
+        && error.providerError !== null
+        && "category" in error.providerError
+        && isProviderErrorCategory(error.providerError.category)
+          ? error.providerError.category
+          : null
+
+      options.appendDiagnosticsLog({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        event: "queue.refill-failed",
+        details: {
+          source,
+          queueSize: posterQueueState.items.length,
+          errorCategory: providerErrorCategory,
+          message: error instanceof Error ? error.message : "Queue refill failed"
+        }
+      })
+
+      scheduleReconnectAttempt(providerErrorCategory)
+      options.onRenderRequest()
+    }
+  }
 
   function clearReconnectTimer(): void {
     if (!reconnectTimerId) {
@@ -144,13 +380,16 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       .list({ touch: false, sortByScore: true })
       .map((item) => item.value)
 
+    setQueueRefillSourceItems(cachedItems)
+    posterQueueState = createRuntimePosterQueueState()
+    seedPosterQueueFromSource()
+
     if (cachedItems.length === 0) {
       return
     }
 
     options.state.ingestionStatus = "ready"
-    options.state.ingestionItems = cachedItems
-    options.state.ingestionItemCount = cachedItems.length
+    syncWallItemsFromQueue()
     options.state.ingestionFetchedAt = new Date().toISOString()
     options.state.ingestionTrigger = null
     options.state.ingestionError = null
@@ -230,6 +469,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   }
 
   function resetIngestionState(): void {
+    resetQueueState()
     options.state.ingestionStatus = "idle"
     options.state.ingestionItems = []
     options.state.ingestionItemCount = 0
@@ -247,12 +487,21 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     options.state.ingestionTrigger = nextState.trigger
 
     if (nextState.items.length > 0) {
-      options.state.ingestionItems = [...nextState.items]
-      options.state.ingestionItemCount = nextState.items.length
+      setQueueRefillSourceItems(nextState.items)
+      if (posterQueueState.items.length === 0) {
+        seedPosterQueueFromSource()
+      }
+
       if (ingestionRuntimeKey) {
-        cacheIngestionItems(ingestionRuntimeKey, nextState.items)
+        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+      }
+
+      if (nextState.status === "ready") {
+        void refillPosterQueueIfNeeded("ingestion-ready")
       }
     } else if (nextState.status === "ready") {
+      setQueueRefillSourceItems([])
+      posterQueueState = createRuntimePosterQueueState()
       options.state.ingestionItems = []
       options.state.ingestionItemCount = 0
       if (ingestionRuntimeKey) {
@@ -326,6 +575,12 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     disposeRuntime()
     ingestionRuntimeKey = runtimeKey
     hydratePosterCache(runtimeKey)
+    queueRefillFetchAdapter = options.createQueueRefillFetchAdapter?.({
+      session,
+      selectedLibraryIds,
+      cursor: null,
+      updatedSince: options.state.ingestionFetchedAt
+    }) ?? null
     ingestionRuntime = options.createRuntime({
       session,
       selectedLibraryIds,
@@ -334,9 +589,44 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     ingestionRuntime.start()
   }
 
+  async function consumeNextPosterForStream(): Promise<MediaItem | null> {
+    if (posterQueueState.items.length === 0) {
+      await refillPosterQueueIfNeeded("stream-consume")
+    }
+
+    const consumeResult = consumeRuntimePosterQueueItem({
+      state: posterQueueState
+    })
+    posterQueueState = consumeResult.nextState
+    syncWallItemsFromQueue()
+    options.state.activePosterIndex = options.normalizeWallActivePosterIndex(
+      options.state.activePosterIndex,
+      options.state.ingestionItems.length
+    )
+
+    if (ingestionRuntimeKey) {
+      cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+    }
+
+    if (!consumeResult.consumedItem) {
+      return null
+    }
+
+    options.onStreamReadyTransition?.({
+      poster: consumeResult.consumedItem,
+      queueSize: posterQueueState.items.length,
+      refillReason: consumeResult.refillIntent.reason
+    })
+
+    void refillPosterQueueIfNeeded("stream-consume")
+
+    return consumeResult.consumedItem
+  }
+
   return {
     disposeRuntime,
     ensureRuntime,
+    consumeNextPosterForStream,
     refreshNow: async () => {
       if (!ingestionRuntime) {
         return

@@ -128,6 +128,17 @@ function createEmptyMediaPage(now: () => Date): MediaPage {
   };
 }
 
+function resolveRefreshCursor(
+  trigger: MediaIngestionRefreshTrigger,
+  currentCursor: string | null
+): string | undefined {
+  if (trigger !== "scheduled") {
+    return undefined;
+  }
+
+  return currentCursor ?? undefined;
+}
+
 export async function ingestSelectedMedia(options: IngestSelectedMediaOptions): Promise<MediaIngestionResult> {
   const selectedLibraryIds = normalizeSelectedLibraryIds(options.selectedLibraryIds);
 
@@ -182,6 +193,8 @@ export function createMediaIngestionRuntime(
       return cloneState(state);
     }
 
+    const cursor = resolveRefreshCursor(trigger, state.nextCursor);
+
     state = {
       ...state,
       status: "refreshing",
@@ -197,7 +210,8 @@ export function createMediaIngestionRuntime(
           : await ingestSelectedMedia({
               provider: options.provider,
               session: options.session,
-              selectedLibraryIds
+              selectedLibraryIds,
+              ...(cursor ? { cursor } : {})
             });
 
       state = {

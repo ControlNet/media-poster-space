@@ -158,7 +158,7 @@ export function createOnboardingDiagnosticsController(options: {
     append: (entry: DiagnosticsLogEntry) => unknown
   }
   isWallRouteActive: () => boolean
-  onRenderRequest: () => void
+  onDiagnosticsRenderRequest: (sample: DiagnosticsSample) => void
   samplingIntervalMs: number
 }): OnboardingDiagnosticsController {
   let diagnosticsSampler: ReturnType<typeof createDiagnosticsSampler> | null = null
@@ -196,7 +196,7 @@ export function createOnboardingDiagnosticsController(options: {
           })
 
           if (options.isWallRouteActive()) {
-            options.onRenderRequest()
+            options.onDiagnosticsRenderRequest(sample)
           }
         }
       })
