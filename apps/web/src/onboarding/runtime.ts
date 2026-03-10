@@ -601,12 +601,16 @@ export function createOnboardingAppRuntime(
     const wallPosterGrid = target.querySelector<HTMLElement>('[data-testid="wall-poster-grid"]')
     const controlsContainer = target.querySelector<HTMLElement>('[data-testid="wall-controls-container"]')
     const detailCard = target.querySelector<HTMLElement>('[data-testid="detail-card"]')
+    const wallClock = target.querySelector<HTMLElement>('[data-testid="wall-clock-heading"]')
 
     if (!wallRoot || !wallPosterGrid || !controlsContainer || !detailCard) {
       return false
     }
 
     const controlsHidden = state.wallControlsHidden
+    if (wallClock) {
+      wallClock.style.opacity = controlsHidden ? "0.22" : "0.85"
+    }
     controlsContainer.style.opacity = controlsHidden ? "0" : "1"
     controlsContainer.style.transform = `translateX(-50%) ${controlsHidden ? "translateY(1rem)" : "translateY(0)"}`
     controlsContainer.style.visibility = controlsHidden ? "hidden" : "visible"

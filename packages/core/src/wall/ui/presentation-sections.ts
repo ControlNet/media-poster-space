@@ -241,12 +241,33 @@ export function createWallPosterRowOrder(length: number, rowIndex: number): numb
 
 export function createWallHeadingSection(
   createElement: ElementFactory,
-  handoff: WallHandoff
+  handoff: WallHandoff,
+  options: { controlsHidden: boolean }
 ): {
   heading: HTMLHeadingElement
   libraries: HTMLParagraphElement
   preferences: HTMLParagraphElement
 } {
+  // Inject OLED protection keyframes if not already present
+  if (typeof document !== "undefined" && !document.getElementById("mps-oled-protection-styles")) {
+    const styleTag = document.createElement("style")
+    styleTag.id = "mps-oled-protection-styles"
+    styleTag.textContent = `
+      @keyframes mps-oled-pixel-shift {
+        0% { transform: translate(0, 0); }
+        25% { transform: translate(12px, 8px); }
+        50% { transform: translate(-8px, 15px); }
+        75% { transform: translate(-14px, -6px); }
+        100% { transform: translate(0, 0); }
+      }
+      @keyframes mps-oled-breathing {
+        0%, 100% { filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3)) brightness(1); }
+        50% { filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3)) brightness(0.7); }
+      }
+    `
+    document.head.append(styleTag)
+  }
+
   const now = new Date()
   const clockText = now.toLocaleTimeString("en-US", {
     hour12: false,
@@ -254,23 +275,35 @@ export function createWallHeadingSection(
     minute: "2-digit"
   })
 
-  const heading = createElement("h1", { textContent: clockText })
+  const heading = createElement("h1", {
+    textContent: clockText,
+    testId: "wall-clock-heading"
+  })
   heading.style.margin = "0"
   heading.style.position = "fixed"
-  heading.style.left = "3.1rem"
-  heading.style.bottom = "8.6rem"
+  heading.style.left = "2.6rem"
+  heading.style.bottom = "2.4rem"
   heading.style.zIndex = "101"
   heading.style.fontFamily = "var(--mps-font-body)"
-  heading.style.fontSize = "clamp(3.2rem, 7vw, 6rem)"
+  heading.style.fontSize = "clamp(3.5rem, 8vw, 7.5rem)"
   heading.style.fontWeight = "300"
-  heading.style.lineHeight = "1"
-  heading.style.letterSpacing = "-0.04em"
+  heading.style.lineHeight = "0.9"
+  heading.style.letterSpacing = "-0.05em"
   heading.style.color = "transparent"
-  heading.style.backgroundImage = "linear-gradient(180deg, #ffffff 40%, #888888 100%)"
+  heading.style.backgroundImage = "linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.5) 100%)"
   heading.style.backgroundClip = "text"
   heading.style.webkitBackgroundClip = "text"
   heading.style.webkitTextFillColor = "transparent"
+  heading.style.filter = "drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3))"
   heading.style.pointerEvents = "none"
+
+  // OLED Protection logic
+  heading.style.transition = "opacity 1.2s ease-in-out, filter 1.2s ease-in-out"
+  heading.style.opacity = options.controlsHidden ? "0.22" : "0.85"
+  heading.style.animation = [
+    "mps-oled-pixel-shift 600s linear infinite",
+    "mps-oled-breathing 15s ease-in-out infinite"
+  ].join(",")
 
   const libraries = createElement("p", {
     textContent: `Libraries selected: ${handoff.selectedLibraryIds.join(", ") || "none"}`,
@@ -289,6 +322,7 @@ export function createWallHeadingSection(
   libraries.style.textTransform = "uppercase"
   libraries.style.color = "rgba(255, 255, 255, 0.56)"
   libraries.style.pointerEvents = "none"
+  libraries.style.display = "none"
 
   const preferences = createElement("p", {
     textContent: `Density: ${handoff.preferences.density}; remember server: ${handoff.preferences.rememberServer ? "yes" : "no"}; remember username: ${handoff.preferences.rememberUsername ? "yes" : "no"}; remember password: ${handoff.preferences.rememberPasswordRequested ? "yes" : "no"}.`
@@ -306,6 +340,7 @@ export function createWallHeadingSection(
   preferences.style.textTransform = "uppercase"
   preferences.style.color = "rgba(255, 255, 255, 0.4)"
   preferences.style.pointerEvents = "none"
+  preferences.style.display = "none"
 
   return {
     heading,
@@ -344,6 +379,7 @@ export function createWallIngestionSummarySection(
   ingestionSummary.style.letterSpacing = "0.05em"
   ingestionSummary.style.textTransform = "uppercase"
   ingestionSummary.style.pointerEvents = "none"
+  ingestionSummary.style.display = "none"
 
   return ingestionSummary
 }

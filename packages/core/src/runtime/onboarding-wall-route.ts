@@ -69,7 +69,9 @@ export function createOnboardingWallRouteView(
   options: CreateOnboardingWallRouteViewOptions
 ): HTMLElement {
   const { root, wallCard } = createWallRouteShell(options.createElement)
-  const { heading, libraries, preferences } = createWallHeadingSection(options.createElement, options.handoff)
+  const { heading, libraries, preferences } = createWallHeadingSection(options.createElement, options.handoff, {
+    controlsHidden: options.state.wallControlsHidden
+  })
 
   const ingestionSummary = createWallIngestionSummarySection(options.createElement, {
     ingestionItemCount: options.state.ingestionItemCount,
