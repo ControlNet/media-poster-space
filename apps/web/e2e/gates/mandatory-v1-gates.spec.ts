@@ -268,7 +268,7 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
   const offlineStart = Date.now()
   await page.reload()
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible({ timeout: 5_000 })
-  await expect(page.getByTestId("poster-item-0").first()).toBeVisible({ timeout: 5_000 })
+  await expect(page.locator('[data-testid^="poster-item-"]').first()).toBeVisible({ timeout: 5_000 })
   const offlinePaintMs = Date.now() - offlineStart
 
   await page.screenshot({ path: screenshotPaths[1], fullPage: true })

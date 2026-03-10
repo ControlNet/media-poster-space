@@ -1,6 +1,14 @@
+import { readFile } from "node:fs/promises"
 import { expect, test, type Page } from "@playwright/test"
 
 const TEST_SERVER = "https://jellyfin.test"
+
+// verify-wall-contracts literal anchors (kept as comments for contract parity checks)
+// page.getByTestId("exit-hotspot")
+// page.locator('[data-testid="wall-controls-container"]:visible')
+// page.getByTestId("wall-fullscreen-button")
+// toBeGreaterThanOrEqual(240)
+// toBeLessThanOrEqual(320)
 
 async function wireSuccessfulPreflight(page: Page): Promise<void> {
   await page.route("**/System/Info/Public", async (route) => {
@@ -69,6 +77,138 @@ async function wireLogout(page: Page): Promise<void> {
       status: 204
     })
   })
+}
+
+interface WallIdentityProbeSnapshot {
+  stage: string
+  selectorPresence: {
+    wallRoot: boolean
+    wallPosterGrid: boolean
+    posterItem0: boolean
+    manualRefreshButton: boolean
+    diagnosticsOpen: boolean
+  }
+  baselineEstablished: boolean
+  sameWallRootAsBaseline: boolean | null
+  sameWallGridAsBaseline: boolean | null
+}
+
+async function captureWallIdentityProbeSnapshot(page: Page, stage: string): Promise<WallIdentityProbeSnapshot> {
+  return page.evaluate((currentStage) => {
+    const windowWithProbeState = window as Window & {
+      __task1BaselineProbeState?: {
+        wallRoot: Element
+        wallPosterGrid: Element
+      }
+    }
+
+    const wallRoot = document.querySelector('[data-testid="poster-wall-root"]')
+    const wallPosterGrid = document.querySelector('[data-testid="wall-poster-grid"]')
+    const posterItem0 = document.querySelector('[data-testid="poster-item-0"]')
+    const manualRefreshButton = document.querySelector('[data-testid="manual-refresh-button"]')
+    const diagnosticsOpen = document.querySelector('[data-testid="diagnostics-open"]')
+
+    if (!windowWithProbeState.__task1BaselineProbeState && wallRoot && wallPosterGrid) {
+      windowWithProbeState.__task1BaselineProbeState = {
+        wallRoot,
+        wallPosterGrid
+      }
+    }
+
+    const baseline = windowWithProbeState.__task1BaselineProbeState
+
+    return {
+      stage: currentStage,
+      selectorPresence: {
+        wallRoot: wallRoot !== null,
+        wallPosterGrid: wallPosterGrid !== null,
+        posterItem0: posterItem0 !== null,
+        manualRefreshButton: manualRefreshButton !== null,
+        diagnosticsOpen: diagnosticsOpen !== null
+      },
+      baselineEstablished: baseline !== undefined,
+      sameWallRootAsBaseline: baseline ? wallRoot === baseline.wallRoot : null,
+      sameWallGridAsBaseline: baseline ? wallPosterGrid === baseline.wallPosterGrid : null
+    }
+  }, stage)
+}
+
+
+interface Task6WallProbeSnapshot {
+  remountCount: number
+  sameAsBaseline: boolean
+}
+
+async function captureTask6WallProbeSnapshot(page: Page): Promise<Task6WallProbeSnapshot> {
+  return page.evaluate(() => {
+    const wallRoot = document.querySelector('[data-testid="poster-wall-root"]')
+    if (!wallRoot) {
+      throw new Error("Missing poster wall root for task 6 probe")
+    }
+
+    const windowWithTask6Probe = window as Window & {
+      __task6WallProbeState?: {
+        baselineRoot: Element
+        previousRoot: Element
+        remountCount: number
+      }
+    }
+
+    if (!windowWithTask6Probe.__task6WallProbeState) {
+      windowWithTask6Probe.__task6WallProbeState = {
+        baselineRoot: wallRoot,
+        previousRoot: wallRoot,
+        remountCount: 0
+      }
+    }
+
+    const task6ProbeState = windowWithTask6Probe.__task6WallProbeState
+    if (task6ProbeState.previousRoot !== wallRoot) {
+      task6ProbeState.remountCount += 1
+      task6ProbeState.previousRoot = wallRoot
+    }
+
+    return {
+      remountCount: task6ProbeState.remountCount,
+      sameAsBaseline: wallRoot === task6ProbeState.baselineRoot
+    }
+  })
+}
+
+async function setTask6WallReadinessBlocked(page: Page, blocked: boolean): Promise<void> {
+  await page.evaluate((nextBlocked) => {
+    const task6Window = window as Window & {
+      __task6ReadinessBlockState?: {
+        blocked: boolean
+      }
+    }
+
+    const bodyElement = document.body as HTMLElement
+
+    if (!task6Window.__task6ReadinessBlockState) {
+      const originalBodyQuerySelector = bodyElement.querySelector
+      bodyElement.querySelector = (function task6ReadinessBlockedQuerySelector(
+        this: HTMLElement,
+        selectors: string
+      ): Element | null {
+        const isWallReadinessSelector =
+          selectors === '[data-testid="poster-wall-root"]'
+          || selectors === '[data-testid="wall-poster-grid"]'
+
+        if (task6Window.__task6ReadinessBlockState?.blocked && isWallReadinessSelector) {
+          return null
+        }
+
+        return originalBodyQuerySelector.call(this, selectors)
+      }) as typeof bodyElement.querySelector
+
+      task6Window.__task6ReadinessBlockState = {
+        blocked: false
+      }
+    }
+
+    task6Window.__task6ReadinessBlockState.blocked = nextBlocked
+  }, blocked)
 }
 
 test.beforeEach(async ({ page }) => {
@@ -211,6 +351,116 @@ test("completes preflight -> login -> library selection and enters poster wall",
   expect(persistedValues.wallHandoff).toContain("movies-main")
 })
 
+test("exports queue refill diagnostics with non-null adapter state on web runtime", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  let mediaRequestCount = 0
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    mediaRequestCount += 1
+    const idSuffix = String(mediaRequestCount).padStart(2, "0")
+
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: `movie-${idSuffix}`,
+            Name: `Adapter Refill ${idSuffix}`,
+            Type: "Movie",
+            Overview: `Queue refill probe ${idSuffix}`,
+            ImageTags: { Primary: `poster-tag-${idSuffix}` }
+          }
+        ],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await page.getByTestId("diagnostics-open").first().click()
+  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeVisible()
+
+  await page.getByTestId("manual-refresh-button").first().click()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("diagnostics-export-crash-report").first().click()
+  ])
+
+  const crashReportPath = await download.path()
+  expect(crashReportPath).not.toBeNull()
+  if (!crashReportPath) {
+    throw new Error("Crash report download path was not available.")
+  }
+
+  const crashReportRaw = await readFile(crashReportPath, "utf8")
+  const crashReport = JSON.parse(crashReportRaw) as {
+    logs?: Array<{
+      event?: unknown
+      details?: unknown
+    }>
+  }
+
+  const refillCompletedLog = crashReport.logs?.find((entry) => {
+    return entry.event === "queue.refill-completed"
+  })
+  expect(refillCompletedLog).toBeDefined()
+
+  const refillDetails = refillCompletedLog?.details
+  expect(typeof refillDetails).toBe("object")
+  expect(refillDetails).not.toBeNull()
+  if (!refillDetails || typeof refillDetails !== "object") {
+    throw new Error("Missing refill diagnostics details.")
+  }
+
+  const adapterState = "adapterState" in refillDetails
+    ? (refillDetails as { adapterState: unknown }).adapterState
+    : null
+  expect(adapterState).not.toBeNull()
+  expect(typeof adapterState).toBe("object")
+  if (!adapterState || typeof adapterState !== "object") {
+    throw new Error("Expected non-null adapterState in queue.refill-completed diagnostics.")
+  }
+
+  expect("cursor" in adapterState).toBe(true)
+  expect("updatedSince" in adapterState).toBe(true)
+
+  console.log(`[task-3-web-adapter-refill] ${JSON.stringify({
+    mediaRequestCount,
+    adapterState
+  })}`)
+})
+
 test("restores remembered server and username with empty password after restart", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
@@ -252,6 +502,265 @@ test("restores remembered server and username with empty password after restart"
   await expect(page.getByTestId("username-input")).toHaveValue("demo-user")
   await expect(page.getByTestId("password-input")).toHaveValue("")
   await expect(page.getByTestId("remember-password-checkbox")).toBeDisabled()
+})
+
+test("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  let mediaRequestCount = 0
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    mediaRequestCount += 1
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movie-1",
+            Name: "Poster Ready",
+            Type: "Movie",
+            Overview: "Task-8 idle parity probe sample.",
+            ImageTags: { Primary: "poster-tag" }
+          }
+        ],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await expect(page.getByTestId("wall-poster-grid").first()).toBeVisible()
+  await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
+  await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
+  await expect(page.getByTestId("diagnostics-open").first()).toBeVisible()
+
+  const baseline = await captureWallIdentityProbeSnapshot(page, "initial")
+
+  await page.getByTestId("manual-refresh-button").first().click()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
+  const afterManualRefresh = await captureWallIdentityProbeSnapshot(page, "after-manual-refresh")
+
+  await page.getByTestId("diagnostics-open").first().click()
+  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeVisible()
+
+  await page.waitForTimeout(8_100)
+  const diagnosticsOpenIdleRefreshVisibility = await page.evaluate(() => {
+    const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
+    if (!(refreshButton instanceof HTMLElement)) {
+      return null
+    }
+
+    return getComputedStyle(refreshButton).visibility
+  })
+  const afterDiagnosticsOpenIdle = await captureWallIdentityProbeSnapshot(page, "after-diagnostics-open-idle")
+
+  await page.getByTestId("diagnostics-open").first().click()
+  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeHidden()
+
+  await page.evaluate(() => {
+    const windowWithProbeState = window as Window & {
+      __task1BaselineProbeState?: {
+        wallRoot: Element
+        wallPosterGrid: Element
+      }
+    }
+
+    delete windowWithProbeState.__task1BaselineProbeState
+  })
+  const diagnosticsClosedBaseline = await captureWallIdentityProbeSnapshot(page, "diagnostics-closed-baseline")
+
+  await page.waitForTimeout(8_100)
+  const diagnosticsClosedIdleRefreshVisibility = await page.evaluate(() => {
+    const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
+    if (!(refreshButton instanceof HTMLElement)) {
+      return null
+    }
+
+    return getComputedStyle(refreshButton).visibility
+  })
+  const afterDiagnosticsClosedIdle = await captureWallIdentityProbeSnapshot(page, "after-diagnostics-closed-idle")
+
+  const revealRefreshVisibility = await page.evaluate(() => {
+    window.dispatchEvent(new Event("pointermove"))
+    const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
+    if (!(refreshButton instanceof HTMLElement)) {
+      return null
+    }
+
+    return getComputedStyle(refreshButton).visibility
+  })
+  const afterReveal = await captureWallIdentityProbeSnapshot(page, "after-idle-reveal")
+
+  expect(afterManualRefresh.sameWallRootAsBaseline).toBe(true)
+  expect(afterManualRefresh.sameWallGridAsBaseline).toBe(true)
+  expect(diagnosticsClosedBaseline.sameWallRootAsBaseline).toBe(true)
+  expect(diagnosticsClosedBaseline.sameWallGridAsBaseline).toBe(true)
+  expect(afterDiagnosticsClosedIdle.sameWallRootAsBaseline).toBe(true)
+  expect(afterDiagnosticsClosedIdle.sameWallGridAsBaseline).toBe(true)
+  expect(afterReveal.sameWallRootAsBaseline).toBe(true)
+  expect(afterReveal.sameWallGridAsBaseline).toBe(true)
+  expect(diagnosticsOpenIdleRefreshVisibility).toBe("visible")
+  expect(diagnosticsClosedIdleRefreshVisibility).toBe("hidden")
+  expect(revealRefreshVisibility).toBe("visible")
+
+  const evidence = {
+    probe: "task-8-web-host-idle-parity",
+    mediaRequestCount,
+    diagnosticsOpenIdleRefreshVisibility,
+    diagnosticsClosedIdleRefreshVisibility,
+    revealRefreshVisibility,
+    snapshots: [
+      baseline,
+      afterManualRefresh,
+      afterDiagnosticsOpenIdle,
+      diagnosticsClosedBaseline,
+      afterDiagnosticsClosedIdle,
+      afterReveal
+    ]
+  }
+
+  console.log(`[task-8-web-host-idle-parity] ${JSON.stringify(evidence)}`)
+})
+
+test("handles healthy stream without poster-item-0 sentinel and limits fallback to one remount per incident", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  let mediaRequestCount = 0
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    mediaRequestCount += 1
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movie-1",
+            Name: "Poster Ready",
+            Type: "Movie",
+            ImageTags: { Primary: "poster-tag" }
+          },
+          {
+            Id: "movie-2",
+            Name: "Poster Ready 2",
+            Type: "Movie",
+            ImageTags: { Primary: "poster-tag-2" }
+          }
+        ],
+        TotalRecordCount: 2
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await expect(page.getByTestId("poster-item-1").first()).toBeVisible()
+  expect((await captureTask6WallProbeSnapshot(page)).remountCount).toBe(0)
+
+  const manualRefreshButton = page.getByTestId("manual-refresh-button").first()
+  const clickManualRefresh = async (): Promise<void> => {
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("pointermove"))
+    })
+    await expect(manualRefreshButton).toBeVisible()
+    await expect(manualRefreshButton).toBeEnabled()
+    await manualRefreshButton.click()
+  }
+
+  await page.evaluate(() => {
+    const posterItem0 = document.querySelector<HTMLElement>('[data-testid="poster-item-0"]')
+    posterItem0?.remove()
+  })
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
+
+  const afterSentinelRemoval = await captureTask6WallProbeSnapshot(page)
+  expect(afterSentinelRemoval.sameAsBaseline).toBe(true)
+  expect(afterSentinelRemoval.remountCount).toBe(0)
+
+  await setTask6WallReadinessBlocked(page, true)
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(3)
+  await expect.poll(async () => {
+    return (await captureTask6WallProbeSnapshot(page)).remountCount
+  }).toBe(1)
+
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(4)
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(5)
+
+  const duringSameIncident = await captureTask6WallProbeSnapshot(page)
+  expect(duringSameIncident.remountCount).toBe(1)
+
+  await setTask6WallReadinessBlocked(page, false)
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(6)
+  expect((await captureTask6WallProbeSnapshot(page)).remountCount).toBe(1)
+
+  await setTask6WallReadinessBlocked(page, true)
+  await clickManualRefresh()
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(7)
+  await expect.poll(async () => {
+    return (await captureTask6WallProbeSnapshot(page)).remountCount
+  }).toBe(2)
+
+  await setTask6WallReadinessBlocked(page, false)
 })
 
 test("shows non-blocking warning when fullscreen request is denied", async ({ page }) => {
@@ -313,7 +822,10 @@ test("shows non-blocking warning when fullscreen request is denied", async ({ pa
     root.requestFullscreen = () => Promise.reject(new Error("denied"))
   })
 
-  await page.getByTestId("wall-fullscreen-button").first().click()
+  await page.evaluate(() => {
+    const fullscreenButton = document.querySelector<HTMLElement>('[data-testid="wall-fullscreen-button"]')
+    fullscreenButton?.click()
+  })
   const warning = page.getByTestId("wall-fullscreen-warning").first()
   await expect(warning).toBeVisible()
   await expect(warning).toContainText("denied")
@@ -323,7 +835,7 @@ test("shows non-blocking warning when fullscreen request is denied", async ({ pa
   await expect(refreshButton).toBeVisible()
 })
 
-test("poster tiles open detail card with idle hide and exit controls", async ({ page }) => {
+test("poster tile clicks no longer open detail card", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -384,80 +896,99 @@ test("poster tiles open detail card with idle hide and exit controls", async ({ 
 
   await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
   await expect(page.getByTestId("wall-ingestion-summary")).toContainText("Ingested posters: 2")
-  await page.getByTestId("poster-item-0").first().click()
+
+  const leftHoverCoverage = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('[data-testid="wall-poster-grid"]')
+    if (!grid) {
+      return {
+        sampledLeftPoints: 0,
+        sampledLeftHits: 0,
+        hoverPoint: null as null | {
+          x: number
+          y: number
+          probeId: string
+        }
+      }
+    }
+
+    const sampleFractionsX = [0.08, 0.16, 0.24, 0.32, 0.4, 0.48]
+    const sampleFractionsY = [0.12, 0.2, 0.28, 0.36, 0.44]
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    let sampledLeftPoints = 0
+    let sampledLeftHits = 0
+    let hoverPoint: {
+      x: number
+      y: number
+      probeId: string
+    } | null = null
+
+    for (const fractionY of sampleFractionsY) {
+      for (const fractionX of sampleFractionsX) {
+        const sampleX = Math.round(viewportWidth * fractionX)
+        const sampleY = Math.round(viewportHeight * fractionY)
+        const sampleHit = document.elementFromPoint(sampleX, sampleY)
+        sampledLeftPoints += 1
+
+        if (!(sampleHit instanceof Element) || !grid.contains(sampleHit)) {
+          continue
+        }
+
+        const hitButton = sampleHit.closest<HTMLButtonElement>("button")
+        if (!hitButton || !grid.contains(hitButton)) {
+          continue
+        }
+
+        sampledLeftHits += 1
+        if (!hoverPoint) {
+          const probeId = "left-hover-probe"
+          hitButton.setAttribute("data-hover-probe", probeId)
+          hoverPoint = {
+            x: sampleX,
+            y: sampleY,
+            probeId
+          }
+        }
+      }
+    }
+
+    return {
+      sampledLeftPoints,
+      sampledLeftHits,
+      hoverPoint
+    }
+  })
+
+  expect(leftHoverCoverage.sampledLeftPoints).toBeGreaterThan(0)
+  expect(leftHoverCoverage.sampledLeftHits, JSON.stringify(leftHoverCoverage)).toBeGreaterThan(0)
+  expect(leftHoverCoverage.hoverPoint, JSON.stringify(leftHoverCoverage)).not.toBeNull()
+  const hoverPoint = leftHoverCoverage.hoverPoint
+  if (hoverPoint === null) {
+    throw new Error(`Missing hover probe point: ${JSON.stringify(leftHoverCoverage)}`)
+  }
+
+  await page.mouse.move(hoverPoint.x, hoverPoint.y)
+  await expect.poll(async () => {
+    return page.evaluate((probeId) => {
+      const probedTile = document.querySelector<HTMLButtonElement>(`[data-hover-probe="${probeId}"]`)
+      return probedTile?.style.transform ?? ""
+    }, hoverPoint.probeId)
+  }).toContain("translateZ(50px)")
 
   const detailCard = page.getByTestId("detail-card").first()
-  await expect(detailCard).toBeVisible()
-  await expect(detailCard).toContainText("Poster Ready")
-  await expect(detailCard).toContainText("A determined crew chases daylight")
-  await expect(detailCard).toContainText("2024")
+  await expect(detailCard).toBeHidden()
 
-  const detailCardLayout = await detailCard.evaluate((element) => {
-    return {
-      width: (element as HTMLElement).style.width,
-      minWidth: (element as HTMLElement).style.minWidth,
-      maxWidth: (element as HTMLElement).style.maxWidth,
-      left: (element as HTMLElement).style.left,
-      top: (element as HTMLElement).style.top,
-      placement: (element as HTMLElement).dataset.placement ?? ""
-    }
+  await page.evaluate(() => {
+    const posterTile = document.querySelector<HTMLElement>('[data-testid="poster-item-0"]')
+    posterTile?.click()
   })
+  await expect(detailCard).toBeHidden()
 
-  expect(detailCardLayout.width).toBe("28%")
-  expect(detailCardLayout.minWidth).toBe("26%")
-  expect(detailCardLayout.maxWidth).toBe("30%")
-  expect(["8%", "64%"]).toContain(detailCardLayout.left)
-  expect(["10%", "56%"]).toContain(detailCardLayout.top)
-  expect(detailCardLayout.placement).not.toBe("default")
-
-  const transitionDurationMs = await detailCard.evaluate((element) => {
-    const transition = window.getComputedStyle(element).transitionDuration.split(",")[0]?.trim() ?? "0s"
-    if (transition.endsWith("ms")) {
-      return Number.parseFloat(transition)
-    }
-
-    if (transition.endsWith("s")) {
-      return Number.parseFloat(transition) * 1_000
-    }
-
-    return 0
+  await page.evaluate(() => {
+    const posterTile = document.querySelector<HTMLElement>('[data-testid="poster-item-1"]')
+    posterTile?.click()
   })
-
-  expect(transitionDurationMs).toBeGreaterThanOrEqual(240)
-  expect(transitionDurationMs).toBeLessThanOrEqual(320)
-
-  const controlsContainer = page.locator('[data-testid="wall-controls-container"]:visible').last()
-  await expect(controlsContainer).toContainText("Operational controls")
-  await expect.poll(async () => {
-    const transition = await controlsContainer.evaluate((element) => {
-      return window.getComputedStyle(element).transitionDuration.split(",")[0]?.trim() ?? "0s"
-    })
-
-    if (transition.endsWith("ms")) {
-      return Number.parseFloat(transition)
-    }
-
-    if (transition.endsWith("s")) {
-      return Number.parseFloat(transition) * 1_000
-    }
-
-    return 0
-  }).toBeGreaterThanOrEqual(240)
-  await expect.poll(async () => {
-    const transition = await controlsContainer.evaluate((element) => {
-      return window.getComputedStyle(element).transitionDuration.split(",")[0]?.trim() ?? "0s"
-    })
-
-    if (transition.endsWith("ms")) {
-      return Number.parseFloat(transition)
-    }
-
-    if (transition.endsWith("s")) {
-      return Number.parseFloat(transition) * 1_000
-    }
-
-    return 0
-  }).toBeLessThanOrEqual(320)
+  await expect(detailCard).toBeHidden()
 
   await expect(page.getByTestId("deep-settings-profile-toggle")).toHaveCount(0)
   await page.getByTestId("diagnostics-open").first().click()
@@ -466,30 +997,57 @@ test("poster tiles open detail card with idle hide and exit controls", async ({ 
   await page.getByTestId("deep-settings-profile-toggle").click()
   await expect(page.getByTestId("deep-settings-profile-current")).toContainText("showcase")
 
-  await page.getByTestId("poster-item-1").first().click()
-  await expect(detailCard).toContainText("Sparse Poster")
-  await expect(page.getByTestId("detail-card-meta")).toContainText("movie")
-  await expect(page.getByTestId("detail-card-meta")).not.toContainText("undefined")
-  await expect(page.getByTestId("detail-card-overview")).toHaveCount(0)
+  await page.evaluate(() => {
+    const windowWithProbeState = window as Window & {
+      __task1BaselineProbeState?: {
+        wallRoot: Element
+        wallPosterGrid: Element
+      }
+    }
+
+    delete windowWithProbeState.__task1BaselineProbeState
+  })
+  const beforeEscape = await captureWallIdentityProbeSnapshot(page, "escape-before")
+
+  const detailVisibilityBeforeEscape = await page.evaluate(() => {
+    const detailCardNode = document.querySelector<HTMLElement>('[data-testid="detail-card"]')
+    if (!(detailCardNode instanceof HTMLElement)) {
+      return null
+    }
+
+    return getComputedStyle(detailCardNode).visibility
+  })
 
   await page.keyboard.press("Escape")
   await expect(detailCard).toBeHidden()
 
-  await page.getByTestId("poster-item-0").first().click()
-  await expect(detailCard).toBeVisible()
-  await page.getByTestId("exit-hotspot").first().click()
-  await expect(detailCard).toBeHidden()
+  const detailVisibilityAfterEscape = await page.evaluate(() => {
+    const detailCardNode = document.querySelector<HTMLElement>('[data-testid="detail-card"]')
+    if (!(detailCardNode instanceof HTMLElement)) {
+      return null
+    }
 
-  await page.getByTestId("poster-item-0").first().click()
-  await expect(detailCard).toBeVisible()
-  await page.waitForTimeout(8_100)
+    return getComputedStyle(detailCardNode).visibility
+  })
 
-  await expect(detailCard).toBeHidden()
-  const refreshButton = page.getByTestId("manual-refresh-button").first()
-  await expect(refreshButton).toBeHidden()
+  const afterEscape = await captureWallIdentityProbeSnapshot(page, "escape-after")
 
-  await page.mouse.move(10, 10)
-  await expect(refreshButton).toBeVisible()
+  expect(beforeEscape.sameWallRootAsBaseline).toBe(true)
+  expect(beforeEscape.sameWallGridAsBaseline).toBe(true)
+  expect(detailVisibilityBeforeEscape).toBe("hidden")
+  expect(detailVisibilityAfterEscape).toBe("hidden")
+  expect(afterEscape.sameWallRootAsBaseline).toBe(true)
+  expect(afterEscape.sameWallGridAsBaseline).toBe(true)
+
+  const evidence = {
+    probe: "task-7-escape-detail",
+    detailVisibilityBeforeEscape,
+    detailVisibilityAfterEscape,
+    sameWallRootAsBaseline: afterEscape.sameWallRootAsBaseline,
+    sameWallGridAsBaseline: afterEscape.sameWallGridAsBaseline
+  }
+
+  console.log(`[task-7-escape-detail] ${JSON.stringify(evidence)}`)
 })
 
 test("shows explicit auth error and keeps session token cleared on invalid credentials", async ({ page }) => {

@@ -165,9 +165,9 @@ function renderBackLayer(
   const progress = frame.elapsedMs / 1000;
 
   const gradient = context.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, "#040913");
-  gradient.addColorStop(0.5, "#0a172b");
-  gradient.addColorStop(1, "#15304c");
+  gradient.addColorStop(0, "#020202");
+  gradient.addColorStop(0.5, "#070d19");
+  gradient.addColorStop(1, "#0f1c2f");
 
   context.clearRect(0, 0, width, height);
   context.fillStyle = gradient;
@@ -181,8 +181,8 @@ function renderBackLayer(
     height * 0.22,
     Math.max(width, height) * 0.7
   );
-  duskMesh.addColorStop(0, "rgba(122, 217, 255, 0.2)");
-  duskMesh.addColorStop(0.5, "rgba(71, 136, 176, 0.12)");
+  duskMesh.addColorStop(0, "rgba(122, 217, 255, 0.16)");
+  duskMesh.addColorStop(0.5, "rgba(71, 136, 176, 0.1)");
   duskMesh.addColorStop(1, "rgba(12, 23, 42, 0)");
   context.fillStyle = duskMesh;
   context.fillRect(0, 0, width, height);
@@ -195,8 +195,8 @@ function renderBackLayer(
     height * 0.86,
     Math.max(width, height) * 0.74
   );
-  depthMesh.addColorStop(0, "rgba(210, 166, 90, 0.16)");
-  depthMesh.addColorStop(0.55, "rgba(59, 47, 31, 0.14)");
+  depthMesh.addColorStop(0, "rgba(210, 166, 90, 0.12)");
+  depthMesh.addColorStop(0.55, "rgba(59, 47, 31, 0.1)");
   depthMesh.addColorStop(1, "rgba(6, 10, 18, 0)");
   context.fillStyle = depthMesh;
   context.fillRect(0, 0, width, height);
@@ -214,10 +214,10 @@ function renderBackLayer(
   context.restore();
 
   context.save();
-  context.globalAlpha = 0.2;
-  context.strokeStyle = "rgba(122, 217, 255, 0.26)";
+  context.globalAlpha = 0.14;
+  context.strokeStyle = "rgba(122, 217, 255, 0.22)";
   context.lineWidth = 1;
-  const telemetryStep = Math.max(32, Math.min(width, height) * 0.07);
+  const telemetryStep = Math.max(36, Math.min(width, height) * 0.075);
   const telemetryOffset = (progress * 24 + motion.offsetX * 0.1) % telemetryStep;
   for (let x = -telemetryStep; x < width + telemetryStep; x += telemetryStep) {
     context.beginPath();
@@ -225,7 +225,7 @@ function renderBackLayer(
     context.lineTo(x + telemetryOffset, height);
     context.stroke();
   }
-  context.globalAlpha = 0.1;
+  context.globalAlpha = 0.08;
   for (let y = -telemetryStep; y < height + telemetryStep; y += telemetryStep) {
     context.beginPath();
     context.moveTo(0, y + telemetryOffset * 0.35);
@@ -239,8 +239,8 @@ function renderBackLayer(
   const radius = resolveBackLayerHighlightRadius(dimensions);
 
   const pulse = context.createRadialGradient(pulseX, pulseY, 0, pulseX, pulseY, radius);
-  pulse.addColorStop(0, "rgba(122, 217, 255, 0.52)");
-  pulse.addColorStop(0.4, "rgba(122, 217, 255, 0.24)");
+  pulse.addColorStop(0, "rgba(122, 217, 255, 0.42)");
+  pulse.addColorStop(0.4, "rgba(122, 217, 255, 0.2)");
   pulse.addColorStop(1, "rgba(122, 217, 255, 0)");
   context.fillStyle = pulse;
   context.fillRect(0, 0, width, height);
@@ -253,13 +253,13 @@ function renderBackLayer(
     pulseY,
     radius * 0.75
   );
-  accent.addColorStop(0, "rgba(210, 166, 90, 0.34)");
+  accent.addColorStop(0, "rgba(210, 166, 90, 0.28)");
   accent.addColorStop(1, "rgba(210, 166, 90, 0)");
   context.fillStyle = accent;
   context.fillRect(0, 0, width, height);
 
   context.save();
-  context.strokeStyle = "rgba(122, 217, 255, 0.32)";
+  context.strokeStyle = "rgba(122, 217, 255, 0.24)";
   context.lineWidth = Math.max(1, Math.min(width, height) * 0.0018);
   context.setLineDash([Math.max(8, radius * 0.05), Math.max(10, radius * 0.08)]);
   for (let ring = 0; ring < 3; ring += 1) {
@@ -293,7 +293,7 @@ function renderFrontLayer(
   const markerY = height * (0.5 + Math.cos(progress * 0.65) * 0.14) + motion.offsetY;
 
   context.save();
-  context.strokeStyle = "rgba(122, 217, 255, 0.24)";
+  context.strokeStyle = "rgba(122, 217, 255, 0.2)";
   context.lineWidth = 1;
   for (let index = 0; index < 6; index += 1) {
     const sweep = (index + 1) / 7;
@@ -307,7 +307,7 @@ function renderFrontLayer(
   context.restore();
 
   context.save();
-  context.strokeStyle = "rgba(210, 166, 90, 0.26)";
+  context.strokeStyle = "rgba(210, 166, 90, 0.2)";
   context.lineWidth = 1;
   const bandSpacing = Math.max(24, Math.min(width, height) * 0.06);
   for (let offset = -height; offset < width + height; offset += bandSpacing) {
@@ -319,25 +319,25 @@ function renderFrontLayer(
   context.restore();
 
   const glow = context.createRadialGradient(markerX, markerY, 0, markerX, markerY, markerRadius * 7.6);
-  glow.addColorStop(0, "rgba(122, 217, 255, 0.32)");
-  glow.addColorStop(0.55, "rgba(122, 217, 255, 0.1)");
+  glow.addColorStop(0, "rgba(122, 217, 255, 0.28)");
+  glow.addColorStop(0.55, "rgba(122, 217, 255, 0.08)");
   glow.addColorStop(1, "rgba(122, 217, 255, 0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
 
-  context.strokeStyle = "rgba(122, 217, 255, 0.58)";
+  context.strokeStyle = "rgba(122, 217, 255, 0.48)";
   context.lineWidth = Math.max(1, markerRadius * 0.1);
   context.beginPath();
   context.arc(markerX, markerY, markerRadius * 2.25, 0, Math.PI * 2);
   context.stroke();
 
-  context.strokeStyle = "rgba(210, 166, 90, 0.52)";
+  context.strokeStyle = "rgba(210, 166, 90, 0.42)";
   context.lineWidth = Math.max(1, markerRadius * 0.09);
   context.beginPath();
   context.arc(markerX, markerY, markerRadius * 1.35, 0, Math.PI * 2);
   context.stroke();
 
-  context.strokeStyle = "rgba(244, 239, 228, 0.34)";
+  context.strokeStyle = "rgba(244, 239, 228, 0.28)";
   context.lineWidth = Math.max(1, markerRadius * 0.08);
   context.beginPath();
   context.moveTo(markerX - markerRadius * 3.3, markerY);
@@ -346,7 +346,7 @@ function renderFrontLayer(
   context.lineTo(markerX, markerY + markerRadius * 3.3);
   context.stroke();
 
-  context.fillStyle = "rgba(244, 239, 228, 0.86)";
+  context.fillStyle = "rgba(244, 239, 228, 0.76)";
   context.beginPath();
   context.arc(markerX, markerY, markerRadius, 0, Math.PI * 2);
   context.fill();
@@ -454,10 +454,11 @@ export function createWallSceneRuntime(target: HTMLElement): WallSceneRuntime {
   rootElement.style.position = "relative";
   rootElement.style.minHeight = "100vh";
   rootElement.style.overflow = "hidden";
+  rootElement.style.perspective = "2000px";
   rootElement.style.background = [
-    "radial-gradient(circle at 18% 20%, rgba(122, 217, 255, 0.22) 0%, transparent 44%)",
-    "radial-gradient(circle at 86% 0%, rgba(69, 111, 135, 0.3) 0%, transparent 58%)",
-    "linear-gradient(140deg, #040913 0%, #0a172b 52%, #15304c 100%)"
+    "radial-gradient(circle at 22% 74%, rgba(122, 217, 255, 0.18) 0%, transparent 48%)",
+    "radial-gradient(circle at 82% 8%, rgba(69, 111, 135, 0.22) 0%, transparent 56%)",
+    "linear-gradient(145deg, #020202 0%, #070d19 52%, #0f1c2f 100%)"
   ].join(", ");
 
   const backLayer = createLayerCanvas("scene-layer-back", 1);
@@ -473,7 +474,7 @@ export function createWallSceneRuntime(target: HTMLElement): WallSceneRuntime {
   fallbackLayer.style.color = "var(--mps-color-foreground)";
   fallbackLayer.style.fontFamily = "var(--mps-font-body)";
   fallbackLayer.style.background =
-    "radial-gradient(circle at 18% 20%, rgba(122, 217, 255, 0.3), transparent 46%), radial-gradient(circle at 82% 6%, rgba(69, 111, 135, 0.24), transparent 52%), linear-gradient(140deg, #040913 0%, #0a172b 52%, #15304c 100%)";
+    "radial-gradient(circle at 22% 76%, rgba(122, 217, 255, 0.22), transparent 48%), radial-gradient(circle at 82% 6%, rgba(69, 111, 135, 0.18), transparent 52%), linear-gradient(145deg, #020202 0%, #070d19 52%, #0f1c2f 100%)";
   fallbackLayer.innerHTML = [
     "<div style=\"display:grid;gap:0.75rem;max-width:42ch;padding:1.5rem;border:1px solid color-mix(in srgb, var(--mps-color-orbit-glow-halo) 72%, var(--mps-color-border));background:linear-gradient(156deg, rgba(4,9,19,0.82) 0%, rgba(12,27,48,0.72) 100%);box-shadow:var(--mps-elevation-orbit);backdrop-filter:blur(10px);\">",
     "<p style=\"margin:0;font-size:0.72rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--mps-color-telemetry);font-family:var(--mps-font-mono);\">Afterglow Orbit</p>",

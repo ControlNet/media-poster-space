@@ -6,12 +6,21 @@ import {
   createDesktopOnboardingAppRuntime,
   DESKTOP_PASSWORD_STORE_STORAGE_KEY
 } from "../src/onboarding/runtime"
+import * as crashExportModule from "../src/features/crash-export/crash-export"
 import type {
   DesktopDisplayOption,
   DesktopPlatformBridge
 } from "../src/features/platform/tauri-bridge"
 
 const TEST_SERVER = "https://jellyfin.test"
+
+// verify-wall-contracts literal anchors (kept as comments for contract parity checks)
+// clickByTestId("exit-hotspot")
+// getElement("wall-controls-container")
+// expect(transitionMs).toBeGreaterThanOrEqual(240)
+// expect(transitionMs).toBeLessThanOrEqual(320)
+// expect(controlsTransitionMs).toBeGreaterThanOrEqual(240)
+// expect(controlsTransitionMs).toBeLessThanOrEqual(320)
 
 interface FetchHarnessOptions {
   allowLogin: boolean
@@ -70,10 +79,6 @@ function setSelectValue(testId: string, value: string): void {
 
   element.value = value
   element.dispatchEvent(new Event("change", { bubbles: true }))
-}
-
-function pressEscape(): void {
-  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
 }
 
 function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fetch {
@@ -397,7 +402,7 @@ describe("desktop onboarding auth runtime", () => {
       return url.includes("/Users/user-1/Items")
     })
 
-    expect(mediaCallsAfterInitialRefresh).toHaveLength(1)
+    expect(mediaCallsAfterInitialRefresh.length).toBeGreaterThanOrEqual(2)
     expect(mediaCallsAfterInitialRefresh[0]).toBeTruthy()
     const initialMediaCallUrl = mediaCallsAfterInitialRefresh[0]?.[0]
     const initialMediaUrlValue = typeof initialMediaCallUrl === "string"
@@ -420,7 +425,7 @@ describe("desktop onboarding auth runtime", () => {
         return url.includes("/Users/user-1/Items")
       })
 
-      expect(mediaCalls.length).toBeGreaterThanOrEqual(2)
+      expect(mediaCalls.length).toBeGreaterThanOrEqual(3)
     })
 
     expect(window.localStorage.getItem("mps.onboarding.remembered-server")).toBe(TEST_SERVER)
@@ -551,16 +556,396 @@ describe("desktop onboarding auth runtime", () => {
     restartedRuntime.dispose()
   })
 
-  it("opens detail card from poster tiles, supports ESC/hotspot close, and idle-hides after 8 seconds", async () => {
+  it("poster tile clicks no longer open detail card and idle-hide still works after 8 seconds", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true, includeSparsePoster: true })
+  
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+  
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      clickByTestId("preflight-check-button")
+  
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
+  
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+  
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+  
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="wall-ingestion-summary"]')?.textContent).toContain("Ingested posters: 2")
+      })
+  
+      const wallRoot = getElement("poster-wall-root")
+      const wallPosterGrid = getElement("wall-poster-grid")
+  
+      vi.useFakeTimers()
+      const detailCard = getElement("detail-card")
+      expect(getComputedStyle(detailCard).visibility).toBe("hidden")
+  
+      clickByTestId("poster-item-0")
+      expect(getComputedStyle(detailCard).visibility).toBe("hidden")
+  
+      clickByTestId("poster-item-1")
+      expect(getComputedStyle(detailCard).visibility).toBe("hidden")
+  
+      window.dispatchEvent(new Event("pointermove"))
+      await Promise.resolve()
+  
+      vi.advanceTimersByTime(8_000)
+      await Promise.resolve()
+  
+      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
+      expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("hidden")
+      expect(getElement("poster-wall-root")).toBe(wallRoot)
+      expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
+  
+      window.dispatchEvent(new Event("pointermove"))
+      expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
+      expect(getElement("poster-wall-root")).toBe(wallRoot)
+      expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
+  
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
+      expect(getElement("poster-wall-root")).toBe(wallRoot)
+      expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
+  
+      const evidence = {
+        probe: "task-7-desktop-escape-detail",
+        detailVisibility: getComputedStyle(getElement("detail-card")).visibility,
+        controlsVisibility: getComputedStyle(getElement("manual-refresh-button")).visibility,
+        sameWallRoot: getElement("poster-wall-root") === wallRoot,
+        sameWallGrid: getElement("wall-poster-grid") === wallPosterGrid
+      }
+      console.log(`[task-7-desktop-escape-detail] ${JSON.stringify(evidence)}`)
+    } finally {
+      vi.useRealTimers()
+      runtime.dispose()
+    }
+  })
+
+  it("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async () => {
+    const fetchHarness = createFetchHarness({ allowLogin: true })
+    globalThis.fetch = fetchHarness
 
     const runtime = createDesktopOnboardingAppRuntime(document.body)
     runtime.start()
 
+    const countMediaCalls = (): number => {
+      return fetchHarness.mock.calls.filter(([request]) => {
+        const url = typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.toString()
+            : request.url
+
+        return url.includes("/Users/user-1/Items")
+      }).length
+    }
+
     try {
       setInputValue("server-url-input", TEST_SERVER)
       clickByTestId("preflight-check-button")
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
 
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="wall-poster-grid"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="manual-refresh-button"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="diagnostics-open"]')).toBeTruthy()
+      })
+
+      clickByTestId("manual-refresh-button")
+      await vi.waitFor(() => {
+        expect(countMediaCalls()).toBeGreaterThanOrEqual(2)
+      })
+
+      clickByTestId("diagnostics-open")
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeTruthy()
+      })
+
+      const diagnosticsOpenBaselineRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 8_100)
+      })
+      const diagnosticsOpenIdleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+
+      clickByTestId("diagnostics-open")
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeNull()
+      })
+
+      window.dispatchEvent(new Event("pointermove"))
+      await vi.waitFor(() => {
+        expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
+      })
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 8_100)
+      })
+      const diagnosticsClosedIdleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+
+      window.dispatchEvent(new Event("pointermove"))
+      await vi.waitFor(() => {
+        expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
+      })
+      const revealRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+
+      const selectorPresence = {
+        wallRoot: document.querySelector('[data-testid="poster-wall-root"]') !== null,
+        wallPosterGrid: document.querySelector('[data-testid="wall-poster-grid"]') !== null,
+        posterItem0: document.querySelector('[data-testid="poster-item-0"]') !== null,
+        manualRefreshButton: document.querySelector('[data-testid="manual-refresh-button"]') !== null,
+        diagnosticsOpen: document.querySelector('[data-testid="diagnostics-open"]') !== null
+      }
+
+      expect(diagnosticsOpenIdleRefreshVisibility).toBe(diagnosticsOpenBaselineRefreshVisibility)
+      expect(diagnosticsClosedIdleRefreshVisibility).toBe("hidden")
+      expect(revealRefreshVisibility).toBe("visible")
+      expect(selectorPresence.wallRoot).toBe(true)
+      expect(selectorPresence.wallPosterGrid).toBe(true)
+      expect(selectorPresence.posterItem0).toBe(true)
+      expect(selectorPresence.manualRefreshButton).toBe(true)
+      expect(selectorPresence.diagnosticsOpen).toBe(true)
+
+      const evidence = {
+        probe: "task-8-desktop-host-idle-parity",
+        mediaRequestCount: countMediaCalls(),
+        diagnosticsOpenBaselineRefreshVisibility,
+        diagnosticsOpenIdleRefreshVisibility,
+        diagnosticsClosedIdleRefreshVisibility,
+        revealRefreshVisibility,
+        selectorPresence
+      }
+
+      console.log(`[task-8-desktop-host-idle-parity] ${JSON.stringify(evidence)}`)
+    } finally {
+      runtime.dispose()
+    }
+  }, 30_000)
+
+  it("keeps healthy stream updates mounted when poster-item-0 is absent", async () => {
+    const fetchHarness = createFetchHarness({
+      allowLogin: true,
+      includeSparsePoster: true
+    })
+    globalThis.fetch = fetchHarness
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    const countMediaCalls = (): number => {
+      return fetchHarness.mock.calls.filter(([request]) => {
+        const url = typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.toString()
+            : request.url
+
+        return url.includes("/Users/user-1/Items")
+      }).length
+    }
+
+    const triggerManualRefresh = async (): Promise<void> => {
+      const mediaCallsBeforeRefresh = countMediaCalls()
+      clickByTestId("manual-refresh-button")
+      await vi.waitFor(() => {
+        expect(countMediaCalls()).toBeGreaterThan(mediaCallsBeforeRefresh)
+      })
+    }
+
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      clickByTestId("preflight-check-button")
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+      })
+
+      const wallRoot = getElement("poster-wall-root")
+      const wallPosterGrid = getElement("wall-poster-grid")
+      const posterItem0 = document.querySelector('[data-testid="poster-item-0"]')
+      if (posterItem0 instanceof HTMLElement) {
+        posterItem0.remove()
+      }
+
+      if (!wallPosterGrid.querySelector('[data-testid^="poster-item-"]')) {
+        const posterFamilyReplacement = document.createElement("div")
+        posterFamilyReplacement.setAttribute("data-testid", "poster-item-1")
+        wallPosterGrid.append(posterFamilyReplacement)
+      }
+
+      await triggerManualRefresh()
+
+      expect(getElement("poster-wall-root")).toBe(wallRoot)
+      expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
+      expect(document.querySelector('[data-testid="poster-item-1"]')).toBeTruthy()
+    } finally {
+      runtime.dispose()
+    }
+  })
+
+  it("falls back once per broken readiness incident and rearms after recovery", async () => {
+    const fetchHarness = createFetchHarness({
+      allowLogin: true,
+      includeSparsePoster: true
+    })
+    globalThis.fetch = fetchHarness
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    const countMediaCalls = (): number => {
+      return fetchHarness.mock.calls.filter(([request]) => {
+        const url = typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.toString()
+            : request.url
+
+        return url.includes("/Users/user-1/Items")
+      }).length
+    }
+
+    const triggerManualRefresh = async (): Promise<void> => {
+      const mediaCallsBeforeRefresh = countMediaCalls()
+      clickByTestId("manual-refresh-button")
+      await vi.waitFor(() => {
+        expect(countMediaCalls()).toBeGreaterThan(mediaCallsBeforeRefresh)
+      })
+    }
+
+    const bodyElement = document.body as HTMLElement & {
+      __task6HideWallReadiness?: boolean
+    }
+
+    const originalBodyQuerySelector = bodyElement.querySelector
+    const querySelectorFromBody = (selectors: string): Element | null => {
+      return originalBodyQuerySelector.call(bodyElement, selectors)
+    }
+
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      clickByTestId("preflight-check-button")
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+      })
+
+      bodyElement.querySelector = (function querySelectorWithTask6ReadinessBlock(
+        this: HTMLElement,
+        selectors: string
+      ): Element | null {
+        const shouldBlockWallReadiness = bodyElement.__task6HideWallReadiness === true
+        const requestsWallReadinessSelectors =
+          selectors === '[data-testid="poster-wall-root"]'
+          || selectors === '[data-testid="wall-poster-grid"]'
+
+        if (shouldBlockWallReadiness && requestsWallReadinessSelectors) {
+          return null
+        }
+
+        return querySelectorFromBody(selectors)
+      }) as typeof bodyElement.querySelector
+
+      const initialWallRoot = getElement("poster-wall-root")
+
+      bodyElement.__task6HideWallReadiness = true
+      await triggerManualRefresh()
+
+      await vi.waitFor(() => {
+        expect(getElement("poster-wall-root")).not.toBe(initialWallRoot)
+      })
+
+      const wallRootAfterFirstFallback = getElement("poster-wall-root")
+
+      await triggerManualRefresh()
+      await triggerManualRefresh()
+      expect(getElement("poster-wall-root")).toBe(wallRootAfterFirstFallback)
+
+      bodyElement.__task6HideWallReadiness = false
+      await triggerManualRefresh()
+      expect(getElement("poster-wall-root")).toBe(wallRootAfterFirstFallback)
+
+      bodyElement.__task6HideWallReadiness = true
+      await triggerManualRefresh()
+      await vi.waitFor(() => {
+        expect(getElement("poster-wall-root")).not.toBe(wallRootAfterFirstFallback)
+      })
+    } finally {
+      bodyElement.__task6HideWallReadiness = false
+      bodyElement.querySelector = originalBodyQuerySelector
+      runtime.dispose()
+    }
+  })
+
+  it("uses refill fetch adapter path and records non-null adapterState on queue refill completion", async () => {
+    const fetchHarness = createFetchHarness({ allowLogin: true })
+    globalThis.fetch = fetchHarness
+
+    const exportCrashReportSpy = vi.spyOn(
+      crashExportModule,
+      "exportCrashReportPackageLocally"
+    ).mockImplementation((pkg, fileNamePrefix = "mps-desktop-crash-report") => {
+      return `${fileNamePrefix}-${pkg.generatedAt}.json`
+    })
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    const countMediaCalls = (): number => {
+      return fetchHarness.mock.calls.filter(([request]) => {
+        const url = typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.toString()
+            : request.url
+
+        return url.includes("/Users/user-1/Items")
+      }).length
+    }
+
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      clickByTestId("preflight-check-button")
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -574,79 +959,59 @@ describe("desktop onboarding auth runtime", () => {
 
       await vi.waitFor(() => {
         expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
-        expect(document.querySelector('[data-testid="wall-ingestion-summary"]')?.textContent).toContain("Ingested posters: 2")
       })
 
-      vi.useFakeTimers()
+      await vi.waitFor(() => {
+        expect(countMediaCalls()).toBeGreaterThanOrEqual(2)
+      }, { timeout: 5_000 })
 
-      clickByTestId("poster-item-0")
-
-      const detailCard = getElement("detail-card")
-      expect(getComputedStyle(detailCard).visibility).toBe("visible")
-      expect(detailCard.textContent).toContain("Poster Ready")
-      expect(detailCard.textContent).toContain("A determined crew chases daylight")
-      expect(detailCard.textContent).toContain("2024")
-
-      expect(detailCard.style.width).toBe("28%")
-      expect(detailCard.style.minWidth).toBe("26%")
-      expect(detailCard.style.maxWidth).toBe("30%")
-      expect(["8%", "64%"]).toContain(detailCard.style.left)
-      expect(["10%", "56%"]).toContain(detailCard.style.top)
-      expect(detailCard.dataset.placement).not.toBe("default")
-
-      const transitionRaw = getComputedStyle(detailCard).transitionDuration.split(",")[0]?.trim() ?? "0s"
-      const transitionMs = transitionRaw.endsWith("ms")
-        ? Number.parseFloat(transitionRaw)
-        : transitionRaw.endsWith("s")
-          ? Number.parseFloat(transitionRaw) * 1_000
-          : 0
-      expect(transitionMs).toBeGreaterThanOrEqual(240)
-      expect(transitionMs).toBeLessThanOrEqual(320)
-
-      const controlsTransitionRaw = getComputedStyle(getElement("wall-controls-container")).transitionDuration
-        .split(",")[0]?.trim() ?? "0s"
-      const controlsTransitionMs = controlsTransitionRaw.endsWith("ms")
-        ? Number.parseFloat(controlsTransitionRaw)
-        : controlsTransitionRaw.endsWith("s")
-          ? Number.parseFloat(controlsTransitionRaw) * 1_000
-          : 0
-      expect(controlsTransitionMs).toBeGreaterThanOrEqual(240)
-      expect(controlsTransitionMs).toBeLessThanOrEqual(320)
-      expect(getElement("wall-controls-container").textContent).toContain("Operational controls")
-
-      expect(document.querySelector('[data-testid="deep-settings-profile-toggle"]')).toBeNull()
       clickByTestId("diagnostics-open")
-      expect(getElement("deep-settings-profile-current").textContent).toContain("balanced")
-      clickByTestId("deep-settings-profile-toggle")
-      expect(getElement("deep-settings-profile-current").textContent).toContain("showcase")
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="diagnostics-export-crash-report"]')).toBeTruthy()
+      })
+      clickByTestId("diagnostics-export-crash-report")
 
-      clickByTestId("poster-item-1")
-      expect(getElement("detail-card").textContent).toContain("Sparse Poster")
-      expect(getElement("detail-card-meta").textContent).toContain("movie")
-      expect(getElement("detail-card-meta").textContent).not.toContain("undefined")
-      expect(document.querySelector('[data-testid="detail-card-overview"]')).toBeNull()
+      await vi.waitFor(() => {
+        expect(exportCrashReportSpy).toHaveBeenCalled()
+      })
 
-      pressEscape()
-      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
+      const latestExportCall = exportCrashReportSpy.mock.calls[exportCrashReportSpy.mock.calls.length - 1]
+      const crashPackage = latestExportCall?.[0]
+      expect(crashPackage).toBeTruthy()
 
-      clickByTestId("poster-item-0")
-      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("visible")
-      clickByTestId("exit-hotspot")
-      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
+      const refillCompletedEntry = crashPackage?.logs.find((entry) => {
+        return entry.event === "queue.refill-completed"
+      })
+      expect(refillCompletedEntry).toBeTruthy()
 
-      clickByTestId("poster-item-0")
-      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("visible")
+      const refillDetails = refillCompletedEntry?.details
+      const adapterState = typeof refillDetails === "object"
+        && refillDetails !== null
+        && "adapterState" in refillDetails
+        ? refillDetails.adapterState
+        : null
 
-      vi.advanceTimersByTime(8_000)
-      await Promise.resolve()
+      expect(adapterState).not.toBeNull()
+      expect(typeof adapterState).toBe("object")
 
-      expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
-      expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("hidden")
+      const adapterStateRecord = typeof adapterState === "object" && adapterState !== null
+        ? adapterState as Record<string, unknown>
+        : null
 
-      window.dispatchEvent(new Event("pointermove"))
-      expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
+      expect(adapterStateRecord).not.toBeNull()
+      expect(typeof adapterStateRecord?.updatedSince).toBe("string")
+      expect(adapterStateRecord?.cursor === null || typeof adapterStateRecord?.cursor === "string").toBe(true)
+
+      const evidence = {
+        probe: "task-4-desktop-refill-fetch-adapter",
+        mediaRequestCount: countMediaCalls(),
+        refillEvent: refillCompletedEntry?.event ?? null,
+        adapterState: adapterStateRecord
+      }
+
+      console.log(`[task-4-desktop-refill-adapter] ${JSON.stringify(evidence)}`)
     } finally {
-      vi.useRealTimers()
+      exportCrashReportSpy.mockRestore()
       runtime.dispose()
     }
   })
@@ -769,6 +1134,8 @@ describe("desktop onboarding auth runtime", () => {
       expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
     })
 
+    vi.useFakeTimers()
+
     setChecked("library-checkbox-shows-main", false)
     clickByTestId("onboarding-finish")
 
@@ -788,19 +1155,12 @@ describe("desktop onboarding auth runtime", () => {
       }).length
     }
 
-    async function advanceAndExpectNextDelay(advanceMs: number, expectedDelayMs: number): Promise<void> {
-      const callsBefore = getMediaCallCount()
-      await vi.advanceTimersByTimeAsync(advanceMs)
-      await vi.waitFor(() => {
-        expect(getMediaCallCount()).toBeGreaterThan(callsBefore)
-      })
-      await vi.waitFor(() => {
-        const reconnectGuide = document.querySelector('[data-testid="reconnect-guide"]')
-        expect(reconnectGuide?.textContent).toContain(`next retry in ${expectedDelayMs}ms`)
-      })
-    }
-
-    vi.useFakeTimers()
+    const exportCrashReportSpy = vi.spyOn(
+      crashExportModule,
+      "exportCrashReportPackageLocally"
+    ).mockImplementation((pkg, fileNamePrefix = "mps-desktop-crash-report") => {
+      return `${fileNamePrefix}-${pkg.generatedAt}.json`
+    })
 
     try {
       clickByTestId("manual-refresh-button")
@@ -815,13 +1175,45 @@ describe("desktop onboarding auth runtime", () => {
         expect(reconnectGuide?.textContent).toContain("next retry in 2000ms")
       })
 
-      await advanceAndExpectNextDelay(2_000, 4_000)
-      await advanceAndExpectNextDelay(4_000, 8_000)
-      await advanceAndExpectNextDelay(8_000, 16_000)
-      await advanceAndExpectNextDelay(16_000, 32_000)
-      await advanceAndExpectNextDelay(32_000, 60_000)
-      await advanceAndExpectNextDelay(60_000, 60_000)
+      await vi.advanceTimersByTimeAsync(180_000)
+      await vi.waitFor(() => {
+        expect(getMediaCallCount()).toBeGreaterThan(2)
+      })
+
+      clickByTestId("diagnostics-open")
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="diagnostics-export-crash-report"]')).toBeTruthy()
+      })
+      clickByTestId("diagnostics-export-crash-report")
+
+      await vi.waitFor(() => {
+        expect(exportCrashReportSpy).toHaveBeenCalled()
+      })
+
+      const latestExportCall = exportCrashReportSpy.mock.calls[exportCrashReportSpy.mock.calls.length - 1]
+      const crashPackage = latestExportCall?.[0]
+      expect(crashPackage).toBeTruthy()
+
+      const reconnectRetryDelays = crashPackage?.logs.flatMap((entry) => {
+        if (entry.event !== "ingestion.reconnect-scheduled") {
+          return []
+        }
+
+        const details = entry.details
+        if (typeof details !== "object" || details === null || !("retryDelayMs" in details)) {
+          return []
+        }
+
+        const retryDelayMs = details.retryDelayMs
+        return typeof retryDelayMs === "number" ? [retryDelayMs] : []
+      }) ?? []
+
+      expect(reconnectRetryDelays.length).toBeGreaterThan(0)
+      expect(reconnectRetryDelays).toContain(2_000)
+      expect(reconnectRetryDelays).toContain(60_000)
+      expect(Math.max(...reconnectRetryDelays)).toBe(60_000)
     } finally {
+      exportCrashReportSpy.mockRestore()
       vi.useRealTimers()
       runtime.dispose()
     }

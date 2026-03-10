@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   DIAGNOSTICS_SAMPLING_INTERVAL_MS,
+  createOnboardingDiagnosticsController,
   createDiagnosticsLogStore,
   createDiagnosticsSampler
 } from "../src/features/diagnostics/runtime-diagnostics"
@@ -74,6 +75,59 @@ describe("web diagnostics sampling and crash export", () => {
     sampler.dispose()
     expect(clearedIntervalId).toBe(11)
     expect(canceledRafId).toBe(22)
+  })
+
+  it("routes diagnostics ticks to diagnostics-only render requests", () => {
+    vi.useFakeTimers()
+
+    const diagnosticsRenderRequests: Array<{
+      reconnectAttempt: number
+      reconnectNextDelayMs: number | null
+    }> = []
+    const appendedEvents: string[] = []
+    let wallRouteActive = true
+
+    const controller = createOnboardingDiagnosticsController({
+      state: {
+        reconnectAttempt: 7,
+        reconnectNextDelayMs: 1_000
+      },
+      logStore: {
+        append: (entry) => {
+          appendedEvents.push(entry.event)
+        }
+      },
+      isWallRouteActive: () => wallRouteActive,
+      onDiagnosticsRenderRequest: (sample) => {
+        diagnosticsRenderRequests.push({
+          reconnectAttempt: sample.reconnectAttempt,
+          reconnectNextDelayMs: sample.reconnectNextDelayMs
+        })
+      },
+      samplingIntervalMs: DIAGNOSTICS_SAMPLING_INTERVAL_MS
+    })
+
+    try {
+      controller.startSampling()
+      vi.advanceTimersByTime(DIAGNOSTICS_SAMPLING_INTERVAL_MS)
+
+      expect(controller.getLatestSample()).not.toBeNull()
+      expect(diagnosticsRenderRequests).toHaveLength(1)
+      expect(diagnosticsRenderRequests[0]).toEqual({
+        reconnectAttempt: 7,
+        reconnectNextDelayMs: 1_000
+      })
+      expect(appendedEvents).toContain("diagnostics.sample")
+
+      wallRouteActive = false
+      vi.advanceTimersByTime(DIAGNOSTICS_SAMPLING_INTERVAL_MS)
+
+      expect(controller.getLatestSample()).not.toBeNull()
+      expect(diagnosticsRenderRequests).toHaveLength(1)
+    } finally {
+      controller.stopSampling()
+      vi.useRealTimers()
+    }
   })
 
   it("normalizes reconnect and memory diagnostics sample values", () => {

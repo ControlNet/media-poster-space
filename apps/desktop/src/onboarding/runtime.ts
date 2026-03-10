@@ -19,6 +19,7 @@ import {
   createOnboardingFormView,
   createOnboardingIngestionController,
   createOnboardingWallRouteCallbacks,
+  shouldSuppressIdleHideTransitionWhenDiagnosticsOpen,
   createOnboardingWallRouteView,
   getOnboardingWallFallbackContent,
   prepareOnboardingWallRoute,
@@ -39,8 +40,10 @@ import {
   createWallFallbackShell,
   createWallIdleHideTransition,
   createWallInteractionController,
+  WALL_POSTER_GRID_STREAM_APPLIER_KEY,
   createWallRevealControlsTransition,
   createPosterCache,
+  createRuntimePosterQueueRefillFetchAdapter,
   createMediaIngestionRuntime,
   createJellyfinMediaProvider,
   normalizeWallActivePosterIndex,
@@ -78,7 +81,8 @@ import {
   DIAGNOSTICS_RETENTION_MAX_BYTES,
   DIAGNOSTICS_SAMPLING_INTERVAL_MS,
   createDiagnosticsLogStore,
-  type DiagnosticsLogEntry
+  type DiagnosticsLogEntry,
+  type DiagnosticsSample
 } from "../features/diagnostics/runtime-diagnostics"
 import {
   createCrashReportPackage,
@@ -102,6 +106,11 @@ const RECONNECT_INITIAL_BACKOFF_MS = ONBOARDING_RECONNECT_INITIAL_BACKOFF_MS
 const RECONNECT_MAX_BACKOFF_MS = ONBOARDING_RECONNECT_MAX_BACKOFF_MS
 const RECONNECT_GUIDE_THRESHOLD_MS = ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS
 const DESKTOP_APP_VERSION = "0.1.0"
+const WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS
+
+interface WallPosterGridStreamElement extends HTMLElement {
+  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: (items: readonly MediaItem[]) => boolean
+}
 
 interface OnboardingState extends OnboardingBaseState<
   ProviderSession,
@@ -177,6 +186,12 @@ export function createDesktopOnboardingAppRuntime(
   const diagnosticsLogStore = createDiagnosticsLogStore()
   let diagnosticsLastExportAt: string | null = null
   let diagnosticsExportError: string | null = null
+  let wallPatchFallbackRequested = false
+  let wallPatchFallbackIncidentActive = false
+  let wallStreamIntervalId: ReturnType<typeof setInterval> | null = null
+  let wallStreamTickInFlight = false
+  let isWallRendering = false
+  let wallPatchDeferredDuringRender = false
 
   function applyWallInteractionTransition(transition: WallInteractionTransitionResult): boolean {
     return applyWallInteractionTransitionState(state, transition)
@@ -186,8 +201,8 @@ export function createDesktopOnboardingAppRuntime(
     state,
     logStore: diagnosticsLogStore,
     isWallRouteActive,
-    onRenderRequest: () => {
-      render()
+    onDiagnosticsRenderRequest: (sample) => {
+      syncWallDiagnosticsTelemetry(sample)
     },
     samplingIntervalMs: DIAGNOSTICS_SAMPLING_INTERVAL_MS
   })
@@ -288,11 +303,27 @@ export function createDesktopOnboardingAppRuntime(
         onStateChange
       })
     },
+    createQueueRefillFetchAdapter: ({ session, selectedLibraryIds, cursor, updatedSince }) => {
+      return createRuntimePosterQueueRefillFetchAdapter({
+        provider,
+        session,
+        selectedLibraryIds,
+        ...(cursor ? { cursor } : {}),
+        ...(updatedSince ? { updatedSince } : {})
+      })
+    },
     appendDiagnosticsLog,
     toReconnectGuideReason,
     isWallRouteActive,
     onRenderRequest: () => {
-      render()
+      handleIngestionRenderRequest()
+    },
+    onStreamReadyTransition: () => {
+      if (!isWallRouteActive()) {
+        return
+      }
+
+      applyWallStreamItems(state.ingestionItems)
     },
     normalizeWallActivePosterIndex,
     reconnectInitialBackoffMs: RECONNECT_INITIAL_BACKOFF_MS,
@@ -344,6 +375,209 @@ export function createDesktopOnboardingAppRuntime(
     return isOnboardingWallRouteActive(window.location.href, WALL_PATHNAME)
   }
 
+  function setWallDiagnosticsText(testId: string, textContent: string): void {
+    const diagnosticsNode = target.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+    if (!diagnosticsNode) {
+      return
+    }
+
+    diagnosticsNode.textContent = textContent
+  }
+
+  function syncWallIngestionTelemetry(): void {
+    setWallDiagnosticsText(
+      "wall-ingestion-summary",
+      `Ingested posters: ${state.ingestionItemCount}; status: ${state.ingestionStatus}; trigger: ${state.ingestionTrigger ?? "n/a"}; last refresh: ${state.ingestionFetchedAt ?? "pending"}.`
+    )
+
+    if (!state.diagnosticsOpen) {
+      return
+    }
+
+    setWallDiagnosticsText(
+      "wall-diagnostics-ingestion-state",
+      `Ingestion state: status=${state.ingestionStatus}; count=${state.ingestionItemCount}; trigger=${state.ingestionTrigger ?? "n/a"}; fetchedAt=${state.ingestionFetchedAt ?? "pending"}; error=${state.ingestionError ?? "none"}; reconnectAttempts=${state.reconnectAttempt}; nextRetryMs=${state.reconnectNextDelayMs ?? "n/a"}.`
+    )
+  }
+
+  function syncWallErrorTelemetry(): void {
+    const ingestionErrorNode = target.querySelector<HTMLElement>("[data-testid=\"wall-ingestion-error\"]")
+    if (ingestionErrorNode && state.ingestionError) {
+      ingestionErrorNode.textContent = state.ingestionError
+    }
+
+    const reconnectGuide = target.querySelector<HTMLElement>("[data-testid=\"reconnect-guide\"]")
+    if (!reconnectGuide) {
+      return
+    }
+
+    const reconnectMetaNode = Array.from(reconnectGuide.querySelectorAll("p")).find((node) => {
+      return node.textContent?.includes("Retry attempts:")
+    })
+
+    if (reconnectMetaNode instanceof HTMLElement) {
+      reconnectMetaNode.textContent =
+        `Retry attempts: ${state.reconnectAttempt}; next retry in ${state.reconnectNextDelayMs ?? "n/a"}ms.`
+    }
+  }
+
+  function applyWallStreamItems(items: readonly MediaItem[]): boolean {
+    const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
+    const applyStreamItems = wallPosterGrid?.[WALL_POSTER_GRID_STREAM_APPLIER_KEY]
+    if (typeof applyStreamItems !== "function") {
+      return false
+    }
+
+    return applyStreamItems(items)
+  }
+
+  function clearWallPatchFallbackState(): void {
+    wallPatchFallbackRequested = false
+    wallPatchFallbackIncidentActive = false
+    wallPatchDeferredDuringRender = false
+  }
+
+  function requestWallPatchFallbackOnce(): void {
+    if (wallPatchFallbackRequested || wallPatchFallbackIncidentActive) {
+      return
+    }
+
+    wallPatchFallbackRequested = true
+    wallPatchFallbackIncidentActive = true
+    render()
+  }
+
+  function readWallPatchReadiness(): {
+    wallRoot: HTMLElement | null
+    wallPosterGrid: WallPosterGridStreamElement | null
+    applyStreamItems: ((items: readonly MediaItem[]) => boolean) | null
+    hasPosterTileFamily: boolean
+  } {
+    const wallRoot = target.querySelector<HTMLElement>("[data-testid=\"poster-wall-root\"]")
+    const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
+    const applyStreamItemsCandidate = wallPosterGrid?.[WALL_POSTER_GRID_STREAM_APPLIER_KEY]
+
+    return {
+      wallRoot,
+      wallPosterGrid: wallPosterGrid ?? null,
+      applyStreamItems: typeof applyStreamItemsCandidate === "function" ? applyStreamItemsCandidate : null,
+      hasPosterTileFamily:
+        wallPosterGrid?.querySelector<HTMLElement>("[data-testid^=\"poster-item-\"]") !== null
+    }
+  }
+
+
+  function handleIngestionRenderRequest(): void {
+    if (!isWallRouteActive()) {
+      clearWallPatchFallbackState()
+      render()
+      return
+    }
+
+    const wallPatchReadiness = readWallPatchReadiness()
+    if (!wallPatchReadiness.wallRoot || !wallPatchReadiness.wallPosterGrid || !wallPatchReadiness.applyStreamItems) {
+      if (isWallRendering) {
+        wallPatchDeferredDuringRender = true
+        return
+      }
+
+      requestWallPatchFallbackOnce()
+      return
+    }
+
+    if (state.ingestionStatus === "error") {
+      const hasIngestionError = target.querySelector<HTMLElement>("[data-testid=\"wall-ingestion-error\"]") !== null
+      const hasReconnectGuide = target.querySelector<HTMLElement>("[data-testid=\"reconnect-guide\"]") !== null
+      if (!hasIngestionError || !hasReconnectGuide) {
+        requestWallPatchFallbackOnce()
+        return
+      }
+
+      clearWallPatchFallbackState()
+      syncWallErrorTelemetry()
+      syncWallIngestionTelemetry()
+      return
+    }
+
+    const streamApplied = wallPatchReadiness.applyStreamItems(state.ingestionItems)
+    const shouldFallbackToRender =
+      !streamApplied
+      || (state.ingestionItems.length > 0 && !wallPatchReadiness.hasPosterTileFamily)
+    if (shouldFallbackToRender) {
+      requestWallPatchFallbackOnce()
+      return
+    }
+
+    clearWallPatchFallbackState()
+    syncWallIngestionTelemetry()
+  }
+
+
+  async function handleWallStreamTick(): Promise<void> {
+    if (!isWallRouteActive() || wallStreamTickInFlight) {
+      return
+    }
+
+    wallStreamTickInFlight = true
+    try {
+      await ingestionController.consumeNextPosterForStream()
+    } catch (error) {
+      appendDiagnosticsLog({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        event: "wall.stream.tick-failed",
+        details: {
+          message: error instanceof Error ? error.message : "Unknown stream tick failure"
+        }
+      })
+    } finally {
+      wallStreamTickInFlight = false
+    }
+  }
+
+  function startWallStreamLoop(): void {
+    if (wallStreamIntervalId !== null) {
+      return
+    }
+
+    wallStreamIntervalId = setInterval(() => {
+      void handleWallStreamTick()
+    }, WALL_STREAM_INTERVAL_MS)
+  }
+
+  function stopWallStreamLoop(): void {
+    if (wallStreamIntervalId !== null) {
+      clearInterval(wallStreamIntervalId)
+      wallStreamIntervalId = null
+    }
+
+    wallStreamTickInFlight = false
+  }
+
+  function syncWallDiagnosticsTelemetry(sample: DiagnosticsSample): void {
+    if (!isWallRouteActive() || !state.diagnosticsOpen) {
+      return
+    }
+
+    const retentionSnapshot = diagnosticsLogStore.getRetentionSnapshot()
+    const memoryLabel = typeof sample.memoryMb === "number"
+      ? `${sample.memoryMb.toFixed(1)} MB`
+      : "n/a"
+    const reconnectNextDelayMs = sample.reconnectNextDelayMs ?? state.reconnectNextDelayMs ?? "n/a"
+    const retentionLabel =
+      `Retention policy: ${Math.round(DIAGNOSTICS_RETENTION_MAX_AGE_MS / (24 * 60 * 60 * 1_000))}d / `
+      + `${Math.round(DIAGNOSTICS_RETENTION_MAX_BYTES / (1024 * 1024))}MB; `
+      + `logs=${retentionSnapshot.count}; bytes=${retentionSnapshot.byteSize}.`
+
+    setWallDiagnosticsText("wall-diagnostics-fps", `FPS (last 1s): ${sample.fps}`)
+    setWallDiagnosticsText("wall-diagnostics-memory", `Memory usage: ${memoryLabel}`)
+    setWallDiagnosticsText(
+      "wall-diagnostics-reconnect",
+      `Reconnect metrics: attempts=${sample.reconnectAttempt}; nextRetryMs=${reconnectNextDelayMs}.`
+    )
+    setWallDiagnosticsText("wall-diagnostics-retention-policy", retentionLabel)
+  }
+
   function dismissActiveDetailCard(): boolean {
     if (state.activePosterIndex === null) {
       return false
@@ -357,10 +591,66 @@ export function createDesktopOnboardingAppRuntime(
     )
   }
 
+  function applyWallInteractionPatchInPlace(): boolean {
+    if (!isWallRouteActive()) {
+      return false
+    }
+
+    const wallRoot = target.querySelector<HTMLElement>('[data-testid="poster-wall-root"]')
+    const wallPosterGrid = target.querySelector<HTMLElement>('[data-testid="wall-poster-grid"]')
+    const controlsContainer = target.querySelector<HTMLElement>('[data-testid="wall-controls-container"]')
+    const detailCard = target.querySelector<HTMLElement>('[data-testid="detail-card"]')
+
+    if (!wallRoot || !wallPosterGrid || !controlsContainer || !detailCard) {
+      return false
+    }
+
+    const controlsHidden = state.wallControlsHidden
+    controlsContainer.style.opacity = controlsHidden ? "0" : "1"
+    controlsContainer.style.transform = `translateX(-50%) ${controlsHidden ? "translateY(1rem)" : "translateY(0)"}`
+    controlsContainer.style.visibility = controlsHidden ? "hidden" : "visible"
+    controlsContainer.style.pointerEvents = "none"
+
+    const activePosterIndex = state.activePosterIndex
+    const hasActivePoster =
+      typeof activePosterIndex === "number"
+      && activePosterIndex >= 0
+      && activePosterIndex < state.ingestionItems.length
+    const detailCardVisible = hasActivePoster && !controlsHidden
+
+    if (typeof activePosterIndex === "number" && hasActivePoster) {
+      const placement = resolveWallDetailPlacement(activePosterIndex, state.ingestionItems.length)
+      detailCard.style.left = placement.left
+      detailCard.style.top = placement.top
+      detailCard.dataset.placement = `${placement.left}-${placement.top}`
+    }
+
+    detailCard.style.opacity = detailCardVisible ? "1" : "0"
+    detailCard.style.transform = detailCardVisible
+      ? "translateY(0) translateZ(28px) scale(1)"
+      : "translateY(0.95rem) translateZ(0) scale(0.985)"
+    detailCard.style.visibility = detailCardVisible ? "visible" : "hidden"
+    detailCard.style.pointerEvents = detailCardVisible ? "auto" : "none"
+
+    return true
+  }
+
+  function requestWallInteractionPatchOrRender(): void {
+    if (applyWallInteractionPatchInPlace()) {
+      return
+    }
+
+    render()
+  }
+
   const wallInteractionController = createWallInteractionController({
     idleHideMs: WALL_IDLE_HIDE_MS,
     isWallRouteActive,
     onIdleHide: () => {
+      if (shouldSuppressIdleHideTransitionWhenDiagnosticsOpen(state)) {
+        return false
+      }
+
       return applyWallInteractionTransition(
         createWallIdleHideTransition({
           activePosterIndex: state.activePosterIndex,
@@ -380,7 +670,7 @@ export function createDesktopOnboardingAppRuntime(
       return dismissActiveDetailCard()
     },
     onRenderRequest: () => {
-      render()
+      requestWallInteractionPatchOrRender()
     }
   })
 
@@ -717,11 +1007,16 @@ export function createDesktopOnboardingAppRuntime(
           testId: "platform-warning-banner"
         })
         platformWarningBanner.style.margin = "0"
-        platformWarningBanner.style.padding = "0.6rem 0.75rem"
-        platformWarningBanner.style.borderRadius = "0.5rem"
+        platformWarningBanner.style.padding = "0.68rem 0.84rem"
+        platformWarningBanner.style.borderRadius = "0.9rem"
         platformWarningBanner.style.border = "1px solid rgba(255, 183, 77, 0.5)"
-        platformWarningBanner.style.background = "rgba(117, 74, 20, 0.45)"
+        platformWarningBanner.style.background = "linear-gradient(148deg, rgba(117, 74, 20, 0.46) 0%, rgba(78, 49, 14, 0.62) 100%)"
         platformWarningBanner.style.color = "#ffe0b2"
+        platformWarningBanner.style.fontFamily = "var(--mps-font-mono)"
+        platformWarningBanner.style.fontSize = "0.69rem"
+        platformWarningBanner.style.letterSpacing = "0.03em"
+        platformWarningBanner.style.boxShadow = "0 14px 30px rgba(36, 19, 4, 0.34), inset 0 0 0 1px rgba(255, 201, 133, 0.2)"
+        platformWarningBanner.style.backdropFilter = "blur(12px)"
         return platformWarningBanner
       }
     })
@@ -730,81 +1025,94 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function renderWall(container: HTMLElement): void {
-    container.innerHTML = ""
+    isWallRendering = true
+    try {
+      stopWallStreamLoop()
+      wallPatchFallbackRequested = false
+      container.innerHTML = ""
 
-    const wallRoutePreparation = prepareOnboardingWallRoute({
-      handoff: readWallHandoff(),
-      activeSession: readActiveSession(),
-      state,
-      disposeIngestionRuntime,
-      detachWallInteraction: () => {
-        wallInteractionController.detach()
-      }
-    })
-
-    if (wallRoutePreparation.kind === "fallback") {
-      const fallbackContent = getOnboardingWallFallbackContent(wallRoutePreparation.reason)
-      const fallback = createWallFallbackShell(createElement, {
-        title: fallbackContent.title,
-        body: fallbackContent.body,
-        onBack: () => {
-          window.history.pushState({}, "", "/")
-          render()
+      const wallRoutePreparation = prepareOnboardingWallRoute({
+        handoff: readWallHandoff(),
+        activeSession: readActiveSession(),
+        state,
+        disposeIngestionRuntime,
+        detachWallInteraction: () => {
+          wallInteractionController.detach()
         }
       })
-      container.append(fallback)
-      return
-    }
 
-    const handoff = wallRoutePreparation.handoff
-    const activeSession = wallRoutePreparation.activeSession
-
-    ensureIngestionRuntime(activeSession, handoff.selectedLibraryIds)
-    wallInteractionController.attach()
-    if (!wallInteractionController.isIdleHideScheduled()) {
-      wallInteractionController.scheduleIdleHide()
-    }
-
-    const wallView = createOnboardingWallRouteView({
-      createElement,
-      handoff,
-      state,
-      detailCardTransitionMs: DETAIL_CARD_TRANSITION_MS,
-      diagnosticsLatestSample: diagnosticsController.getLatestSample(),
-      diagnosticsRetentionSnapshot: diagnosticsLogStore.getRetentionSnapshot(),
-      diagnosticsLastExportAt,
-      diagnosticsExportError,
-      samplingIntervalMs: DIAGNOSTICS_SAMPLING_INTERVAL_MS,
-      retentionMaxAgeMs: DIAGNOSTICS_RETENTION_MAX_AGE_MS,
-      retentionMaxBytes: DIAGNOSTICS_RETENTION_MAX_BYTES,
-      ...createOnboardingWallRouteCallbacks({
-        state,
-        applyWallInteractionTransition,
-        scheduleIdleHide: () => {
-          wallInteractionController.scheduleIdleHide()
-        },
-        dismissActiveDetailCard,
-        navigateToOnboarding: () => {
-          window.history.pushState({}, "", "/")
-        },
-        onRefresh: () => {
-          void ingestionController.refreshNow()
-        },
-        onLogout: () => {
-          void handleLogout()
-        },
-        onExportCrashReport: () => {
-          exportCrashReport(handoff)
-        },
-        onRenderRequest: render
-      }),
-      resolveDetailPlacement: resolveWallDetailPlacement,
-      controls: {
-        showFullscreenControl: false
+      if (wallRoutePreparation.kind === "fallback") {
+        const fallbackContent = getOnboardingWallFallbackContent(wallRoutePreparation.reason)
+        const fallback = createWallFallbackShell(createElement, {
+          title: fallbackContent.title,
+          body: fallbackContent.body,
+          onBack: () => {
+            window.history.pushState({}, "", "/")
+            render()
+          }
+        })
+        container.append(fallback)
+        return
       }
-    })
 
-    container.append(wallView)
+      const handoff = wallRoutePreparation.handoff
+      const activeSession = wallRoutePreparation.activeSession
+
+      ensureIngestionRuntime(activeSession, handoff.selectedLibraryIds)
+      wallInteractionController.attach()
+      if (!wallInteractionController.isIdleHideScheduled()) {
+        wallInteractionController.scheduleIdleHide()
+      }
+
+      const wallView = createOnboardingWallRouteView({
+        createElement,
+        handoff,
+        state,
+        detailCardTransitionMs: DETAIL_CARD_TRANSITION_MS,
+        diagnosticsLatestSample: diagnosticsController.getLatestSample(),
+        diagnosticsRetentionSnapshot: diagnosticsLogStore.getRetentionSnapshot(),
+        diagnosticsLastExportAt,
+        diagnosticsExportError,
+        samplingIntervalMs: DIAGNOSTICS_SAMPLING_INTERVAL_MS,
+        retentionMaxAgeMs: DIAGNOSTICS_RETENTION_MAX_AGE_MS,
+        retentionMaxBytes: DIAGNOSTICS_RETENTION_MAX_BYTES,
+        ...createOnboardingWallRouteCallbacks({
+          state,
+          applyWallInteractionTransition,
+          scheduleIdleHide: () => {
+            wallInteractionController.scheduleIdleHide()
+          },
+          dismissActiveDetailCard,
+          navigateToOnboarding: () => {
+            window.history.pushState({}, "", "/")
+          },
+          onRefresh: () => {
+            void ingestionController.refreshNow()
+          },
+          onLogout: () => {
+            void handleLogout()
+          },
+          onExportCrashReport: () => {
+            exportCrashReport(handoff)
+          },
+          onRenderRequest: render
+        }),
+        resolveDetailPlacement: resolveWallDetailPlacement,
+        controls: {
+          showFullscreenControl: false
+        }
+      })
+
+      container.append(wallView)
+      syncWallIngestionTelemetry()
+      startWallStreamLoop()
+    } finally {
+      isWallRendering = false
+      if (wallPatchDeferredDuringRender) {
+        wallPatchDeferredDuringRender = false
+        handleIngestionRenderRequest()
+      }
+    }
   }
 
   function render(): void {
@@ -817,9 +1125,11 @@ export function createDesktopOnboardingAppRuntime(
     }
 
     stopDiagnosticsSampling()
+    stopWallStreamLoop()
     wallInteractionController.detach()
     state.activePosterIndex = null
     state.wallControlsHidden = false
+    clearWallPatchFallbackState()
     disposeIngestionRuntime()
     renderOnboarding(target)
   }
@@ -837,6 +1147,7 @@ export function createDesktopOnboardingAppRuntime(
     },
     dispose: () => {
       stopDiagnosticsSampling()
+      stopWallStreamLoop()
       wallInteractionController.detach()
       disposeIngestionRuntime()
       window.removeEventListener("popstate", onPopState)
