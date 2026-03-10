@@ -37,18 +37,18 @@ If risk is detected, relayout/motion correction must trigger automatically (no m
 
 ## 5) Interaction model (light-interaction wall)
 
-- Click/tap poster to open detail card.
-- Detail card should avoid edge/highlight collisions and stay in the intended width range (~26-30%).
+- Poster tiles are hover-reactive surfaces; click/tap does not open detail card in the current V1 implementation.
 - Wall controls + detail card auto-hide after 8 seconds of idle time.
 - Interaction transitions should remain in the 240-320ms range.
-- Exit gestures must be reliable:
-  - `Escape`
-  - top-right exit hotspot
+- Wall controls auto-hide after 8 seconds of idle time.
+- Interaction transitions should remain in the 240-320ms range for controls and diagnostics reveals.
+- Overlay layers must not create pointer dead-zones over the wall surface; non-interactive overlays should remain pass-through.
 
 ### Explicit V1 interaction boundaries
 
 - No playback controls.
-- No expanded keyboard control set beyond required exit behavior.
+- No poster tile click-selection workflow.
+- No expanded keyboard control set beyond required onboarding and diagnostics actions.
 
 ## 6) Diagnostics and resilience expectations
 
@@ -82,9 +82,18 @@ If risk is detected, relayout/motion correction must trigger automatically (no m
 - No BFF/runtime backend dependency in V1 web flow.
 - No quality downgrade path that silently relaxes visual or timing gates.
 
+## 10) Current implementation status snapshot
+
+- Stream cadence is 1 second and aligned with diagnostics sampling.
+- Queue refill policy is fixed at low-watermark `10` and refill-target `40`, with single-flight refill.
+- Row updates use deterministic row ordering plus round-robin incoming item distribution to reduce synchronized visual jumps.
+- Runtime behavior for click-to-open detail is disabled on both Web and Desktop.
+- Wall hit-testing hardening is required: keep non-interactive overlays pass-through and avoid nested transformed animation surfaces that can destabilize hover hit targets.
+
 ## References
 
 - `.sisyphus/plans/media-poster-space-v1.md`
 - `docs/quality-gates.md`
 - `docs/evidence-protocol.md`
 - `docs/capability-matrix.md`
+- `docs/current-implementation.md`

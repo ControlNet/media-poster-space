@@ -6,6 +6,7 @@ Media Poster Space is an AGPL-3.0-only open source project that ships the same V
 
 - Capability matrix: `docs/capability-matrix.md`
 - Poster-wall design principles: `docs/poster-wall-design-principles.md`
+- Current implementation snapshot: `docs/current-implementation.md`
 - Must-pass gates and evidence naming: `docs/quality-gates.md`
 - Issues-only feedback and contribution flow: `docs/feedback-workflow.md`
 - Gate evidence protocol details: `docs/evidence-protocol.md`
