@@ -10,6 +10,30 @@ Beads is issue tracking that lives in your repo, making it perfect for AI coding
 
 ## Quick Start
 
+### Repository Bootstrap (important)
+
+This repository currently keeps the legacy tracked JSONL export for clone-safe
+bootstrap compatibility. After a fresh `git clone`, initialize Beads with the
+tracked issue history instead of creating a blank database:
+
+```bash
+bd init --from-jsonl --prefix media-poster-space
+bd hooks list
+bd status
+```
+
+Expected result:
+- `bd init --from-jsonl --prefix media-poster-space` imports the tracked issues
+  from `.beads/issues.jsonl` into your local Dolt database
+- `bd hooks list` shows the recommended hooks as installed
+- `bd status` shows the imported issue counts instead of an empty database
+
+Notes:
+- Local runtime artifacts in `.beads/dolt/`, pid/log/lock files, and `*.db`
+  files must remain untracked
+- Upstream Beads now prefers Dolt-first workflows; this repo keeps
+  `.beads/issues.jsonl` for compatibility with `bd init --from-jsonl`
+
 ### Essential Commands
 
 ```bash
@@ -33,7 +57,8 @@ bd sync
 ### Working with Issues
 
 Issues in Beads are:
-- **Git-native**: Stored in `.beads/issues.jsonl` and synced like code
+- **Clone-bootstrapped**: Fresh clones import the tracked `.beads/issues.jsonl`
+  into a local Dolt database with `bd init --from-jsonl --prefix media-poster-space`
 - **AI-friendly**: CLI-first design works perfectly with AI coding agents
 - **Branch-aware**: Issues can follow your branch workflow
 - **Always in sync**: Auto-syncs with your commits
