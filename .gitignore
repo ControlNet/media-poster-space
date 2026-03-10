@@ -57,6 +57,13 @@ Thumbs.db
 # --- Custom/Internal Tools ---
 .sisyphus/evidence
 
+# --- Beads / Dolt local state ---
+.dolt/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # --- Logs ---
 logs/
 *.log
