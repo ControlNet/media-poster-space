@@ -23,6 +23,7 @@ import {
   createOnboardingWallRouteView,
   getOnboardingWallFallbackContent,
   prepareOnboardingWallRoute,
+  runOnboardingBackToServer,
   runOnboardingFinish,
   runOnboardingLogin,
   runOnboardingLogoutReset,
@@ -838,6 +839,23 @@ export function createDesktopOnboardingAppRuntime(
     }
   }
 
+  function handleChangeServer(): void {
+    const activeSession = state.session
+
+    runOnboardingBackToServer({
+      state,
+      clearSessionArtifacts,
+      onAfterStateReset: () => {
+        state.password = ""
+      },
+      onRenderRequest: render
+    })
+
+    if (activeSession) {
+      void provider.invalidateSession(activeSession).catch(() => undefined)
+    }
+  }
+
   function renderOnboarding(container: HTMLElement): void {
     container.innerHTML = ""
 
@@ -900,6 +918,9 @@ export function createDesktopOnboardingAppRuntime(
       },
       onLogin: () => {
         void handleLogin()
+      },
+      onBack: () => {
+        handleChangeServer()
       },
       onLibrarySelectionChange: (libraryId, selected) => {
         if (selected) {

@@ -11,8 +11,10 @@ import {
   isOnboardingWallRouteActive,
   persistRememberedString,
   readOnboardingActiveSession,
+  readRememberedLibrarySelection,
   readOnboardingWallHandoff,
   saveOnboardingSession,
+  saveRememberedLibrarySelection,
   saveOnboardingWallHandoff,
   applyWallInteractionTransitionState,
   createOnboardingBaseState,
@@ -24,6 +26,7 @@ import {
   createOnboardingWallRouteView,
   getOnboardingWallFallbackContent,
   prepareOnboardingWallRoute,
+  runOnboardingBackToServer,
   runOnboardingFinish,
   runOnboardingLogin,
   runOnboardingLogoutReset,
@@ -84,6 +87,9 @@ const RECONNECT_MAX_BACKOFF_MS = ONBOARDING_RECONNECT_MAX_BACKOFF_MS
 const RECONNECT_GUIDE_THRESHOLD_MS = ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS
 const WEB_APP_VERSION = "0.1.0"
 const WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS
+const WALL_CLOCK_TICK_MS = 1_000
+const WALL_FULLSCREEN_ENTER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`
+const WALL_FULLSCREEN_EXIT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`
 
 interface OnboardingState extends OnboardingBaseState<
   ProviderSession,
@@ -127,32 +133,36 @@ function canRequestFullscreen(target: FullscreenCapableElement): boolean {
   )
 }
 
-async function requestFullscreen(target: FullscreenCapableElement): Promise<void> {
+function requestFullscreen(target: FullscreenCapableElement): Promise<void> {
   if (typeof target.requestFullscreen === "function") {
-    await target.requestFullscreen()
-    return
+    return target.requestFullscreen()
   }
 
   if (typeof target.webkitRequestFullscreen === "function") {
-    await target.webkitRequestFullscreen()
-    return
+    return Promise.resolve(target.webkitRequestFullscreen())
   }
 
-  throw new Error("Fullscreen API is unavailable.")
+  return Promise.reject(new Error("Fullscreen API is unavailable."))
 }
 
-async function exitFullscreen(doc: FullscreenCapableDocument = document): Promise<void> {
+function exitFullscreen(doc: FullscreenCapableDocument = document): Promise<void> {
   if (typeof doc.exitFullscreen === "function") {
-    await doc.exitFullscreen()
-    return
+    return doc.exitFullscreen()
   }
 
   if (typeof doc.webkitExitFullscreen === "function") {
-    await doc.webkitExitFullscreen()
-    return
+    return Promise.resolve(doc.webkitExitFullscreen())
   }
 
-  throw new Error("Fullscreen exit API is unavailable.")
+  return Promise.reject(new Error("Fullscreen exit API is unavailable."))
+}
+
+function formatWallClockHeading(now: Date = new Date()): string {
+  return now.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit"
+  })
 }
 
 function createOnboardingState(localStorageRef: Storage | null): OnboardingState {
@@ -195,6 +205,7 @@ export function createOnboardingAppRuntime(
   let wallPatchFallbackRequested = false
   let wallPatchFallbackIncidentActive = false
   let wallStreamIntervalId: ReturnType<typeof setInterval> | null = null
+  let wallClockIntervalId: ReturnType<typeof setInterval> | null = null
   let wallStreamTickInFlight = false
   let isWallRendering = false
   let wallPatchDeferredDuringRender = false
@@ -579,6 +590,62 @@ export function createOnboardingAppRuntime(
     wallStreamTickInFlight = false
   }
 
+  function syncWallClockHeadingInPlace(): boolean {
+    const wallClock = target.querySelector<HTMLElement>('[data-testid="wall-clock-heading"]')
+    if (!wallClock) {
+      return false
+    }
+
+    const nextClockText = formatWallClockHeading()
+    if (wallClock.textContent !== nextClockText) {
+      wallClock.textContent = nextClockText
+    }
+
+    return true
+  }
+
+  function startWallClockLoop(): void {
+    if (wallClockIntervalId !== null) {
+      return
+    }
+
+    syncWallClockHeadingInPlace()
+    wallClockIntervalId = setInterval(() => {
+      if (!isWallRouteActive()) {
+        return
+      }
+
+      syncWallClockHeadingInPlace()
+    }, WALL_CLOCK_TICK_MS)
+  }
+
+  function stopWallClockLoop(): void {
+    if (wallClockIntervalId === null) {
+      return
+    }
+
+    clearInterval(wallClockIntervalId)
+    wallClockIntervalId = null
+  }
+
+  function createFullscreenWarningElement(message: string): HTMLParagraphElement {
+    const fullscreenWarning = createElement("p", { textContent: message, testId: "wall-fullscreen-warning" })
+    fullscreenWarning.style.margin = "0"
+    fullscreenWarning.style.padding = "0.62rem 0.8rem"
+    fullscreenWarning.style.borderRadius = "0.64rem"
+    fullscreenWarning.style.border = "1px solid rgba(255, 194, 130, 0.54)"
+    fullscreenWarning.style.background = [
+      "linear-gradient(145deg, rgba(89, 54, 24, 0.58) 0%, rgba(63, 38, 18, 0.57) 100%)",
+      "radial-gradient(circle at 100% 0%, rgba(255, 210, 151, 0.16) 0%, transparent 48%)"
+    ].join(",")
+    fullscreenWarning.style.color = "#ffe5cc"
+    fullscreenWarning.style.fontFamily = "var(--mps-font-mono)"
+    fullscreenWarning.style.fontSize = "0.69rem"
+    fullscreenWarning.style.letterSpacing = "0.02em"
+    fullscreenWarning.style.boxShadow = "0 8px 18px rgba(33, 18, 8, 0.3), inset 0 0 0 1px rgba(255, 219, 174, 0.18)"
+    return fullscreenWarning
+  }
+
   function dismissActiveDetailCard(): boolean {
     if (!isWallRouteActive() || state.activePosterIndex === null) {
       return false
@@ -609,6 +676,7 @@ export function createOnboardingAppRuntime(
 
     const controlsHidden = state.wallControlsHidden
     if (wallClock) {
+      wallClock.textContent = formatWallClockHeading()
       wallClock.style.opacity = controlsHidden ? "0.22" : "0.85"
     }
     controlsContainer.style.opacity = controlsHidden ? "0" : "1"
@@ -638,6 +706,54 @@ export function createOnboardingAppRuntime(
     detailCard.style.pointerEvents = detailCardVisible ? "auto" : "none"
 
     return true
+  }
+
+  function syncWallFullscreenControlInPlace(): boolean {
+    const fullscreenButton = target.querySelector<HTMLButtonElement>('[data-testid="wall-fullscreen-button"]')
+    const controlsContainer = target.querySelector<HTMLElement>('[data-testid="wall-controls-container"]')
+    if (!fullscreenButton || !controlsContainer) {
+      return false
+    }
+
+    const fullscreenActive = isFullscreenActive()
+    const buttonTitle = fullscreenActive ? "Exit fullscreen" : "Enter fullscreen"
+    fullscreenButton.title = buttonTitle
+    fullscreenButton.setAttribute("aria-label", buttonTitle)
+    fullscreenButton.innerHTML = fullscreenActive ? WALL_FULLSCREEN_EXIT_ICON : WALL_FULLSCREEN_ENTER_ICON
+
+    const existingWarning = target.querySelector<HTMLElement>('[data-testid="wall-fullscreen-warning"]')
+    if (!state.fullscreenWarning) {
+      existingWarning?.remove()
+      return true
+    }
+
+    if (existingWarning) {
+      existingWarning.textContent = state.fullscreenWarning
+      return true
+    }
+
+    const calloutStack = controlsContainer.firstElementChild
+    if (!(calloutStack instanceof HTMLElement)) {
+      return false
+    }
+
+    calloutStack.append(createFullscreenWarningElement(state.fullscreenWarning))
+    return true
+  }
+
+  function applyWallFullscreenPatchInPlace(): boolean {
+    const interactionPatched = applyWallInteractionPatchInPlace()
+    const fullscreenPatched = syncWallFullscreenControlInPlace()
+    const clockPatched = syncWallClockHeadingInPlace()
+    return interactionPatched && fullscreenPatched && clockPatched
+  }
+
+  function requestWallFullscreenPatchOrRender(): void {
+    window.requestAnimationFrame(() => {
+      if (!applyWallFullscreenPatchInPlace()) {
+        render()
+      }
+    })
   }
 
   function requestWallInteractionPatchOrRender(): void {
@@ -694,6 +810,29 @@ export function createOnboardingAppRuntime(
       key: REMEMBERED_USERNAME_STORAGE_KEY,
       remember: state.rememberUsername,
       value: state.username
+    })
+  }
+
+  function readPersistedLibrarySelection(
+    session: ProviderSession,
+    libraries: readonly MediaLibrary[]
+  ): readonly string[] | null {
+    return readRememberedLibrarySelection({
+      storage: localStorageRef,
+      session,
+      availableLibraryIds: libraries.map((library) => library.id)
+    })
+  }
+
+  function persistRememberedLibrarySelection(): void {
+    if (!state.session) {
+      return
+    }
+
+    saveRememberedLibrarySelection({
+      storage: localStorageRef,
+      session: state.session,
+      selectedLibraryIds: [...state.selectedLibraryIds]
     })
   }
 
@@ -754,6 +893,9 @@ export function createOnboardingAppRuntime(
       persistRememberedServer,
       saveSession,
       toAuthErrorMessage,
+      resolveSelectedLibraryIds: ({ session, libraries, defaultSelectedLibraryIds }) => {
+        return readPersistedLibrarySelection(session, libraries) ?? defaultSelectedLibraryIds
+      },
       onRenderRequest: render
     })
   }
@@ -786,7 +928,24 @@ export function createOnboardingAppRuntime(
     })
   }
 
-  async function handleFullscreenToggle(): Promise<void> {
+  function handleChangeServer(): void {
+    const activeSession = state.session
+
+    runOnboardingBackToServer({
+      state,
+      clearSessionArtifacts,
+      onAfterStateReset: () => {
+        state.password = ""
+      },
+      onRenderRequest: render
+    })
+
+    if (activeSession) {
+      void provider.invalidateSession(activeSession).catch(() => undefined)
+    }
+  }
+
+  function handleFullscreenToggle(): void {
     const fullscreenRoot = document.documentElement as FullscreenCapableElement | null
     if (!fullscreenRoot || !canRequestFullscreen(fullscreenRoot)) {
       state.fullscreenWarning = "Fullscreen is not supported in this browser."
@@ -794,19 +953,23 @@ export function createOnboardingAppRuntime(
       return
     }
 
-    try {
-      if (isFullscreenActive()) {
-        await exitFullscreen()
-      } else {
-        await requestFullscreen(fullscreenRoot)
+    const fullscreenRequest = isFullscreenActive()
+      ? exitFullscreen()
+      : requestFullscreen(fullscreenRoot)
+
+    void fullscreenRequest.then(() => {
+      state.fullscreenWarning = null
+      if (isWallRouteActive()) {
+        requestWallFullscreenPatchOrRender()
+      }
+    }).catch(() => {
+      state.fullscreenWarning = "Fullscreen request was denied. Continue in windowed mode and retry anytime."
+      if (isWallRouteActive() && applyWallFullscreenPatchInPlace()) {
+        return
       }
 
-      state.fullscreenWarning = null
       render()
-    } catch {
-      state.fullscreenWarning = "Fullscreen request was denied. Continue in windowed mode and retry anytime."
-      render()
-    }
+    })
   }
 
   function onFullscreenChange(): void {
@@ -814,12 +977,16 @@ export function createOnboardingAppRuntime(
       return
     }
 
-    render()
+    requestWallFullscreenPatchOrRender()
   }
 
   function onFullscreenError(): void {
     state.fullscreenWarning = "Fullscreen request was denied. Continue in windowed mode and retry anytime."
     if (!isWallRouteActive()) {
+      return
+    }
+
+    if (applyWallFullscreenPatchInPlace()) {
       return
     }
 
@@ -832,12 +999,12 @@ export function createOnboardingAppRuntime(
     const onboardingView = createOnboardingFormView({
       createElement,
       state,
-      descriptionText:
-        "Three-step onboarding: server preflight, username/password authentication, then library and wall preferences.",
+      descriptionText: "Three-step onboarding: server preflight, username/password authentication, then library and wall preferences.",
       rememberPasswordLabel: platform.canPersistPassword
         ? "Remember password"
         : "Remember password (Desktop app only)",
       rememberPasswordDisabled: !platform.canPersistPassword,
+      showRememberPasswordToggle: platform.canPersistPassword,
       toLibraryCheckboxTestId,
       onServerInput: (value) => {
         state.serverUrl = value
@@ -868,18 +1035,26 @@ export function createOnboardingAppRuntime(
       onLogin: () => {
         void handleLogin()
       },
+      onBack: () => {
+        handleChangeServer()
+      },
       onLibrarySelectionChange: (libraryId, selected) => {
         if (selected) {
           state.selectedLibraryIds.add(libraryId)
         } else {
           state.selectedLibraryIds.delete(libraryId)
         }
+        persistRememberedLibrarySelection()
         state.libraryError = null
       },
       onDensityChange: (density) => {
         state.density = density
       },
       onFinish: () => {
+        if (state.selectedLibraryIds.size > 0) {
+          persistRememberedLibrarySelection()
+        }
+
         runOnboardingFinish({
           state,
           resolveRememberPasswordRequested: () => {
@@ -940,23 +1115,8 @@ export function createOnboardingAppRuntime(
       }
 
       const fullscreenWarning = state.fullscreenWarning
-        ? createElement("p", { textContent: state.fullscreenWarning, testId: "wall-fullscreen-warning" })
+        ? createFullscreenWarningElement(state.fullscreenWarning)
         : null
-      if (fullscreenWarning) {
-        fullscreenWarning.style.margin = "0"
-        fullscreenWarning.style.padding = "0.62rem 0.8rem"
-        fullscreenWarning.style.borderRadius = "0.64rem"
-        fullscreenWarning.style.border = "1px solid rgba(255, 194, 130, 0.54)"
-        fullscreenWarning.style.background = [
-          "linear-gradient(145deg, rgba(89, 54, 24, 0.58) 0%, rgba(63, 38, 18, 0.57) 100%)",
-          "radial-gradient(circle at 100% 0%, rgba(255, 210, 151, 0.16) 0%, transparent 48%)"
-        ].join(",")
-        fullscreenWarning.style.color = "#ffe5cc"
-        fullscreenWarning.style.fontFamily = "var(--mps-font-mono)"
-        fullscreenWarning.style.fontSize = "0.69rem"
-        fullscreenWarning.style.letterSpacing = "0.02em"
-        fullscreenWarning.style.boxShadow = "0 8px 18px rgba(33, 18, 8, 0.3), inset 0 0 0 1px rgba(255, 219, 174, 0.18)"
-      }
 
       const wallView = createOnboardingWallRouteView({
         createElement,
@@ -995,15 +1155,15 @@ export function createOnboardingAppRuntime(
         controls: {
           showFullscreenControl: true,
           fullscreenActive: isFullscreenActive(),
-          onToggleFullscreen: () => {
-            void handleFullscreenToggle()
-          },
+          onToggleFullscreen: handleFullscreenToggle,
           fullscreenWarning
         }
       })
 
       container.append(wallView)
+      syncWallClockHeadingInPlace()
       syncWallIngestionTelemetry()
+      startWallClockLoop()
       startWallStreamLoop()
     } finally {
       isWallRendering = false
@@ -1024,6 +1184,18 @@ export function createOnboardingAppRuntime(
     try {
       const url = new URL(window.location.href)
 
+      if (url.pathname !== WALL_PATHNAME) {
+        const persistedSession = readActiveSession()
+        const persistedWallHandoff = readWallHandoff()
+
+        if (persistedSession && persistedWallHandoff) {
+          state.session = persistedSession
+          window.history.replaceState({}, "", WALL_PATHNAME)
+          render()
+          return
+        }
+      }
+
       if (url.pathname === WALL_PATHNAME) {
         startDiagnosticsSampling()
         renderWall(target)
@@ -1031,6 +1203,7 @@ export function createOnboardingAppRuntime(
       }
 
       stopDiagnosticsSampling()
+      stopWallClockLoop()
       stopWallStreamLoop()
       wallInteractionController.detach()
       state.activePosterIndex = null
@@ -1061,6 +1234,7 @@ export function createOnboardingAppRuntime(
     },
     dispose: () => {
       stopDiagnosticsSampling()
+      stopWallClockLoop()
       stopWallStreamLoop()
       wallInteractionController.detach()
       disposeIngestionRuntime()
