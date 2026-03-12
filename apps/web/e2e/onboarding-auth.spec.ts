@@ -309,8 +309,8 @@ test("completes preflight -> login -> library selection and enters poster wall",
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("remember-username-checkbox").check()
-  await expect(page.getByTestId("remember-password-checkbox")).toBeDisabled()
-  await page.getByTestId("login-submit").click()
+  await expect(page.getByTestId("remember-password-checkbox")).toHaveCount(0)
+  await page.getByTestId("password-input").press("Enter")
 
   const libraryCheckbox = page.getByTestId("library-checkbox-movies-main")
   await expect(libraryCheckbox).toBeVisible()
@@ -400,9 +400,13 @@ test("exports queue refill diagnostics with non-null adapter state on web runtim
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("preflight-check-button").click()
+  await expect(page.getByTestId("preflight-check-button")).toHaveText("Preflight server")
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
+  await expect(page.getByTestId("username-input")).toHaveValue("demo-user")
+  await expect(page.getByTestId("password-input")).toHaveValue("secret-pass")
   await page.getByTestId("login-submit").click()
+  await expect(page.getByTestId("onboarding-finish")).toBeVisible()
   await page.getByTestId("onboarding-finish").click()
 
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
@@ -501,7 +505,172 @@ test("restores remembered server and username with empty password after restart"
   await expect(page.getByTestId("server-url-input")).toHaveValue(TEST_SERVER)
   await expect(page.getByTestId("username-input")).toHaveValue("demo-user")
   await expect(page.getByTestId("password-input")).toHaveValue("")
-  await expect(page.getByTestId("remember-password-checkbox")).toBeDisabled()
+  await expect(page.getByTestId("remember-password-checkbox")).toHaveCount(0)
+})
+
+test("remembers library selection after logout and next login on web", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+  await wireLogout(page)
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          },
+          {
+            Id: "shows-main",
+            Name: "Shows",
+            CollectionType: "tvshows"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeChecked()
+  await expect(page.getByTestId("library-checkbox-shows-main")).toBeChecked()
+  await page.getByTestId("library-checkbox-shows-main").uncheck()
+
+  await page.getByTestId("onboarding-finish").click()
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+
+  await page.getByTestId("logout-button").first().click()
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeChecked()
+  await expect(page.getByTestId("library-checkbox-shows-main")).not.toBeChecked()
+})
+
+test("change server returns to login step and clears saved session before entering wall", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeVisible()
+
+  const sessionStateBeforeStepBack = await page.evaluate(() => ({
+    tabSession: window.sessionStorage.getItem("mps.auth.session"),
+    persistedSession: window.localStorage.getItem("mps.auth.session")
+  }))
+
+  expect(sessionStateBeforeStepBack.tabSession).toContain("token-abc")
+  expect(sessionStateBeforeStepBack.persistedSession).toContain("token-abc")
+
+  await page.getByTestId("change-server-button").click()
+
+  await expect(page.getByTestId("server-url-input")).toHaveValue(TEST_SERVER)
+  await expect(page.getByTestId("username-input")).toHaveValue("demo-user")
+  await expect(page.getByTestId("password-input")).toHaveValue("")
+  await expect(page.getByTestId("library-checkbox-movies-main")).toHaveCount(0)
+
+  const sessionStateAfterStepBack = await page.evaluate(() => ({
+    tabSession: window.sessionStorage.getItem("mps.auth.session"),
+    persistedSession: window.localStorage.getItem("mps.auth.session"),
+    tabWallHandoff: window.sessionStorage.getItem("mps.wall.handoff"),
+    persistedWallHandoff: window.localStorage.getItem("mps.wall.handoff")
+  }))
+
+  expect(sessionStateAfterStepBack.tabSession).toBeNull()
+  expect(sessionStateAfterStepBack.persistedSession).toBeNull()
+  expect(sessionStateAfterStepBack.tabWallHandoff).toBeNull()
+  expect(sessionStateAfterStepBack.persistedWallHandoff).toBeNull()
+})
+
+test("reopens root route into the wall when a saved session and handoff exist", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movie-1",
+            Name: "Poster Ready",
+            Type: "Movie",
+            ImageTags: { Primary: "poster-tag" }
+          }
+        ],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+
+  await page.goto("/")
+
+  await expect(page).toHaveURL(/\/wall$/)
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await expect(page.getByTestId("server-url-input")).toHaveCount(0)
 })
 
 test("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async ({ page }) => {
@@ -833,6 +1002,187 @@ test("shows non-blocking warning when fullscreen request is denied", async ({ pa
   const refreshButton = page.getByTestId("manual-refresh-button").first()
   await refreshButton.click()
   await expect(refreshButton).toBeVisible()
+})
+
+test("updates the wall clock without remounting the wall", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movie-1",
+            Name: "Poster Ready",
+            Type: "Movie",
+            ImageTags: { Primary: "poster-tag" }
+          }
+        ],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.evaluate(`
+    (() => {
+      const RealDate = Date;
+      let nowMs = RealDate.parse("2026-03-12T12:34:00.000");
+
+      class MockDate extends RealDate {
+        constructor(...args) {
+          if (args.length === 0) {
+            super(nowMs);
+            return;
+          }
+
+          super(...args);
+        }
+
+        static now() {
+          return nowMs;
+        }
+
+        static parse(value) {
+          return RealDate.parse(value);
+        }
+
+        static UTC(...args) {
+          return RealDate.UTC(...args);
+        }
+      }
+
+      window.__setMockWallClockTime = (isoTimestamp) => {
+        nowMs = RealDate.parse(isoTimestamp);
+      };
+
+      window.Date = MockDate;
+    })()
+  `)
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await expect(page.getByTestId("wall-clock-heading")).toHaveText("12:34")
+
+  await page.evaluate(`window.__setMockWallClockTime?.("2026-03-12T12:35:00.000")`)
+
+  await expect.poll(async () => {
+    return (await page.getByTestId("wall-clock-heading").textContent())?.trim() ?? ""
+  }).toBe("12:35")
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+})
+
+test("keeps the existing wall mounted when entering fullscreen", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movie-1",
+            Name: "Poster Ready",
+            Type: "Movie",
+            ImageTags: { Primary: "poster-tag" }
+          }
+        ],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
+  const baselineSnapshot = await captureWallIdentityProbeSnapshot(page, "before-fullscreen")
+  expect(baselineSnapshot.baselineEstablished).toBe(true)
+  expect(baselineSnapshot.sameWallRootAsBaseline).toBe(true)
+  expect(baselineSnapshot.sameWallGridAsBaseline).toBe(true)
+
+  await page.evaluate(() => {
+    let fullscreenElement: Element | null = null
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get() {
+        return fullscreenElement
+      }
+    })
+
+    const root = document.documentElement as HTMLElement & {
+      requestFullscreen?: () => Promise<void>
+    }
+
+    root.requestFullscreen = () => {
+      fullscreenElement = root
+      document.dispatchEvent(new Event("fullscreenchange"))
+      return Promise.resolve()
+    }
+  })
+
+  await page.getByTestId("wall-fullscreen-button").first().click()
+
+  const afterFullscreenSnapshot = await captureWallIdentityProbeSnapshot(page, "after-fullscreen")
+  expect(afterFullscreenSnapshot.sameWallRootAsBaseline).toBe(true)
+  expect(afterFullscreenSnapshot.sameWallGridAsBaseline).toBe(true)
+  await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
+  await expect(page.getByTestId("wall-fullscreen-button").first()).toHaveAttribute("title", "Exit fullscreen")
+  await expect(page.getByText("No posters ingested yet. Try manual refresh once ingestion is ready.")).toHaveCount(0)
 })
 
 test("poster tile clicks no longer open detail card", async ({ page }) => {
