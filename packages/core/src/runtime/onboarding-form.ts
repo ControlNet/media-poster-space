@@ -25,6 +25,7 @@ export interface CreateOnboardingFormViewOptions {
   descriptionText: string
   rememberPasswordLabel: string
   rememberPasswordDisabled?: boolean
+  showRememberPasswordToggle?: boolean
   toLibraryCheckboxTestId: (libraryId: string) => string
   onServerInput: (value: string) => void
   onRememberServerChange: (remember: boolean) => void
@@ -34,6 +35,7 @@ export interface CreateOnboardingFormViewOptions {
   onRememberUsernameChange: (remember: boolean) => void
   onRememberPasswordChange: (remember: boolean) => void
   onLogin: () => void
+  onBack: () => void
   onLibrarySelectionChange: (libraryId: string, selected: boolean) => void
   onDensityChange: (density: "cinematic" | "compact") => void
   onFinish: () => void
@@ -93,6 +95,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
 
   const serverInput = createElement("input", { testId: "server-url-input" }) as HTMLInputElement
   serverInput.type = "url"
+  serverInput.name = "serverUrl"
   serverInput.placeholder = "https://jellyfin.example"
   serverInput.value = state.serverUrl
   serverInput.style.padding = "0.75rem 0.85rem"
@@ -177,11 +180,18 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     card.append(preflightError)
   }
 
-  const loginFields = createElement("div")
-  loginFields.style.display = "grid"
-  loginFields.style.gap = "1rem"
-  loginFields.style.paddingTop = "1.5rem"
-  loginFields.style.borderTop = "1px solid rgba(255, 255, 255, 0.06)"
+  const loginForm = createElement("form") as HTMLFormElement
+  loginForm.noValidate = true
+  loginForm.method = "post"
+  loginForm.autocomplete = "on"
+  loginForm.style.display = "grid"
+  loginForm.style.gap = "1rem"
+  loginForm.style.paddingTop = "1.5rem"
+  loginForm.style.borderTop = "1px solid rgba(255, 255, 255, 0.06)"
+  loginForm.addEventListener("submit", (event) => {
+    event.preventDefault()
+    options.onLogin()
+  })
 
   const usernameLabel = createElement("label", { textContent: "Username" })
   usernameLabel.style.display = "grid"
@@ -191,7 +201,10 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
   usernameLabel.style.letterSpacing = "0.02em"
   const usernameInput = createElement("input", { testId: "username-input" }) as HTMLInputElement
   usernameInput.type = "text"
+  usernameInput.name = "username"
   usernameInput.autocomplete = "username"
+  usernameInput.autocapitalize = "none"
+  usernameInput.spellcheck = false
   usernameInput.value = state.username
   usernameInput.style.padding = "0.75rem 0.85rem"
   usernameInput.style.border = "1px solid rgba(255, 255, 255, 0.1)"
@@ -224,7 +237,10 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
 
   const passwordInput = createElement("input", { testId: "password-input" }) as HTMLInputElement
   passwordInput.type = "password"
+  passwordInput.name = "password"
   passwordInput.autocomplete = "current-password"
+  passwordInput.autocapitalize = "none"
+  passwordInput.spellcheck = false
   passwordInput.value = state.password
   passwordInput.style.padding = "0.75rem 0.85rem"
   passwordInput.style.border = "1px solid rgba(255, 255, 255, 0.1)"
@@ -287,13 +303,16 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
   rememberPasswordLabel.append(rememberPassword)
   appendCheckboxLabelText(createElement, rememberPasswordLabel, options.rememberPasswordLabel)
 
-  rememberRow.append(rememberUsernameLabel, rememberPasswordLabel)
+  rememberRow.append(rememberUsernameLabel)
+  if (options.showRememberPasswordToggle ?? true) {
+    rememberRow.append(rememberPasswordLabel)
+  }
 
   const loginButton = createElement("button", {
     textContent: state.loginPending ? "Signing in…" : "Sign in",
     testId: "login-submit"
   }) as HTMLButtonElement
-  loginButton.type = "button"
+  loginButton.type = "submit"
   loginButton.disabled = state.loginPending
   loginButton.style.padding = "0.75rem 1rem"
   loginButton.style.borderRadius = "0.6rem"
@@ -325,9 +344,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     })
   }
 
-  loginButton.addEventListener("click", options.onLogin)
-
-  loginFields.append(usernameLabel, passwordLabel, rememberRow, loginButton)
+  loginForm.append(usernameLabel, passwordLabel, rememberRow, loginButton)
 
   if (state.authError) {
     const authError = createElement("p", {
@@ -340,7 +357,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     authError.style.border = "1px solid rgba(255, 130, 130, 0.5)"
     authError.style.background = "rgba(89, 24, 24, 0.45)"
     authError.style.color = "#ffd8d8"
-    loginFields.append(authError)
+    loginForm.append(authError)
   }
 
   const librarySection = createElement("section")
@@ -489,7 +506,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
 
   if (!isStep2) {
     // Step 1: Connection & Login
-    card.append(heading, description, serverLabel, rememberServerLabel, preflightButton, loginFields)
+    card.append(heading, description, serverLabel, rememberServerLabel, preflightButton, loginForm)
   } else {
     // Step 2: Library Selection
     const step2Header = createElement("div")
@@ -497,7 +514,11 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     step2Header.style.justifyContent = "space-between"
     step2Header.style.alignItems = "baseline"
 
-    const backButton = createElement("button", { textContent: "Change server" })
+    const backButton = createElement("button", {
+      textContent: "Change server",
+      testId: "change-server-button"
+    }) as HTMLButtonElement
+    backButton.type = "button"
     backButton.style.background = "none"
     backButton.style.border = "none"
     backButton.style.color = "var(--mps-color-orbit-glow-halo)"
@@ -507,8 +528,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     backButton.style.opacity = "0.7"
     backButton.addEventListener("mouseenter", () => backButton.style.opacity = "1")
     backButton.addEventListener("mouseleave", () => backButton.style.opacity = "0.7")
-    // Note: We don't have a direct "reset" callback, but usually clearing libraries state or re-render would work.
-    // For now, we just let it be, the user asked for layout improvements.
+    backButton.addEventListener("click", options.onBack)
 
     step2Header.append(heading, backButton)
     card.append(step2Header, description, librarySection)

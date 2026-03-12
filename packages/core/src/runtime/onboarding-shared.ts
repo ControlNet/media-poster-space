@@ -8,6 +8,7 @@ import {
 
 export const ONBOARDING_REMEMBERED_SERVER_STORAGE_KEY = "mps.onboarding.remembered-server"
 export const ONBOARDING_REMEMBERED_USERNAME_STORAGE_KEY = "mps.onboarding.remembered-username"
+export const ONBOARDING_REMEMBERED_LIBRARY_SELECTION_STORAGE_KEY_PREFIX = "mps.onboarding.remembered-library-selection.v1"
 export const ONBOARDING_DEVICE_ID_STORAGE_KEY = "mps.onboarding.device-id"
 export const ONBOARDING_AUTH_SESSION_STORAGE_KEY = "mps.auth.session"
 export const ONBOARDING_WALL_HANDOFF_STORAGE_KEY = "mps.wall.handoff"
@@ -254,6 +255,56 @@ export function persistRememberedString(options: {
   }
 
   options.storage?.removeItem(options.key)
+}
+
+function toRememberedLibrarySelectionStorageKey(session: Pick<ProviderSession, "providerId" | "serverUrl" | "userId">): string {
+  const normalizedServerUrl = session.serverUrl.trim().replace(/\/+$/, "")
+  return `${ONBOARDING_REMEMBERED_LIBRARY_SELECTION_STORAGE_KEY_PREFIX}::${session.providerId}::${normalizedServerUrl}::${session.userId}`
+}
+
+export function saveRememberedLibrarySelection(options: {
+  storage: Storage | null
+  session: Pick<ProviderSession, "providerId" | "serverUrl" | "userId">
+  selectedLibraryIds: readonly string[]
+}): void {
+  const normalizedSelectedLibraryIds = [...new Set(options.selectedLibraryIds.map((libraryId) => {
+    return libraryId.trim()
+  }).filter((libraryId) => {
+    return libraryId.length > 0
+  }))].sort()
+
+  const key = toRememberedLibrarySelectionStorageKey(options.session)
+  if (normalizedSelectedLibraryIds.length === 0) {
+    options.storage?.removeItem(key)
+    return
+  }
+
+  options.storage?.setItem(key, JSON.stringify(normalizedSelectedLibraryIds))
+}
+
+export function readRememberedLibrarySelection(options: {
+  storage: Storage | null
+  session: Pick<ProviderSession, "providerId" | "serverUrl" | "userId">
+  availableLibraryIds: readonly string[]
+}): readonly string[] | null {
+  const rememberedLibraryIds = parseJson<readonly string[]>(
+    options.storage?.getItem(toRememberedLibrarySelectionStorageKey(options.session)) ?? null
+  )
+
+  if (!Array.isArray(rememberedLibraryIds)) {
+    return null
+  }
+
+  const availableLibraryIdSet = new Set(options.availableLibraryIds)
+  const normalizedSelectedLibraryIds = [...new Set(rememberedLibraryIds.filter((libraryId): libraryId is string => {
+    return typeof libraryId === "string"
+  }).map((libraryId) => {
+    return libraryId.trim()
+  }).filter((libraryId) => {
+    return libraryId.length > 0 && availableLibraryIdSet.has(libraryId)
+  }))]
+
+  return normalizedSelectedLibraryIds.length > 0 ? normalizedSelectedLibraryIds : null
 }
 
 export function clearOnboardingSessionArtifacts(sessionStorageRef: Storage | null): void {

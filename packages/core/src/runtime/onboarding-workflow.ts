@@ -76,6 +76,12 @@ export interface RunOnboardingLoginOptions<Session extends ProviderSession, Libr
   persistRememberedServer: () => void
   saveSession: (session: Session) => void
   toAuthErrorMessage: (error: unknown) => string
+  resolveSelectedLibraryIds?: (context: {
+    session: Session
+    libraries: readonly Library[]
+    getLibraryId: (library: Library) => string
+    defaultSelectedLibraryIds: readonly string[]
+  }) => readonly string[] | Promise<readonly string[]>
   onAfterSessionEstablished?: (context: {
     session: Session
     serverUrl: string
@@ -119,10 +125,25 @@ export async function runOnboardingLogin<
     })
 
     const libraries = await options.listLibraries(session)
+    const defaultSelectedLibraryIds = libraries.map((library) => getLibraryId(library))
+    const resolvedSelectedLibraryIds = options.resolveSelectedLibraryIds
+      ? await options.resolveSelectedLibraryIds({
+          session,
+          libraries,
+          getLibraryId,
+          defaultSelectedLibraryIds
+        })
+      : defaultSelectedLibraryIds
+    const availableLibraryIdSet = new Set(defaultSelectedLibraryIds)
+    const normalizedSelectedLibraryIds = [...new Set(resolvedSelectedLibraryIds.filter((libraryId) => {
+      return availableLibraryIdSet.has(libraryId)
+    }))]
 
     options.state.session = session
     options.state.libraries = libraries
-    options.state.selectedLibraryIds = new Set(libraries.map((library) => getLibraryId(library)))
+    options.state.selectedLibraryIds = new Set(
+      normalizedSelectedLibraryIds.length > 0 ? normalizedSelectedLibraryIds : defaultSelectedLibraryIds
+    )
     options.state.loginPending = false
     options.state.password = ""
     options.persistRememberedUsername()
@@ -143,6 +164,48 @@ export async function runOnboardingLogin<
     options.clearSessionArtifacts()
     options.onRenderRequest()
   }
+}
+
+export interface OnboardingBackToServerState<Session extends ProviderSession, Library> {
+  session: Session | null
+  libraries: Library[]
+  selectedLibraryIds: Set<string>
+  preflightPending: boolean
+  preflightError: string | null
+  loginPending: boolean
+  authError: string | null
+  finishPending: boolean
+  libraryError: string | null
+}
+
+export interface RunOnboardingBackToServerOptions<
+  Session extends ProviderSession,
+  Library
+> {
+  state: OnboardingBackToServerState<Session, Library>
+  clearSessionArtifacts: () => void
+  onAfterStateReset?: () => void
+  onRenderRequest: () => void
+}
+
+export function runOnboardingBackToServer<
+  Session extends ProviderSession,
+  Library
+>(options: RunOnboardingBackToServerOptions<Session, Library>): void {
+  options.clearSessionArtifacts()
+
+  options.state.session = null
+  options.state.libraries = []
+  options.state.selectedLibraryIds = new Set<string>()
+  options.state.preflightPending = false
+  options.state.preflightError = null
+  options.state.loginPending = false
+  options.state.authError = null
+  options.state.finishPending = false
+  options.state.libraryError = null
+
+  options.onAfterStateReset?.()
+  options.onRenderRequest()
 }
 
 export interface OnboardingFinishState<Session extends ProviderSession> {
