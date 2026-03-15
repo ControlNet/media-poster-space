@@ -321,24 +321,26 @@ fn platform_list_displays(window: Window) -> Result<Vec<DisplayOption>, String> 
         .enumerate()
         .map(|(index, monitor)| {
             let monitor_name = monitor
-                .name
-                .clone()
+                .name()
+                .cloned()
                 .unwrap_or_else(|| format!("Display {}", index + 1));
+            let monitor_size = monitor.size();
+            let monitor_position = monitor.position();
 
             let monitor_id = format!(
                 "display-{}-{}x{}-{},{}",
                 index,
-                monitor.size.width,
-                monitor.size.height,
-                monitor.position.x,
-                monitor.position.y
+                monitor_size.width,
+                monitor_size.height,
+                monitor_position.x,
+                monitor_position.y
             );
 
             let is_primary = primary
                 .as_ref()
                 .map(|primary_monitor| {
-                    primary_monitor.position == monitor.position
-                        && primary_monitor.size == monitor.size
+                    primary_monitor.position() == monitor_position
+                        && primary_monitor.size() == monitor_size
                 })
                 .unwrap_or(index == 0);
 
