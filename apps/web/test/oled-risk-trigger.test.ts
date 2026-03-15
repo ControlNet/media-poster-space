@@ -25,6 +25,16 @@ describe("oled risk trigger integration", () => {
       seed: "baseline-1",
       profile: "showcase"
     });
+
+    const pagesRoute = resolveWallSceneRoute(
+      new URL("https://mps.local/media-poster-space/wall?mode=test"),
+      "/media-poster-space/"
+    );
+    expect(pagesRoute).toEqual({
+      mode: "test",
+      seed: "mode-test",
+      profile: "balanced"
+    });
   });
 
   it("triggers early relayout from risk state before showcase cadence interval", () => {

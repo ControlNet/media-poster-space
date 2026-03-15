@@ -239,6 +239,25 @@ describe("renderer-runtime", () => {
     });
   });
 
+  it("supports GitHub Pages subpath wall routes without treating the app root as the wall", () => {
+    expect(
+      shouldRenderWallScene(new URL("https://mps.local/media-poster-space/wall?mode=test"), "/media-poster-space/")
+    ).toBe(true);
+    expect(
+      shouldRenderWallScene(new URL("https://mps.local/media-poster-space/?mode=test"), "/media-poster-space/")
+    ).toBe(false);
+
+    const routeMatch = resolveWallSceneRoute(
+      new URL("https://mps.local/media-poster-space/wall?seed=baseline-1&profile=balanced"),
+      "/media-poster-space/"
+    );
+    expect(routeMatch).toEqual({
+      mode: "cinematic",
+      seed: "baseline-1",
+      profile: "balanced"
+    });
+  });
+
   it("keeps mode precedence and strict seed/profile parsing contracts", () => {
     expect(
       resolveWallSceneRoute(new URL("https://mps.local/wall?mode=test&seed=baseline-1&profile=showcase"))
