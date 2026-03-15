@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="refresh" content="0; url=%BASE_URL%" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting…</title>
+  </head>
+  <body>
+    <script>
+      ;(() => {
+        const redirectStorageKey = "mps.pages.redirect-target"
+        const redirectTarget = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+        try {
+          window.sessionStorage.setItem(redirectStorageKey, redirectTarget)
+        } catch (error) {
+          console.warn("[pages-redirect] Unable to store redirect target", error)
+        }
+
+        window.location.replace("%BASE_URL%")
+      })()
+    </script>
+  </body>
+</html>
