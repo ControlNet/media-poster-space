@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
 
+      - name: Install Playwright browser for desktop gates
+        run: pnpm --filter @mps/desktop exec playwright install --with-deps chromium
+
       - name: Run quality gates
         run: pnpm -w turbo run lint typecheck test build
 
@@ -70,6 +73,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
+
+      - name: Install Playwright browser for desktop release build
+        run: pnpm --filter @mps/desktop exec playwright install --with-deps chromium
 
       - name: Build release artifacts
         run: pnpm -w build:release
