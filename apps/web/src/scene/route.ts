@@ -1,5 +1,7 @@
 import type { OledSceneProfile } from "@mps/core";
 
+import { isAppPath } from "../routing/base-path";
+
 const WALL_SCENE_PATHNAME = "/wall";
 const WALL_SCENE_MODE_QUERY_PARAM = "mode";
 const WALL_SCENE_TEST_MODE = "test";
@@ -25,8 +27,8 @@ function parseSeed(seed: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-export function resolveWallSceneRoute(url: URL): WallSceneRouteMatch | null {
-  if (url.pathname !== WALL_SCENE_PATHNAME) {
+export function resolveWallSceneRoute(url: URL, basePath?: string): WallSceneRouteMatch | null {
+  if (!isAppPath(url.pathname, WALL_SCENE_PATHNAME, basePath)) {
     return null;
   }
 
@@ -52,6 +54,6 @@ export function resolveWallSceneRoute(url: URL): WallSceneRouteMatch | null {
   };
 }
 
-export function shouldRenderWallScene(url: URL): boolean {
-  return resolveWallSceneRoute(url) !== null;
+export function shouldRenderWallScene(url: URL, basePath?: string): boolean {
+  return resolveWallSceneRoute(url, basePath) !== null;
 }

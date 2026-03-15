@@ -78,11 +78,13 @@ import {
   createCrashReportPackage,
   exportCrashReportPackageLocally
 } from "../features/crash-export/crash-export"
+import { isAppPath, resolveAppPath } from "../routing/base-path"
 
 const REMEMBERED_SERVER_STORAGE_KEY = ONBOARDING_REMEMBERED_SERVER_STORAGE_KEY
 const REMEMBERED_USERNAME_STORAGE_KEY = ONBOARDING_REMEMBERED_USERNAME_STORAGE_KEY
 const AUTH_SESSION_STORAGE_KEY = ONBOARDING_AUTH_SESSION_STORAGE_KEY
-const WALL_PATHNAME = ONBOARDING_WALL_PATHNAME
+const ONBOARDING_PATHNAME = resolveAppPath("/")
+const WALL_PATHNAME = resolveAppPath(ONBOARDING_WALL_PATHNAME)
 const DETAIL_CARD_TRANSITION_MS = resolveWallTransitionMs()
 const RECONNECT_INITIAL_BACKOFF_MS = ONBOARDING_RECONNECT_INITIAL_BACKOFF_MS
 const RECONNECT_MAX_BACKOFF_MS = ONBOARDING_RECONNECT_MAX_BACKOFF_MS
@@ -919,7 +921,15 @@ export function createOnboardingAppRuntime(
     if (activeSession) {
       try {
         await provider.invalidateSession(activeSession)
-      } catch {
+      } catch (error) {
+        appendDiagnosticsLog({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          event: "auth.logout.invalidate-session-failed",
+          details: {
+            message: error instanceof Error ? error.message : "Unknown logout invalidation failure"
+          }
+        })
       }
     }
 
@@ -933,7 +943,7 @@ export function createOnboardingAppRuntime(
       },
       appendDiagnosticsLog,
       navigateToOnboarding: () => {
-        window.history.pushState({}, "", "/")
+        window.history.pushState({}, "", ONBOARDING_PATHNAME)
       },
       onRenderRequest: render
     })
@@ -952,7 +962,16 @@ export function createOnboardingAppRuntime(
     })
 
     if (activeSession) {
-      void provider.invalidateSession(activeSession).catch(() => undefined)
+      void provider.invalidateSession(activeSession).catch((error) => {
+        appendDiagnosticsLog({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          event: "auth.change-server.invalidate-session-failed",
+          details: {
+            message: error instanceof Error ? error.message : "Unknown step-back invalidation failure"
+          }
+        })
+      })
     }
   }
 
@@ -1104,7 +1123,7 @@ export function createOnboardingAppRuntime(
           title: fallbackContent.title,
           body: fallbackContent.body,
           onBack: () => {
-            window.history.pushState({}, "", "/")
+            window.history.pushState({}, "", ONBOARDING_PATHNAME)
             render()
           }
         })
@@ -1146,7 +1165,7 @@ export function createOnboardingAppRuntime(
           },
           dismissActiveDetailCard,
           navigateToOnboarding: () => {
-            window.history.pushState({}, "", "/")
+            window.history.pushState({}, "", ONBOARDING_PATHNAME)
           },
           onRefresh: () => {
             void ingestionController.refreshNow()
@@ -1192,9 +1211,9 @@ export function createOnboardingAppRuntime(
     try {
       const url = new URL(window.location.href)
 
-      if (url.pathname !== WALL_PATHNAME) {
-        const persistedSession = readActiveSession()
-        const persistedWallHandoff = readWallHandoff()
+        if (!isAppPath(url.pathname, ONBOARDING_WALL_PATHNAME)) {
+          const persistedSession = readActiveSession()
+          const persistedWallHandoff = readWallHandoff()
 
         if (persistedSession && persistedWallHandoff) {
           state.session = persistedSession
@@ -1204,7 +1223,7 @@ export function createOnboardingAppRuntime(
         }
       }
 
-      if (url.pathname === WALL_PATHNAME) {
+      if (isAppPath(url.pathname, ONBOARDING_WALL_PATHNAME)) {
         startDiagnosticsSampling()
         renderWall(target)
         return

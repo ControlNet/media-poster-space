@@ -4,6 +4,7 @@ import {
 } from "./styles";
 import { createWallSceneRuntime, shouldRenderWallScene } from "./scene";
 import { createOnboardingAppRuntime } from "./onboarding/runtime";
+import { restorePendingPagesRedirect } from "./routing/base-path";
 
 type FontMode = "brand" | "fallback";
 
@@ -20,6 +21,7 @@ function resolveFontMode(searchParams: URLSearchParams): FontMode {
 }
 
 const rootElement = document.documentElement;
+restorePendingPagesRedirect();
 const currentUrl = new URL(window.location.href);
 const fontMode = resolveFontMode(currentUrl.searchParams);
 
