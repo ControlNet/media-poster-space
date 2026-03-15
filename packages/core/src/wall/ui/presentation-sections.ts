@@ -3,37 +3,73 @@ import type { MediaItem } from "../../types/media"
 import type { ElementFactory } from "./element-factory"
 import type { WallHandoff } from "./types"
 
-type WallPosterRowDirection = "normal" | "reverse"
+export type WallPosterRowDirection = "normal" | "reverse"
 
-interface WallPosterTileState {
-  tile: HTMLButtonElement
-  posterThumb: HTMLElement
+export interface WallPosterRect {
+  left: number
+  right: number
+  top: number
+  bottom: number
 }
 
-interface WallPosterGridRowState {
+export interface WallPosterEntryBufferEligibility {
+  visibleIndices: number[]
+  entrySideWritableIndices: number[]
+  orderedWritableIndices: number[]
+}
+
+export interface WallPosterTileState {
+  tile: object
+  posterThumb: Pick<HTMLElement, "style">
+}
+
+export interface WallPosterGridRowState {
   entryIndices: number[]
   nextEntryPointer: number
   tiles: WallPosterTileState[]
 }
 
-interface WallPosterGridStreamState {
+export interface WallPosterGridStreamState {
   items: MediaItem[]
   itemIndexByIdentity: Map<string, number>
   nextIncomingRowPointer: number
+  pendingIncomingItems: MediaItem[]
   rows: WallPosterGridRowState[]
 }
 
+export type WallPosterGridStreamApplyStatus =
+  | "applied"
+  | "deferred"
+  | "noop"
+  | "unavailable"
+
+export interface WallPosterGridStreamApplyResult {
+  status: WallPosterGridStreamApplyStatus
+  queuedItemCount: number
+  appliedItemCount: number
+  pendingItemCount: number
+}
+
+export type WallPosterGridStreamApplier = (
+  items: readonly MediaItem[]
+) => WallPosterGridStreamApplyResult
+
 export const WALL_POSTER_GRID_STREAM_APPLIER_KEY = "__mpsApplyWallPosterStreamItems" as const
+export const WALL_POSTER_ENTRY_BUFFER_LIMIT = 2 as const
 
 const wallPosterGridStreamStates = new WeakMap<HTMLElement, WallPosterGridStreamState>()
-const wallPosterTileIdentityByElement = new WeakMap<HTMLButtonElement, string>()
+const wallPosterTileIdentityByElement = new WeakMap<object, string>()
 
 interface WallPosterGridStreamElement extends HTMLElement {
-  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: (items: readonly MediaItem[]) => boolean
+  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: WallPosterGridStreamApplier
 }
 
 export function toWallPosterMediaIdentity(item: Pick<MediaItem, "providerId" | "id">): string {
   return `${item.providerId.trim()}::${item.id.trim()}`
+}
+
+export function getWallPosterTileMediaIdentity(tile: object): string | null {
+  return wallPosterTileIdentityByElement.get(tile) ?? null
 }
 
 function createWallPosterItemIndexByIdentity(items: readonly MediaItem[]): Map<string, number> {
@@ -72,6 +108,44 @@ export function collectIncomingWallPosterItems(
   return incomingItems
 }
 
+function dedupeWallPosterItemsByIdentity(items: readonly MediaItem[]): MediaItem[] {
+  const dedupedItems: MediaItem[] = []
+  const seenIdentities = new Set<string>()
+
+  for (const item of items) {
+    const mediaIdentity = toWallPosterMediaIdentity(item)
+    if (seenIdentities.has(mediaIdentity)) {
+      continue
+    }
+
+    seenIdentities.add(mediaIdentity)
+    dedupedItems.push(item)
+  }
+
+  return dedupedItems
+}
+
+export function collectPendingWallPosterIncomingItems(
+  previousItems: readonly MediaItem[],
+  nextItems: readonly MediaItem[],
+  pendingIncomingItems: readonly MediaItem[]
+): MediaItem[] {
+  const mergedPendingItems = dedupeWallPosterItemsByIdentity(pendingIncomingItems)
+  const queuedIdentities = new Set(mergedPendingItems.map((item) => toWallPosterMediaIdentity(item)))
+
+  for (const incomingItem of collectIncomingWallPosterItems(previousItems, nextItems)) {
+    const mediaIdentity = toWallPosterMediaIdentity(incomingItem)
+    if (queuedIdentities.has(mediaIdentity)) {
+      continue
+    }
+
+    queuedIdentities.add(mediaIdentity)
+    mergedPendingItems.push(incomingItem)
+  }
+
+  return mergedPendingItems
+}
+
 export function createWallPosterEntryEdgeIndices(
   tileCount: number,
   direction: WallPosterRowDirection
@@ -85,6 +159,168 @@ export function createWallPosterEntryEdgeIndices(
   }
 
   return Array.from({ length: tileCount }, (_, index) => index)
+}
+
+function normalizeWallPosterRect(rect: WallPosterRect): WallPosterRect {
+  const rawLeft = Number.isFinite(rect.left) ? rect.left : 0
+  const rawRight = Number.isFinite(rect.right) ? rect.right : 0
+  const rawTop = Number.isFinite(rect.top) ? rect.top : 0
+  const rawBottom = Number.isFinite(rect.bottom) ? rect.bottom : 0
+
+  return {
+    left: Math.min(rawLeft, rawRight),
+    right: Math.max(rawLeft, rawRight),
+    top: Math.min(rawTop, rawBottom),
+    bottom: Math.max(rawTop, rawBottom)
+  }
+}
+
+function intersectsWallPosterViewport(
+  viewportRect: WallPosterRect,
+  tileRect: WallPosterRect
+): boolean {
+  return tileRect.right > viewportRect.left
+    && tileRect.left < viewportRect.right
+    && tileRect.bottom > viewportRect.top
+    && tileRect.top < viewportRect.bottom
+}
+
+function isWallPosterEntrySideWritable(
+  viewportRect: WallPosterRect,
+  tileRect: WallPosterRect,
+  direction: WallPosterRowDirection
+): boolean {
+  if (direction === "normal") {
+    return tileRect.left >= viewportRect.right
+  }
+
+  return tileRect.right <= viewportRect.left
+}
+
+function resolveWallPosterEntrySideDistance(
+  viewportRect: WallPosterRect,
+  tileRect: WallPosterRect,
+  direction: WallPosterRowDirection
+): number {
+  if (direction === "normal") {
+    return tileRect.left - viewportRect.right
+  }
+
+  return viewportRect.left - tileRect.right
+}
+
+export function collectVisibleWallPosterTileIndices(
+  viewportRect: WallPosterRect,
+  tileRects: readonly (WallPosterRect | null | undefined)[]
+): number[] {
+  const normalizedViewportRect = normalizeWallPosterRect(viewportRect)
+  const visibleIndices: number[] = []
+
+  for (let tileIndex = 0; tileIndex < tileRects.length; tileIndex += 1) {
+    const tileRect = tileRects[tileIndex]
+    if (!tileRect) {
+      continue
+    }
+
+    if (intersectsWallPosterViewport(normalizedViewportRect, normalizeWallPosterRect(tileRect))) {
+      visibleIndices.push(tileIndex)
+    }
+  }
+
+  return visibleIndices
+}
+
+export function collectEntrySideWallPosterWritableIndices(
+  viewportRect: WallPosterRect,
+  tileRects: readonly (WallPosterRect | null | undefined)[],
+  direction: WallPosterRowDirection
+): number[] {
+  const normalizedViewportRect = normalizeWallPosterRect(viewportRect)
+  const entryIndices = createWallPosterEntryEdgeIndices(tileRects.length, direction)
+  const writableIndices: number[] = []
+
+  for (const tileIndex of entryIndices) {
+    const tileRect = tileRects[tileIndex]
+    if (!tileRect) {
+      continue
+    }
+
+    const normalizedTileRect = normalizeWallPosterRect(tileRect)
+    if (intersectsWallPosterViewport(normalizedViewportRect, normalizedTileRect)) {
+      continue
+    }
+
+    if (!isWallPosterEntrySideWritable(normalizedViewportRect, normalizedTileRect, direction)) {
+      continue
+    }
+
+    writableIndices.push(tileIndex)
+  }
+
+  return writableIndices
+}
+
+export function collectOrderedWallPosterWritableIndices(
+  viewportRect: WallPosterRect,
+  tileRects: readonly (WallPosterRect | null | undefined)[],
+  direction: WallPosterRowDirection,
+  maxWritableCount = WALL_POSTER_ENTRY_BUFFER_LIMIT
+): number[] {
+  const normalizedMaxWritableCount = Number.isFinite(maxWritableCount)
+    ? Math.max(Math.trunc(maxWritableCount), 0)
+    : 0
+  if (normalizedMaxWritableCount === 0) {
+    return []
+  }
+
+  const normalizedViewportRect = normalizeWallPosterRect(viewportRect)
+
+  return collectEntrySideWallPosterWritableIndices(normalizedViewportRect, tileRects, direction)
+    .map((tileIndex, candidateOrder) => {
+      const tileRect = tileRects[tileIndex]
+      return {
+        tileIndex,
+        candidateOrder,
+        distance: tileRect
+          ? resolveWallPosterEntrySideDistance(
+            normalizedViewportRect,
+            normalizeWallPosterRect(tileRect),
+            direction
+          )
+          : Number.POSITIVE_INFINITY
+      }
+    })
+    .sort((left, right) => {
+      if (left.distance !== right.distance) {
+        return left.distance - right.distance
+      }
+
+      return left.candidateOrder - right.candidateOrder
+    })
+    .slice(0, normalizedMaxWritableCount)
+    .map(({ tileIndex }) => tileIndex)
+}
+
+export function resolveWallPosterEntryBufferEligibility(
+  viewportRect: WallPosterRect,
+  tileRects: readonly (WallPosterRect | null | undefined)[],
+  direction: WallPosterRowDirection,
+  maxWritableCount = WALL_POSTER_ENTRY_BUFFER_LIMIT
+): WallPosterEntryBufferEligibility {
+  return {
+    visibleIndices: collectVisibleWallPosterTileIndices(viewportRect, tileRects),
+    entrySideWritableIndices: collectEntrySideWallPosterWritableIndices(
+      viewportRect,
+      tileRects,
+      direction
+    ),
+    orderedWritableIndices: collectOrderedWallPosterWritableIndices(
+      viewportRect,
+      tileRects,
+      direction,
+      maxWritableCount
+    )
+  }
 }
 
 export function consumeWallPosterIncomingRowIndex(
@@ -117,40 +353,225 @@ export function consumeWallPosterIncomingRowIndex(
   }
 }
 
+function resolveWallPosterViewportExtent(value: number, fallback: number): number {
+  return Number.isFinite(value)
+    ? Math.max(Math.trunc(value), 1)
+    : fallback
+}
+
+function resolveCurrentWallPosterViewportRect(): WallPosterRect {
+  if (typeof window === "undefined") {
+    return {
+      left: 0,
+      right: 1920,
+      top: 0,
+      bottom: 1080
+    }
+  }
+
+  return {
+    left: 0,
+    right: resolveWallPosterViewportExtent(window.innerWidth, 1920),
+    top: 0,
+    bottom: resolveWallPosterViewportExtent(window.innerHeight, 1080)
+  }
+}
+
+function toWallPosterFiniteRectValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : null
+}
+
+function toWallPosterRectCandidate(
+  rectCandidate: Partial<WallPosterRect> | null | undefined
+): WallPosterRect | null {
+  if (!rectCandidate) {
+    return null
+  }
+
+  const left = toWallPosterFiniteRectValue(rectCandidate.left)
+  const right = toWallPosterFiniteRectValue(rectCandidate.right)
+  const top = toWallPosterFiniteRectValue(rectCandidate.top)
+  const bottom = toWallPosterFiniteRectValue(rectCandidate.bottom)
+  if (left === null || right === null || top === null || bottom === null) {
+    return null
+  }
+
+  return {
+    left,
+    right,
+    top,
+    bottom
+  }
+}
+
+function resolveWallPosterTileRect(tile: object): WallPosterRect | null {
+  const tileWithRectSource = tile as Partial<WallPosterRect> & {
+    getBoundingClientRect?: () => Partial<WallPosterRect> | null | undefined
+  }
+
+  if (typeof tileWithRectSource.getBoundingClientRect === "function") {
+    const snapshotRect = toWallPosterRectCandidate(tileWithRectSource.getBoundingClientRect())
+    if (snapshotRect) {
+      return snapshotRect
+    }
+  }
+
+  return toWallPosterRectCandidate(tileWithRectSource)
+}
+
+function collectWallPosterTileRects(
+  tileStates: readonly WallPosterTileState[]
+): Array<WallPosterRect | null> {
+  return tileStates.map((tileState) => resolveWallPosterTileRect(tileState.tile))
+}
+
+function resolveWallPosterRowDirection(entryIndices: readonly number[]): WallPosterRowDirection {
+  let firstEntryIndex: number | null = null
+  let lastEntryIndex: number | null = null
+
+  for (const entryIndex of entryIndices) {
+    if (typeof entryIndex === "number") {
+      firstEntryIndex = entryIndex
+      break
+    }
+  }
+
+  for (let index = entryIndices.length - 1; index >= 0; index -= 1) {
+    const entryIndex = entryIndices[index]
+    if (typeof entryIndex === "number") {
+      lastEntryIndex = entryIndex
+      break
+    }
+  }
+
+  if (
+    typeof firstEntryIndex === "number"
+    && typeof lastEntryIndex === "number"
+    && firstEntryIndex < lastEntryIndex
+  ) {
+    return "reverse"
+  }
+
+  return "normal"
+}
+
+interface WallPosterGridRowWritableSnapshot {
+  orderedWritableIndices: number[]
+  consumedWritableOrders: Set<number>
+}
+
+function resolveWallPosterGridRowEligibilityFromCurrentGeometry(
+  rowState: WallPosterGridRowState,
+  viewportRect: WallPosterRect
+): WallPosterEntryBufferEligibility {
+  const rowDirection = resolveWallPosterRowDirection(rowState.entryIndices)
+
+  return resolveWallPosterEntryBufferEligibility(
+    viewportRect,
+    collectWallPosterTileRects(rowState.tiles),
+    rowDirection
+  )
+}
+
+function createWallPosterGridRowWritableSnapshot(
+  rowState: WallPosterGridRowState,
+  viewportRect: WallPosterRect
+): WallPosterGridRowWritableSnapshot {
+  const eligibility = resolveWallPosterGridRowEligibilityFromCurrentGeometry(rowState, viewportRect)
+
+  return {
+    orderedWritableIndices: [...eligibility.orderedWritableIndices],
+    consumedWritableOrders: new Set<number>()
+  }
+}
+
 function applyWallPosterTileMedia(tileState: WallPosterTileState, item: MediaItem): void {
   tileState.posterThumb.style.backgroundImage = `url(${item.poster.url})`
   wallPosterTileIdentityByElement.set(tileState.tile, toWallPosterMediaIdentity(item))
 }
 
-function consumeWallPosterEntryIndex(rowState: WallPosterGridRowState): number | null {
-  if (rowState.entryIndices.length === 0) {
+function consumeWallPosterWritableEntryIndex(
+  rowState: WallPosterGridRowState,
+  orderedWritableIndices: readonly number[],
+  consumedWritableOrders: Set<number>
+): number | null {
+  if (orderedWritableIndices.length === 0 || consumedWritableOrders.size >= orderedWritableIndices.length) {
     return null
   }
 
-  const entryIndex = rowState.entryIndices[rowState.nextEntryPointer]
-  if (typeof entryIndex !== "number") {
-    return null
+  const normalizedPointerBase = Number.isFinite(rowState.nextEntryPointer)
+    ? Math.trunc(rowState.nextEntryPointer)
+    : 0
+  const normalizedPointer =
+    ((normalizedPointerBase % orderedWritableIndices.length) + orderedWritableIndices.length)
+    % orderedWritableIndices.length
+
+  for (let offset = 0; offset < orderedWritableIndices.length; offset += 1) {
+    const writableOrder = (normalizedPointer + offset) % orderedWritableIndices.length
+    if (consumedWritableOrders.has(writableOrder)) {
+      continue
+    }
+
+    consumedWritableOrders.add(writableOrder)
+    const entryIndex = orderedWritableIndices[writableOrder]
+    if (typeof entryIndex !== "number") {
+      continue
+    }
+
+    rowState.nextEntryPointer = (writableOrder + 1) % orderedWritableIndices.length
+    return entryIndex
   }
 
-  rowState.nextEntryPointer = (rowState.nextEntryPointer + 1) % rowState.entryIndices.length
-  return entryIndex
+  return null
 }
 
-function applyWallPosterGridStreamState(
+function createWallPosterGridStreamApplyResult(
+  status: WallPosterGridStreamApplyStatus,
+  queuedItemCount: number,
+  appliedItemCount: number,
+  pendingItemCount: number
+): WallPosterGridStreamApplyResult {
+  return {
+    status,
+    queuedItemCount,
+    appliedItemCount,
+    pendingItemCount
+  }
+}
+
+export function applyWallPosterGridStreamState(
   streamState: WallPosterGridStreamState,
   items: readonly MediaItem[]
-): void {
+): WallPosterGridStreamApplyResult {
   const previousItems = streamState.items
   const nextItems = [...items]
   streamState.items = nextItems
   streamState.itemIndexByIdentity = createWallPosterItemIndexByIdentity(nextItems)
+  streamState.pendingIncomingItems = collectPendingWallPosterIncomingItems(
+    previousItems,
+    nextItems,
+    streamState.pendingIncomingItems
+  )
 
-  const incomingItems = collectIncomingWallPosterItems(previousItems, nextItems)
-  if (incomingItems.length === 0 || streamState.rows.length === 0) {
-    return
+  const queuedItemCount = streamState.pendingIncomingItems.length
+  if (queuedItemCount === 0) {
+    return createWallPosterGridStreamApplyResult("noop", 0, 0, 0)
   }
 
-  for (const incomingItem of incomingItems) {
+  if (streamState.rows.length === 0) {
+    return createWallPosterGridStreamApplyResult("deferred", queuedItemCount, 0, queuedItemCount)
+  }
+
+  const viewportRect = resolveCurrentWallPosterViewportRect()
+  const rowWritableSnapshots = streamState.rows.map((rowState) => {
+    return createWallPosterGridRowWritableSnapshot(rowState, viewportRect)
+  })
+  const nextPendingIncomingItems: MediaItem[] = []
+  let appliedItemCount = 0
+
+  for (const incomingItem of streamState.pendingIncomingItems) {
     const incomingRowSelection = consumeWallPosterIncomingRowIndex(
       streamState.rows.length,
       streamState.nextIncomingRowPointer
@@ -158,39 +579,71 @@ function applyWallPosterGridStreamState(
     streamState.nextIncomingRowPointer = incomingRowSelection.nextRowPointer
 
     if (incomingRowSelection.rowIndex === null) {
+      nextPendingIncomingItems.push(incomingItem)
       continue
     }
 
     const rowState = streamState.rows[incomingRowSelection.rowIndex]
     if (!rowState) {
+      nextPendingIncomingItems.push(incomingItem)
       continue
     }
 
-    const entryIndex = consumeWallPosterEntryIndex(rowState)
+    const rowWritableSnapshot = rowWritableSnapshots[incomingRowSelection.rowIndex]
+    if (!rowWritableSnapshot) {
+      nextPendingIncomingItems.push(incomingItem)
+      continue
+    }
+
+    const entryIndex = consumeWallPosterWritableEntryIndex(
+      rowState,
+      rowWritableSnapshot.orderedWritableIndices,
+      rowWritableSnapshot.consumedWritableOrders
+    )
     if (entryIndex === null) {
+      nextPendingIncomingItems.push(incomingItem)
       continue
     }
 
     const tileState = rowState.tiles[entryIndex]
     if (!tileState) {
+      nextPendingIncomingItems.push(incomingItem)
       continue
     }
 
     applyWallPosterTileMedia(tileState, incomingItem)
+    appliedItemCount += 1
   }
+
+  streamState.pendingIncomingItems = nextPendingIncomingItems
+
+  if (appliedItemCount > 0) {
+    return createWallPosterGridStreamApplyResult(
+      "applied",
+      queuedItemCount,
+      appliedItemCount,
+      nextPendingIncomingItems.length
+    )
+  }
+
+  return createWallPosterGridStreamApplyResult(
+    "deferred",
+    queuedItemCount,
+    0,
+    nextPendingIncomingItems.length
+  )
 }
 
 export function applyWallPosterGridStreamItems(
   posterGrid: HTMLElement,
   items: readonly MediaItem[]
-): boolean {
+): WallPosterGridStreamApplyResult {
   const streamState = wallPosterGridStreamStates.get(posterGrid)
   if (!streamState) {
-    return false
+    return createWallPosterGridStreamApplyResult("unavailable", 0, 0, 0)
   }
 
-  applyWallPosterGridStreamState(streamState, items)
-  return true
+  return applyWallPosterGridStreamState(streamState, items)
 }
 
 function toWallPosterRowShuffleSeed(rowIndex: number, itemCount: number): number {
@@ -292,8 +745,8 @@ export function createWallHeadingSection(
   heading.style.color = "transparent"
   heading.style.backgroundImage = "linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.5) 100%)"
   heading.style.backgroundClip = "text"
-  heading.style.webkitBackgroundClip = "text"
-  heading.style.webkitTextFillColor = "transparent"
+  heading.style.setProperty("-webkit-background-clip", "text")
+  heading.style.setProperty("-webkit-text-fill-color", "transparent")
   heading.style.filter = "drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3))"
   heading.style.pointerEvents = "none"
 
@@ -325,7 +778,7 @@ export function createWallHeadingSection(
   libraries.style.display = "none"
 
   const preferences = createElement("p", {
-    textContent: `Density: ${handoff.preferences.density}; remember server: ${handoff.preferences.rememberServer ? "yes" : "no"}; remember username: ${handoff.preferences.rememberUsername ? "yes" : "no"}; remember password: ${handoff.preferences.rememberPasswordRequested ? "yes" : "no"}.`
+    textContent: `Remember server: ${handoff.preferences.rememberServer ? "yes" : "no"}; remember username: ${handoff.preferences.rememberUsername ? "yes" : "no"}; remember password: ${handoff.preferences.rememberPasswordRequested ? "yes" : "no"}.`
   })
   preferences.style.margin = "0"
   preferences.style.position = "fixed"
@@ -408,6 +861,7 @@ export function createWallPosterGridSection(
     items: [...options.items],
     itemIndexByIdentity: createWallPosterItemIndexByIdentity(options.items),
     nextIncomingRowPointer: 0,
+    pendingIncomingItems: [],
     rows: []
   }
 
