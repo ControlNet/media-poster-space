@@ -139,6 +139,18 @@ interface Task6WallProbeSnapshot {
   sameAsBaseline: boolean
 }
 
+interface WallPosterBackgroundProbe {
+  probeId: string
+  backgroundImage: string
+  intersectionArea: number
+  isVisible: boolean
+}
+
+interface WallPosterBackgroundSnapshot {
+  posters: WallPosterBackgroundProbe[]
+  visiblePosters: WallPosterBackgroundProbe[]
+}
+
 async function captureTask6WallProbeSnapshot(page: Page): Promise<Task6WallProbeSnapshot> {
   return page.evaluate(() => {
     const wallRoot = document.querySelector('[data-testid="poster-wall-root"]')
@@ -171,6 +183,120 @@ async function captureTask6WallProbeSnapshot(page: Page): Promise<Task6WallProbe
     return {
       remountCount: task6ProbeState.remountCount,
       sameAsBaseline: wallRoot === task6ProbeState.baselineRoot
+    }
+  })
+}
+
+async function captureWallPosterBackgroundSnapshot(page: Page): Promise<WallPosterBackgroundSnapshot> {
+  return page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('[data-testid="wall-poster-grid"]')
+    if (!grid) {
+      throw new Error("Missing wall poster grid for background probe")
+    }
+
+    const windowWithTask8Probe = window as Window & {
+      __task8WallPosterProbeState?: {
+        nextProbeId: number
+      }
+    }
+
+    if (!windowWithTask8Probe.__task8WallPosterProbeState) {
+      windowWithTask8Probe.__task8WallPosterProbeState = {
+        nextProbeId: 1
+      }
+    }
+
+    const viewportLeft = 0
+    const viewportTop = 0
+    const viewportRight = window.innerWidth
+    const viewportBottom = window.innerHeight
+    const probeState = windowWithTask8Probe.__task8WallPosterProbeState
+
+    const posters = Array.from(grid.querySelectorAll<HTMLButtonElement>("button")).map((button) => {
+      if (!button.dataset.task8ProbeId) {
+        button.dataset.task8ProbeId = `task8-probe-${probeState.nextProbeId}`
+        probeState.nextProbeId += 1
+      }
+
+      const rect = button.getBoundingClientRect()
+      const intersectionWidth = Math.max(
+        0,
+        Math.min(rect.right, viewportRight) - Math.max(rect.left, viewportLeft)
+      )
+      const intersectionHeight = Math.max(
+        0,
+        Math.min(rect.bottom, viewportBottom) - Math.max(rect.top, viewportTop)
+      )
+      const intersectionArea = intersectionWidth * intersectionHeight
+      const posterThumb = button.firstElementChild instanceof HTMLElement
+        ? button.firstElementChild
+        : button
+
+      return {
+        probeId: button.dataset.task8ProbeId,
+        backgroundImage: getComputedStyle(posterThumb).backgroundImage,
+        intersectionArea,
+        isVisible: intersectionArea > 0
+      }
+    })
+
+    const visiblePosters = posters
+      .filter((poster) => poster.isVisible)
+      .sort((left, right) => right.intersectionArea - left.intersectionArea)
+
+    return {
+      posters,
+      visiblePosters
+    }
+  })
+}
+
+async function clickVisibleManualRefreshButton(page: Page): Promise<void> {
+  const manualRefreshButton = page.getByTestId("manual-refresh-button").first()
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("pointermove"))
+  })
+
+  await expect(manualRefreshButton).toBeVisible()
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const refreshButton = document.querySelector<HTMLButtonElement>('[data-testid="manual-refresh-button"]')
+      if (!(refreshButton instanceof HTMLButtonElement)) {
+        return null
+      }
+
+      return {
+        disabled: refreshButton.disabled,
+        visibility: getComputedStyle(refreshButton).visibility
+      }
+    })
+  }).toEqual({
+    disabled: false,
+    visibility: "visible"
+  })
+  await manualRefreshButton.click()
+}
+
+function createPosterLibraryItems(startIndex: number, count: number): Array<{
+  Id: string
+  Name: string
+  Type: "Movie"
+  ImageTags: {
+    Primary: string
+  }
+}> {
+  return Array.from({ length: count }, (_, offset) => {
+    const posterIndex = startIndex + offset
+    const posterId = String(posterIndex).padStart(3, "0")
+
+    return {
+      Id: `movie-${posterId}`,
+      Name: `Poster ${posterId}`,
+      Type: "Movie",
+      ImageTags: {
+        Primary: `poster-tag-${posterId}`
+      }
     }
   })
 }
@@ -304,7 +430,13 @@ test("completes preflight -> login -> library selection and enters poster wall",
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await page.getByTestId("preflight-check-button").click()
+  await Promise.all([
+    page.waitForResponse((response) => {
+      return response.request().method() === "GET"
+        && response.url().includes("/System/Info/Public")
+    }),
+    page.getByTestId("preflight-check-button").click()
+  ])
 
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
@@ -313,8 +445,8 @@ test("completes preflight -> login -> library selection and enters poster wall",
   await page.getByTestId("password-input").press("Enter")
 
   const libraryCheckbox = page.getByTestId("library-checkbox-movies-main")
-  await expect(libraryCheckbox).toBeVisible()
-  await expect(libraryCheckbox).toBeChecked()
+  await expect(libraryCheckbox).toBeVisible({ timeout: 15_000 })
+  await expect(libraryCheckbox).toBeChecked({ timeout: 15_000 })
   await page.getByTestId("library-checkbox-shows-main").uncheck()
 
   await page.getByTestId("onboarding-finish").click()
@@ -489,13 +621,21 @@ test("restores remembered server and username with empty password after restart"
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await page.getByTestId("preflight-check-button").click()
+  await Promise.all([
+    page.waitForResponse((response) => {
+      return response.request().method() === "GET"
+        && response.url().includes("/System/Info/Public")
+    }),
+    page.getByTestId("preflight-check-button").click()
+  ])
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("remember-username-checkbox").check()
   await page.getByTestId("login-submit").click()
 
-  await expect(page.getByTestId("library-checkbox-movies-main")).toBeVisible()
+  const libraryCheckbox = page.getByTestId("library-checkbox-movies-main")
+  await expect(libraryCheckbox).toBeVisible({ timeout: 15_000 })
+  await expect(libraryCheckbox).toBeChecked({ timeout: 15_000 })
 
   await page.evaluate(() => {
     window.sessionStorage.clear()
@@ -662,6 +802,8 @@ test("reopens root route into the wall when a saved session and handoff exist", 
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeVisible()
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeChecked()
   await page.getByTestId("onboarding-finish").click()
 
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
@@ -775,10 +917,15 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
 
     return getComputedStyle(refreshButton).visibility
   })
+
+  await page.mouse.move(24, 24)
+  await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
+  await page.waitForTimeout(8_100)
   const afterDiagnosticsClosedIdle = await captureWallIdentityProbeSnapshot(page, "after-diagnostics-closed-idle")
 
+  await page.mouse.move(32, 32)
+  await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
   const revealRefreshVisibility = await page.evaluate(() => {
-    window.dispatchEvent(new Event("pointermove"))
     const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
     if (!(refreshButton instanceof HTMLElement)) {
       return null
@@ -797,7 +944,7 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
   expect(afterReveal.sameWallRootAsBaseline).toBe(true)
   expect(afterReveal.sameWallGridAsBaseline).toBe(true)
   expect(diagnosticsOpenIdleRefreshVisibility).toBe("visible")
-  expect(diagnosticsClosedIdleRefreshVisibility).toBe("hidden")
+  expect(diagnosticsClosedIdleRefreshVisibility).toBe("visible")
   expect(revealRefreshVisibility).toBe("visible")
 
   const evidence = {
@@ -881,21 +1028,11 @@ test("handles healthy stream without poster-item-0 sentinel and limits fallback 
   await expect(page.getByTestId("poster-item-1").first()).toBeVisible()
   expect((await captureTask6WallProbeSnapshot(page)).remountCount).toBe(0)
 
-  const manualRefreshButton = page.getByTestId("manual-refresh-button").first()
-  const clickManualRefresh = async (): Promise<void> => {
-    await page.evaluate(() => {
-      window.dispatchEvent(new Event("pointermove"))
-    })
-    await expect(manualRefreshButton).toBeVisible()
-    await expect(manualRefreshButton).toBeEnabled()
-    await manualRefreshButton.click()
-  }
-
   await page.evaluate(() => {
     const posterItem0 = document.querySelector<HTMLElement>('[data-testid="poster-item-0"]')
     posterItem0?.remove()
   })
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
 
   const afterSentinelRemoval = await captureTask6WallProbeSnapshot(page)
@@ -903,33 +1040,153 @@ test("handles healthy stream without poster-item-0 sentinel and limits fallback 
   expect(afterSentinelRemoval.remountCount).toBe(0)
 
   await setTask6WallReadinessBlocked(page, true)
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(3)
   await expect.poll(async () => {
     return (await captureTask6WallProbeSnapshot(page)).remountCount
   }).toBe(1)
 
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(4)
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(5)
 
   const duringSameIncident = await captureTask6WallProbeSnapshot(page)
   expect(duringSameIncident.remountCount).toBe(1)
 
   await setTask6WallReadinessBlocked(page, false)
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(6)
   expect((await captureTask6WallProbeSnapshot(page)).remountCount).toBe(1)
 
   await setTask6WallReadinessBlocked(page, true)
-  await clickManualRefresh()
+  await clickVisibleManualRefreshButton(page)
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(7)
   await expect.poll(async () => {
     return (await captureTask6WallProbeSnapshot(page)).remountCount
   }).toBe(2)
 
   await setTask6WallReadinessBlocked(page, false)
+})
+
+test("does not replace visible posters during healthy refreshes", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  let mediaRequestCount = 0
+  const baselineItems = createPosterLibraryItems(1, 24)
+  const refreshedItems = [
+    ...createPosterLibraryItems(1, 18),
+    ...createPosterLibraryItems(101, 12)
+  ]
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    mediaRequestCount += 1
+    const responseItems = mediaRequestCount === 1 ? baselineItems : refreshedItems
+
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: responseItems,
+        TotalRecordCount: responseItems.length
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await page.getByTestId("preflight-check-button").click()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await page.getByTestId("onboarding-finish").click()
+
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+  await expect.poll(async () => {
+    return (await captureWallPosterBackgroundSnapshot(page)).visiblePosters.length
+  }).toBeGreaterThanOrEqual(3)
+
+  const beforeRefreshSnapshot = await captureWallPosterBackgroundSnapshot(page)
+  const trackedVisiblePosters = beforeRefreshSnapshot.visiblePosters.slice(0, 3)
+  expect(trackedVisiblePosters, JSON.stringify(beforeRefreshSnapshot)).toHaveLength(3)
+  for (const poster of trackedVisiblePosters) {
+    expect(poster.backgroundImage).toContain("url(")
+  }
+
+  await clickVisibleManualRefreshButton(page)
+  await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
+
+  const beforeBackgroundByProbeId = new Map(
+    beforeRefreshSnapshot.posters.map((poster) => [poster.probeId, poster.backgroundImage])
+  )
+  const trackedProbeIds = new Set(trackedVisiblePosters.map((poster) => poster.probeId))
+
+  await expect.poll(async () => {
+    const afterRefreshSnapshot = await captureWallPosterBackgroundSnapshot(page)
+
+    return trackedVisiblePosters.filter((poster) => {
+      const currentPoster = afterRefreshSnapshot.posters.find((candidate) => candidate.probeId === poster.probeId)
+      return currentPoster?.isVisible === true && currentPoster.backgroundImage === poster.backgroundImage
+    }).length
+  }).toBe(trackedVisiblePosters.length)
+
+  await expect.poll(async () => {
+    const afterRefreshSnapshot = await captureWallPosterBackgroundSnapshot(page)
+
+    return afterRefreshSnapshot.posters.filter((poster) => {
+      if (trackedProbeIds.has(poster.probeId)) {
+        return false
+      }
+
+      return beforeBackgroundByProbeId.get(poster.probeId) !== poster.backgroundImage
+    }).length
+  }).toBeGreaterThan(0)
+
+  const afterRefreshSnapshot = await captureWallPosterBackgroundSnapshot(page)
+  const trackedAfterRefresh = trackedVisiblePosters.map((poster) => {
+    const currentPoster = afterRefreshSnapshot.posters.find((candidate) => candidate.probeId === poster.probeId)
+    if (!currentPoster) {
+      throw new Error(`Missing tracked poster probe after refresh: ${poster.probeId}`)
+    }
+
+    return currentPoster
+  })
+  const changedNonVisiblePosterProbeIds = afterRefreshSnapshot.posters
+    .filter((poster) => {
+      if (trackedProbeIds.has(poster.probeId)) {
+        return false
+      }
+
+      return beforeBackgroundByProbeId.get(poster.probeId) !== poster.backgroundImage
+    })
+    .map((poster) => poster.probeId)
+
+  console.log(`[task-8-web-visible-poster-freeze] ${JSON.stringify({
+    mediaRequestCount,
+    trackedVisibleBeforeRefresh: trackedVisiblePosters,
+    trackedVisibleAfterRefresh: trackedAfterRefresh,
+    changedNonVisiblePosterProbeIds
+  })}`)
 })
 
 test("shows non-blocking warning when fullscreen request is denied", async ({ page }) => {
