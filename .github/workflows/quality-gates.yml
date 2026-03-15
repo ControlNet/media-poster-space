@@ -77,6 +77,9 @@ jobs:
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
 
+      - name: Install Playwright browser for desktop release build
+        run: pnpm --filter @mps/desktop exec playwright install --with-deps chromium
+
       - name: Build release artifacts
         run: pnpm -w build:release
 
@@ -160,6 +163,9 @@ jobs:
       - web-e2e-smoke
     if: github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'main')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
 
     steps:
       - name: Checkout
