@@ -211,7 +211,6 @@ export function runOnboardingBackToServer<
 export interface OnboardingFinishState<Session extends ProviderSession> {
   session: Session | null
   selectedLibraryIds: Set<string>
-  density: "cinematic" | "compact"
   rememberServer: boolean
   rememberUsername: boolean
   finishPending: boolean
@@ -245,7 +244,6 @@ export function runOnboardingFinish<Session extends ProviderSession>(
   const handoff: WallHandoff = {
     selectedLibraryIds: [...options.state.selectedLibraryIds],
     preferences: {
-      density: options.state.density,
       rememberServer: options.state.rememberServer,
       rememberUsername: options.state.rememberUsername,
       rememberPasswordRequested: options.resolveRememberPasswordRequested()

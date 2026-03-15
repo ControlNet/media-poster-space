@@ -2,7 +2,6 @@ import { resolveWallDetailCardPlacement } from "../detail-card-placement"
 import type { MediaItem } from "../../types/media"
 
 export interface WallPreferences {
-  density: "cinematic" | "compact"
   rememberServer: boolean
   rememberUsername: boolean
   rememberPasswordRequested: boolean

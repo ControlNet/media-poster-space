@@ -61,7 +61,9 @@ import {
   type OnboardingAppRuntime,
   type OnboardingBaseState,
   type WallHandoff,
-  type WallInteractionTransitionResult
+  type WallInteractionTransitionResult,
+  type WallPosterGridStreamApplier,
+  type WallPosterGridStreamApplyResult
 } from "@mps/core"
 
 import {
@@ -102,7 +104,7 @@ interface OnboardingState extends OnboardingBaseState<
 }
 
 interface WallPosterGridStreamElement extends HTMLElement {
-  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: (items: readonly MediaItem[]) => boolean
+  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: WallPosterGridStreamApplier
 }
 
 interface PlatformCapabilities {
@@ -246,7 +248,6 @@ export function createOnboardingAppRuntime(
           surface: "web",
           route: window.location.pathname,
           selectedLibraryIds: handoff.selectedLibraryIds,
-          density: handoff.preferences.density,
           detailProfile: state.detailProfile,
           reconnectAttempt: state.reconnectAttempt,
           reconnectNextDelayMs: state.reconnectNextDelayMs,
@@ -433,14 +434,20 @@ export function createOnboardingAppRuntime(
     }
   }
 
-  function applyWallStreamItems(items: readonly MediaItem[]): boolean {
+  function applyWallStreamItems(items: readonly MediaItem[]): WallPosterGridStreamApplyResult | null {
     const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
     const applyStreamItems = wallPosterGrid?.[WALL_POSTER_GRID_STREAM_APPLIER_KEY]
     if (typeof applyStreamItems !== "function") {
-      return false
+      return null
     }
 
     return applyStreamItems(items)
+  }
+
+  function isHealthyWallStreamApplyResult(result: WallPosterGridStreamApplyResult): boolean {
+    return result.status === "applied"
+      || result.status === "deferred"
+      || result.status === "noop"
   }
 
   function clearWallPatchFallbackState(): void {
@@ -462,8 +469,8 @@ export function createOnboardingAppRuntime(
   function readWallPatchReadiness(): {
     wallRoot: HTMLElement | null
     wallPosterGrid: WallPosterGridStreamElement | null
-    applyStreamItems: ((items: readonly MediaItem[]) => boolean) | null
-    hasPosterTileFamily: boolean
+    applyStreamItems: WallPosterGridStreamApplier | null
+    hasPosterTiles: boolean
   } {
     const wallRoot = target.querySelector<HTMLElement>("[data-testid=\"poster-wall-root\"]")
     const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
@@ -473,8 +480,7 @@ export function createOnboardingAppRuntime(
       wallRoot,
       wallPosterGrid: wallPosterGrid ?? null,
       applyStreamItems: typeof applyStreamItemsCandidate === "function" ? applyStreamItemsCandidate : null,
-      hasPosterTileFamily:
-        wallPosterGrid?.querySelector<HTMLElement>("[data-testid^=\"poster-item-\"]") !== null
+      hasPosterTiles: wallPosterGrid?.querySelector<HTMLButtonElement>("button") !== null
     }
   }
 
@@ -535,11 +541,16 @@ export function createOnboardingAppRuntime(
       return
     }
 
-    const streamApplied = wallPatchReadiness.applyStreamItems(state.ingestionItems)
+    const streamApplyResult = wallPatchReadiness.applyStreamItems(state.ingestionItems)
     const shouldFallbackToRender =
-      !streamApplied
-      || (state.ingestionItems.length > 0 && !wallPatchReadiness.hasPosterTileFamily)
+      streamApplyResult.status === "unavailable"
+      || (state.ingestionItems.length > 0 && !wallPatchReadiness.hasPosterTiles)
     if (shouldFallbackToRender) {
+      requestWallPatchFallbackOnce()
+      return
+    }
+
+    if (!isHealthyWallStreamApplyResult(streamApplyResult)) {
       requestWallPatchFallbackOnce()
       return
     }
@@ -999,7 +1010,7 @@ export function createOnboardingAppRuntime(
     const onboardingView = createOnboardingFormView({
       createElement,
       state,
-      descriptionText: "Three-step onboarding: server preflight, username/password authentication, then library and wall preferences.",
+      descriptionText: "Three-step onboarding: server preflight, username/password authentication, then library selection.",
       rememberPasswordLabel: platform.canPersistPassword
         ? "Remember password"
         : "Remember password (Desktop app only)",
@@ -1046,9 +1057,6 @@ export function createOnboardingAppRuntime(
         }
         persistRememberedLibrarySelection()
         state.libraryError = null
-      },
-      onDensityChange: (density) => {
-        state.density = density
       },
       onFinish: () => {
         if (state.selectedLibraryIds.size > 0) {

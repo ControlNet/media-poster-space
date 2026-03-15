@@ -58,6 +58,8 @@ import {
   type ProviderSession,
   type OnboardingAppRuntime,
   type OnboardingBaseState,
+  type WallPosterGridStreamApplyResult,
+  type WallPosterGridStreamApplier,
   type WallHandoff,
   type WallInteractionTransitionResult
 } from "@mps/core"
@@ -109,8 +111,15 @@ const RECONNECT_GUIDE_THRESHOLD_MS = ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS
 const DESKTOP_APP_VERSION = "0.1.0"
 const WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS
 
+const UNAVAILABLE_WALL_POSTER_GRID_STREAM_APPLY_RESULT: WallPosterGridStreamApplyResult = {
+  status: "unavailable",
+  queuedItemCount: 0,
+  appliedItemCount: 0,
+  pendingItemCount: 0
+}
+
 interface WallPosterGridStreamElement extends HTMLElement {
-  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: (items: readonly MediaItem[]) => boolean
+  [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: WallPosterGridStreamApplier
 }
 
 interface OnboardingState extends OnboardingBaseState<
@@ -152,6 +161,30 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
     autostartEnabled: false,
     platformWarning: null
   }
+}
+
+function isHealthyWallPosterGridStreamApplyResult(
+  result: WallPosterGridStreamApplyResult
+): boolean {
+  return result.status === "applied"
+    || result.status === "deferred"
+    || result.status === "noop"
+}
+
+function shouldFallbackToWallRender(
+  result: WallPosterGridStreamApplyResult,
+  options: {
+    itemCount: number
+    hasMountedPosterTiles: boolean
+  }
+): boolean {
+  if (!isHealthyWallPosterGridStreamApplyResult(result)) {
+    return true
+  }
+
+  return options.itemCount > 0
+    && !options.hasMountedPosterTiles
+    && result.status !== "applied"
 }
 
 export function createDesktopOnboardingAppRuntime(
@@ -228,7 +261,6 @@ export function createDesktopOnboardingAppRuntime(
           surface: "desktop",
           route: window.location.pathname,
           selectedLibraryIds: handoff.selectedLibraryIds,
-          density: handoff.preferences.density,
           detailProfile: state.detailProfile,
           reconnectAttempt: state.reconnectAttempt,
           reconnectNextDelayMs: state.reconnectNextDelayMs,
@@ -422,11 +454,11 @@ export function createDesktopOnboardingAppRuntime(
     }
   }
 
-  function applyWallStreamItems(items: readonly MediaItem[]): boolean {
+  function applyWallStreamItems(items: readonly MediaItem[]): WallPosterGridStreamApplyResult {
     const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
     const applyStreamItems = wallPosterGrid?.[WALL_POSTER_GRID_STREAM_APPLIER_KEY]
     if (typeof applyStreamItems !== "function") {
-      return false
+      return UNAVAILABLE_WALL_POSTER_GRID_STREAM_APPLY_RESULT
     }
 
     return applyStreamItems(items)
@@ -451,8 +483,8 @@ export function createDesktopOnboardingAppRuntime(
   function readWallPatchReadiness(): {
     wallRoot: HTMLElement | null
     wallPosterGrid: WallPosterGridStreamElement | null
-    applyStreamItems: ((items: readonly MediaItem[]) => boolean) | null
-    hasPosterTileFamily: boolean
+    applyStreamItems: WallPosterGridStreamApplier | null
+    hasMountedPosterTiles: boolean
   } {
     const wallRoot = target.querySelector<HTMLElement>("[data-testid=\"poster-wall-root\"]")
     const wallPosterGrid = target.querySelector<WallPosterGridStreamElement>("[data-testid=\"wall-poster-grid\"]")
@@ -462,8 +494,7 @@ export function createDesktopOnboardingAppRuntime(
       wallRoot,
       wallPosterGrid: wallPosterGrid ?? null,
       applyStreamItems: typeof applyStreamItemsCandidate === "function" ? applyStreamItemsCandidate : null,
-      hasPosterTileFamily:
-        wallPosterGrid?.querySelector<HTMLElement>("[data-testid^=\"poster-item-\"]") !== null
+      hasMountedPosterTiles: wallPosterGrid?.querySelector("button") !== null
     }
   }
 
@@ -500,11 +531,11 @@ export function createDesktopOnboardingAppRuntime(
       return
     }
 
-    const streamApplied = wallPatchReadiness.applyStreamItems(state.ingestionItems)
-    const shouldFallbackToRender =
-      !streamApplied
-      || (state.ingestionItems.length > 0 && !wallPatchReadiness.hasPosterTileFamily)
-    if (shouldFallbackToRender) {
+    const streamApplyResult = wallPatchReadiness.applyStreamItems(state.ingestionItems)
+    if (shouldFallbackToWallRender(streamApplyResult, {
+      itemCount: state.ingestionItems.length,
+      hasMountedPosterTiles: wallPatchReadiness.hasMountedPosterTiles
+    })) {
       requestWallPatchFallbackOnce()
       return
     }
@@ -863,7 +894,7 @@ export function createDesktopOnboardingAppRuntime(
       createElement,
       state,
       descriptionText:
-        "Desktop onboarding: server preflight, username/password authentication, then library and wall preferences.",
+        "Desktop onboarding: server preflight, username/password authentication, then library selection.",
       rememberPasswordLabel: "Remember password (stored encrypted on this device)",
       toLibraryCheckboxTestId,
       onServerInput: (value) => {
@@ -930,9 +961,6 @@ export function createDesktopOnboardingAppRuntime(
         }
 
         state.libraryError = null
-      },
-      onDensityChange: (density) => {
-        state.density = density
       },
       onFinish: () => {
         runOnboardingFinish({

@@ -14,7 +14,6 @@ export interface OnboardingFormViewState {
   authError: string | null
   libraries: readonly MediaLibrary[]
   selectedLibraryIds: ReadonlySet<string>
-  density: "cinematic" | "compact"
   finishPending: boolean
   libraryError: string | null
 }
@@ -37,7 +36,6 @@ export interface CreateOnboardingFormViewOptions {
   onLogin: () => void
   onBack: () => void
   onLibrarySelectionChange: (libraryId: string, selected: boolean) => void
-  onDensityChange: (density: "cinematic" | "compact") => void
   onFinish: () => void
   renderLibraryExtras?: () => readonly HTMLElement[]
   renderCardFooter?: () => HTMLElement | null
@@ -375,7 +373,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
 
   if (state.libraries.length === 0) {
     const emptyLibraryState = createElement("p", {
-      textContent: "Sign in first to fetch your libraries and wall preferences."
+        textContent: "Sign in first to fetch your libraries."
     })
     emptyLibraryState.style.margin = "0"
     emptyLibraryState.style.color = "rgba(255, 255, 255, 0.5)"
@@ -410,41 +408,6 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
       libraryLabel.append(libraryCheckbox, descriptor, kindSpan)
       libraryList.append(libraryLabel)
     }
-
-    const preferenceLabel = createElement("label", { textContent: "Wall density" })
-    preferenceLabel.style.display = "grid"
-    preferenceLabel.style.gap = "0.5rem"
-    preferenceLabel.style.fontSize = "0.9rem"
-    preferenceLabel.style.color = "var(--mps-color-foreground-support)"
-    preferenceLabel.style.letterSpacing = "0.02em"
-    preferenceLabel.style.marginTop = "0.5rem"
-    const densitySelect = createElement("select", { testId: "wall-density-select" }) as HTMLSelectElement
-    densitySelect.innerHTML = [
-      '<option value="cinematic">Cinematic (default)</option>',
-      '<option value="compact">Compact</option>'
-    ].join("")
-    densitySelect.value = state.density
-    densitySelect.style.padding = "0.75rem 0.85rem"
-    densitySelect.style.border = "1px solid rgba(255, 255, 255, 0.1)"
-    densitySelect.style.borderRadius = "0.6rem"
-    densitySelect.style.background = "rgba(0, 0, 0, 0.3)"
-    densitySelect.style.color = "var(--mps-color-foreground)"
-    densitySelect.style.transition = "border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease"
-    densitySelect.style.boxShadow = "inset 0 2px 4px rgba(0, 0, 0, 0.2)"
-    densitySelect.addEventListener("focus", () => {
-      densitySelect.style.borderColor = "var(--mps-color-orbit-glow-halo)"
-      densitySelect.style.boxShadow = "inset 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(122, 217, 255, 0.1)"
-      densitySelect.style.background = "rgba(0, 0, 0, 0.5)"
-    })
-    densitySelect.addEventListener("blur", () => {
-      densitySelect.style.borderColor = "rgba(255, 255, 255, 0.1)"
-      densitySelect.style.boxShadow = "inset 0 2px 4px rgba(0, 0, 0, 0.2)"
-      densitySelect.style.background = "rgba(0, 0, 0, 0.3)"
-    })
-    densitySelect.addEventListener("change", () => {
-      options.onDensityChange(densitySelect.value === "compact" ? "compact" : "cinematic")
-    })
-    preferenceLabel.append(densitySelect)
 
     const finishButton = createElement("button", {
       textContent: state.finishPending ? "Preparing wall…" : "Enter wall",
@@ -484,7 +447,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     finishButton.addEventListener("click", options.onFinish)
 
     const libraryExtras = options.renderLibraryExtras?.() ?? []
-    librarySection.append(libraryList, preferenceLabel)
+    librarySection.append(libraryList)
     for (const extra of libraryExtras) {
       librarySection.append(extra)
     }

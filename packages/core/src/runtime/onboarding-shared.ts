@@ -79,7 +79,6 @@ export interface OnboardingBaseState<
   session: Session | null
   libraries: Library[]
   selectedLibraryIds: Set<string>
-  density: "cinematic" | "compact"
   ingestionStatus: "idle" | "refreshing" | "ready" | "error"
   ingestionItems: Item[]
   ingestionItemCount: number
@@ -124,7 +123,6 @@ export function createOnboardingBaseState<
     session: null,
     libraries: [],
     selectedLibraryIds: new Set<string>(),
-    density: "cinematic",
     ingestionStatus: "idle",
     ingestionItems: [],
     ingestionItemCount: 0,
