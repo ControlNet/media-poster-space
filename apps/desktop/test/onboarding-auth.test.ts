@@ -28,9 +28,43 @@ interface FetchHarnessOptions {
   includeSparsePoster?: boolean
   alwaysFailMediaStatus?: number
   mediaFailureStatusAfterFirstSuccess?: number
+  movieItemsByCall?: FetchHarnessMovieItem[][]
 }
 
 type FetchMock = ReturnType<typeof vi.fn>
+
+interface FetchHarnessMovieItem {
+  Id: string
+  Name: string
+  Type: "Movie"
+  ImageTags: {
+    Primary?: string
+  }
+  Overview?: string
+  ProductionYear?: number
+  RunTimeTicks?: number
+  Genres?: string[]
+}
+
+function createPosterLibraryItems(startIndex: number, count: number): FetchHarnessMovieItem[] {
+  return Array.from({ length: count }, (_, offset) => {
+    const posterIndex = startIndex + offset
+    const posterId = String(posterIndex).padStart(3, "0")
+
+    return {
+      Id: `movie-${posterId}`,
+      Name: `Poster ${posterId}`,
+      Type: "Movie",
+      Overview: `Overview for poster ${posterId}`,
+      ProductionYear: 2020 + (posterIndex % 5),
+      RunTimeTicks: 6_600_000_000 + posterIndex,
+      Genres: ["Sci-Fi"],
+      ImageTags: {
+        Primary: `poster-tag-${posterId}`
+      }
+    }
+  })
+}
 
 function clickByTestId(testId: string): void {
   const element = document.querySelector(`[data-testid="${testId}"]`)
@@ -181,34 +215,44 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
           })
         }
 
-        const movieItems = [
-          {
-            Id: "movie-1",
-            Name: "Poster Ready",
-            Type: "Movie",
-            Overview: "A determined crew chases daylight across a fading city.",
-            ProductionYear: 2024,
-            RunTimeTicks: 6_600_000_000,
-            Genres: ["Sci-Fi", "Drama"],
-            ImageTags: { Primary: "poster-tag" }
-          },
-          {
-            Id: "movie-2",
-            Name: "Missing Poster",
-            Type: "Movie",
-            ImageTags: {}
-          },
-          ...(options.includeSparsePoster
-            ? [
-                {
-                  Id: "movie-3",
-                  Name: "Sparse Poster",
-                  Type: "Movie",
-                  ImageTags: { Primary: "poster-tag-2" }
-                }
-              ]
-            : [])
-        ]
+        const movieItems = options.movieItemsByCall && options.movieItemsByCall.length > 0
+          ? (() => {
+              const configuredMovieItems = options.movieItemsByCall
+              const configuredIndex = Math.min(
+                successfulMovieResponses,
+                configuredMovieItems.length - 1
+              )
+
+              return configuredMovieItems[configuredIndex] ?? []
+            })()
+          : [
+              {
+                Id: "movie-1",
+                Name: "Poster Ready",
+                Type: "Movie",
+                Overview: "A determined crew chases daylight across a fading city.",
+                ProductionYear: 2024,
+                RunTimeTicks: 6_600_000_000,
+                Genres: ["Sci-Fi", "Drama"],
+                ImageTags: { Primary: "poster-tag" }
+              },
+              {
+                Id: "movie-2",
+                Name: "Missing Poster",
+                Type: "Movie",
+                ImageTags: {}
+              },
+              ...(options.includeSparsePoster
+                ? [
+                    {
+                      Id: "movie-3",
+                      Name: "Sparse Poster",
+                      Type: "Movie",
+                      ImageTags: { Primary: "poster-tag-2" }
+                    }
+                  ]
+                : [])
+            ]
 
         successfulMovieResponses += 1
 
@@ -788,26 +832,264 @@ describe("desktop onboarding auth runtime", () => {
 
       await vi.waitFor(() => {
         expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+        expect(getElement("wall-poster-grid").querySelector("button")).toBeTruthy()
       })
 
       const wallRoot = getElement("poster-wall-root")
       const wallPosterGrid = getElement("wall-poster-grid")
-      const posterItem0 = document.querySelector('[data-testid="poster-item-0"]')
-      if (posterItem0 instanceof HTMLElement) {
-        posterItem0.remove()
+      const posterSentinels = Array.from(
+        wallPosterGrid.querySelectorAll<HTMLElement>('[data-testid^="poster-item-"]')
+      )
+      for (const posterSentinel of posterSentinels) {
+        posterSentinel.removeAttribute("data-testid")
       }
 
-      if (!wallPosterGrid.querySelector('[data-testid^="poster-item-"]')) {
-        const posterFamilyReplacement = document.createElement("div")
-        posterFamilyReplacement.setAttribute("data-testid", "poster-item-1")
-        wallPosterGrid.append(posterFamilyReplacement)
-      }
+      expect(document.querySelector('[data-testid="poster-item-0"]')).toBeNull()
+      expect(wallPosterGrid.querySelector('[data-testid^="poster-item-"]')).toBeNull()
 
       await triggerManualRefresh()
 
       expect(getElement("poster-wall-root")).toBe(wallRoot)
       expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
-      expect(document.querySelector('[data-testid="poster-item-1"]')).toBeTruthy()
+      expect(wallPosterGrid.querySelector("button")).toBeTruthy()
+    } finally {
+      runtime.dispose()
+    }
+  })
+
+  it("keeps visible posters unchanged during healthy refreshes", async () => {
+    interface WallPosterBackgroundProbe {
+      probeId: string
+      backgroundImage: string
+      intersectionArea: number
+      isVisible: boolean
+    }
+
+    interface WallPosterBackgroundSnapshot {
+      posters: WallPosterBackgroundProbe[]
+      visiblePosters: WallPosterBackgroundProbe[]
+    }
+
+    const baselineItems = createPosterLibraryItems(1, 24)
+    const refreshedItems = createPosterLibraryItems(101, 24)
+    const fetchHarness = createFetchHarness({
+      allowLogin: true,
+      movieItemsByCall: [baselineItems, refreshedItems]
+    })
+    globalThis.fetch = fetchHarness
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    const countMediaCalls = (): number => {
+      return fetchHarness.mock.calls.filter(([request]) => {
+        const url = typeof request === "string"
+          ? request
+          : request instanceof URL
+            ? request.toString()
+            : request.url
+
+        return url.includes("/Users/user-1/Items")
+      }).length
+    }
+
+    const triggerManualRefresh = async (): Promise<void> => {
+      const mediaCallsBeforeRefresh = countMediaCalls()
+      clickByTestId("manual-refresh-button")
+      await vi.waitFor(() => {
+        expect(countMediaCalls()).toBeGreaterThan(mediaCallsBeforeRefresh)
+      })
+    }
+
+    const createRect = (
+      left: number,
+      top: number,
+      width: number,
+      height: number
+    ): DOMRect => {
+      const right = left + width
+      const bottom = top + height
+
+      return {
+        x: left,
+        y: top,
+        width,
+        height,
+        top,
+        right,
+        bottom,
+        left,
+        toJSON: () => ({
+          x: left,
+          y: top,
+          width,
+          height,
+          top,
+          right,
+          bottom,
+          left
+        })
+      } as DOMRect
+    }
+
+    const stubTileRect = (
+      button: HTMLButtonElement,
+      left: number,
+      top: number,
+      width: number,
+      height: number
+    ): void => {
+      const rect = createRect(left, top, width, height)
+      Object.defineProperty(button, "getBoundingClientRect", {
+        configurable: true,
+        value: () => rect
+      })
+    }
+
+    const captureWallPosterBackgroundSnapshot = (): WallPosterBackgroundSnapshot => {
+      const grid = getElement("wall-poster-grid")
+      const viewportLeft = 0
+      const viewportTop = 0
+      const viewportRight = window.innerWidth
+      const viewportBottom = window.innerHeight
+
+      const posters = Array.from(grid.querySelectorAll<HTMLButtonElement>("button")).map((button, index) => {
+        if (!button.dataset.task9ProbeId) {
+          button.dataset.task9ProbeId = `task9-probe-${index + 1}`
+        }
+
+        const rect = button.getBoundingClientRect()
+        const intersectionWidth = Math.max(
+          0,
+          Math.min(rect.right, viewportRight) - Math.max(rect.left, viewportLeft)
+        )
+        const intersectionHeight = Math.max(
+          0,
+          Math.min(rect.bottom, viewportBottom) - Math.max(rect.top, viewportTop)
+        )
+        const intersectionArea = intersectionWidth * intersectionHeight
+        const posterThumb = button.firstElementChild instanceof HTMLElement
+          ? button.firstElementChild
+          : button
+
+        return {
+          probeId: button.dataset.task9ProbeId,
+          backgroundImage: posterThumb.style.backgroundImage,
+          intersectionArea,
+          isVisible: intersectionArea > 0
+        }
+      })
+
+      return {
+        posters,
+        visiblePosters: posters
+          .filter((poster) => poster.isVisible)
+          .sort((left, right) => right.intersectionArea - left.intersectionArea)
+      }
+    }
+
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      clickByTestId("preflight-check-button")
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+        expect(getElement("wall-poster-grid").querySelectorAll("button").length).toBeGreaterThanOrEqual(5)
+      })
+
+      const wallRoot = getElement("poster-wall-root")
+      const wallPosterGrid = getElement("wall-poster-grid")
+      const wallButtons = Array.from(wallPosterGrid.querySelectorAll<HTMLButtonElement>("button"))
+      const viewportWidth = window.innerWidth
+
+      const trackedVisibleButtons = wallButtons.slice(0, 3)
+      const trackedOffscreenButtons = wallButtons.slice(3, 5)
+      expect(trackedVisibleButtons).toHaveLength(3)
+      expect(trackedOffscreenButtons).toHaveLength(2)
+
+      trackedVisibleButtons.forEach((button, index) => {
+        stubTileRect(button, 40 + (index * 240), 24, 200, 300)
+      })
+      trackedOffscreenButtons.forEach((button, index) => {
+        stubTileRect(button, viewportWidth + 40 + (index * 240), 24, 200, 300)
+      })
+
+      const beforeRefreshSnapshot = captureWallPosterBackgroundSnapshot()
+      const trackedVisiblePosters = beforeRefreshSnapshot.visiblePosters.slice(0, 3)
+      expect(trackedVisiblePosters, JSON.stringify(beforeRefreshSnapshot)).toHaveLength(3)
+      for (const poster of trackedVisiblePosters) {
+        expect(poster.backgroundImage).toContain("url(")
+      }
+
+      await triggerManualRefresh()
+
+      const beforeBackgroundByProbeId = new Map(
+        beforeRefreshSnapshot.posters.map((poster) => [poster.probeId, poster.backgroundImage])
+      )
+      const trackedProbeIds = new Set(trackedVisiblePosters.map((poster) => poster.probeId))
+
+      await vi.waitFor(() => {
+        const afterRefreshSnapshot = captureWallPosterBackgroundSnapshot()
+
+        expect(
+          trackedVisiblePosters.filter((poster) => {
+            const currentPoster = afterRefreshSnapshot.posters.find((candidate) => candidate.probeId === poster.probeId)
+            return currentPoster?.isVisible === true && currentPoster.backgroundImage === poster.backgroundImage
+          })
+        ).toHaveLength(trackedVisiblePosters.length)
+      })
+
+      await vi.waitFor(() => {
+        const afterRefreshSnapshot = captureWallPosterBackgroundSnapshot()
+        const changedOffscreenPosters = afterRefreshSnapshot.posters.filter((poster) => {
+          if (trackedProbeIds.has(poster.probeId)) {
+            return false
+          }
+
+          return beforeBackgroundByProbeId.get(poster.probeId) !== poster.backgroundImage
+        })
+
+        expect(changedOffscreenPosters.length).toBeGreaterThan(0)
+      })
+
+      const afterRefreshSnapshot = captureWallPosterBackgroundSnapshot()
+      const trackedVisibleAfterRefresh = trackedVisiblePosters.map((poster) => {
+        const currentPoster = afterRefreshSnapshot.posters.find((candidate) => candidate.probeId === poster.probeId)
+        if (!currentPoster) {
+          throw new Error(`Missing tracked poster probe after refresh: ${poster.probeId}`)
+        }
+
+        return currentPoster
+      })
+      const changedOffscreenProbeIds = afterRefreshSnapshot.posters
+        .filter((poster) => {
+          if (trackedProbeIds.has(poster.probeId)) {
+            return false
+          }
+
+          return beforeBackgroundByProbeId.get(poster.probeId) !== poster.backgroundImage
+        })
+        .map((poster) => poster.probeId)
+
+      expect(getElement("poster-wall-root")).toBe(wallRoot)
+      expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
+
+      console.log(`[task-9-desktop-visible-poster-freeze] ${JSON.stringify({
+        mediaRequestCount: countMediaCalls(),
+        trackedVisibleBeforeRefresh: trackedVisiblePosters,
+        trackedVisibleAfterRefresh,
+        changedOffscreenProbeIds
+      })}`)
     } finally {
       runtime.dispose()
     }
