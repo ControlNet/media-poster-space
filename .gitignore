@@ -7,7 +7,7 @@ pnpm-debug.log*
 dist/
 dist-release/
 build/
-release/
+/release/
 .turbo/
 .cache/
 .vite/
