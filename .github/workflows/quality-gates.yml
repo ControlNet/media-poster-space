@@ -18,6 +18,9 @@ env:
   TURBO_TELEMETRY_DISABLED: "1"
   MPS_GATE_FORCE_FAIL: ${{ github.event.inputs.gate_force_fail || '' }}
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: lint-typecheck-test-build
@@ -74,9 +77,6 @@ jobs:
       - name: Install dependencies
         run: pnpm -w install --frozen-lockfile
 
-      - name: Install Playwright browser for desktop release build
-        run: pnpm --filter @mps/desktop exec playwright install --with-deps chromium
-
       - name: Build release artifacts
         run: pnpm -w build:release
 
@@ -92,43 +92,127 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload desktop linux64 artifacts
+  desktop-native-artifacts:
+    name: desktop-native-${{ matrix.id }}
+    needs:
+      - quality
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64
+            runs_on: ubuntu-latest
+            build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --bundles appimage
+            artifact_name: desktop-linux-x64-native
+            artifact_path: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          - id: windows-x64
+            runs_on: windows-latest
+            build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --no-bundle
+            artifact_name: desktop-windows-x64-native
+            artifact_path: apps/desktop/src-tauri/target/release/mps-desktop.exe
+          - id: macos-arm64
+            runs_on: macos-14
+            build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --bundles app
+            artifact_name: desktop-macos-arm64-native
+            artifact_path: apps/desktop/src-tauri/target/release/bundle/macos/*.app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux desktop build dependencies
+        if: matrix.id == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl wget file pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Build native desktop artifact
+        run: ${{ matrix.build_command }}
+
+      - name: Upload native desktop artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-desktop-linux64
-          path: |
-            release/stable/v*/desktop/mps-desktop-v*-linux-x64-portable.tar
-            release/stable/v*/desktop/mps-desktop-v*-linux-x64.AppImage
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload desktop macos universal artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-desktop-macos-universal
-          path: |
-            release/stable/v*/desktop/mps-desktop-v*-macos-universal-portable.tar
-          if-no-files-found: error
-          retention-days: 14
+  github-pages-build:
+    name: github-pages-build
+    needs:
+      - quality
+      - web-e2e-smoke
+    if: github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'main')
+    runs-on: ubuntu-latest
 
-      - name: Upload desktop win64 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-desktop-win64
-          path: |
-            release/stable/v*/desktop/mps-desktop-v*-windows-x64-portable.tar
-          if-no-files-found: error
-          retention-days: 14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Upload release metadata
-        uses: actions/upload-artifact@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          name: release-metadata
-          path: |
-            release/stable/metadata.json
-            release/stable/v*/CHANGELOG.md
-          if-no-files-found: error
-          retention-days: 14
+          version: 8.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Build web app for GitHub Pages
+        env:
+          MPS_WEB_BASE_PATH: ${{ format('/{0}/', github.event.repository.name) }}
+        run: pnpm --filter @mps/web build
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy-github-pages:
+    name: deploy-github-pages
+    needs:
+      - github-pages-build
+    if: github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: true
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   web-e2e-smoke:
     name: web-e2e-smoke
