@@ -215,6 +215,7 @@ export function createDesktopOnboardingAppRuntime(
     })
   const posterCache = createPosterCache<MediaItem>()
   let platformInitNonce = 0
+  let isDisposed = false
 
   let passwordHydrationNonce = 0
   const diagnosticsLogStore = createDiagnosticsLogStore()
@@ -251,6 +252,14 @@ export function createDesktopOnboardingAppRuntime(
 
   function stopDiagnosticsSampling(): void {
     diagnosticsController.stopSampling()
+  }
+
+  function requestRender(): void {
+    if (isDisposed) {
+      return
+    }
+
+    render()
   }
 
   function exportCrashReport(handoff: WallHandoff): void {
@@ -308,7 +317,7 @@ export function createDesktopOnboardingAppRuntime(
       })
     }
 
-    render()
+    requestRender()
   }
 
   appendDiagnosticsLog({
@@ -375,7 +384,7 @@ export function createDesktopOnboardingAppRuntime(
       existingWarning: state.platformWarning
     })
 
-    if (platformInitNonce !== initNonce) {
+    if (isDisposed || platformInitNonce !== initNonce) {
       return
     }
 
@@ -386,7 +395,7 @@ export function createDesktopOnboardingAppRuntime(
     state.autostartEnabled = platformState.autostartEnabled
     state.platformWarning = platformState.platformWarning
 
-    render()
+    requestRender()
   }
 
   function disposeIngestionRuntime(): void {
@@ -409,6 +418,10 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function setWallDiagnosticsText(testId: string, textContent: string): void {
+    if (isDisposed) {
+      return
+    }
+
     const diagnosticsNode = target.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
     if (!diagnosticsNode) {
       return
@@ -471,13 +484,17 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function requestWallPatchFallbackOnce(): void {
+    if (isDisposed) {
+      return
+    }
+
     if (wallPatchFallbackRequested || wallPatchFallbackIncidentActive) {
       return
     }
 
     wallPatchFallbackRequested = true
     wallPatchFallbackIncidentActive = true
-    render()
+    requestRender()
   }
 
   function readWallPatchReadiness(): {
@@ -500,9 +517,13 @@ export function createDesktopOnboardingAppRuntime(
 
 
   function handleIngestionRenderRequest(): void {
+    if (isDisposed) {
+      return
+    }
+
     if (!isWallRouteActive()) {
       clearWallPatchFallbackState()
-      render()
+      requestRender()
       return
     }
 
@@ -676,7 +697,7 @@ export function createDesktopOnboardingAppRuntime(
       return
     }
 
-    render()
+    requestRender()
   }
 
   const wallInteractionController = createWallInteractionController({
@@ -769,7 +790,7 @@ export function createDesktopOnboardingAppRuntime(
     }
 
     void passwordVault.read({ serverUrl, username }).then((rememberedPassword) => {
-      if (hydrationNonce !== passwordHydrationNonce) {
+      if (isDisposed || hydrationNonce !== passwordHydrationNonce) {
         return
       }
 
@@ -778,7 +799,7 @@ export function createDesktopOnboardingAppRuntime(
       }
 
       state.password = rememberedPassword
-      render()
+      requestRender()
     })
   }
 
@@ -793,7 +814,7 @@ export function createDesktopOnboardingAppRuntime(
       onSuccess: () => {
         queueRememberedPasswordHydration()
       },
-      onRenderRequest: render
+      onRenderRequest: requestRender
     })
   }
 
@@ -834,7 +855,7 @@ export function createDesktopOnboardingAppRuntime(
           username
         })
       },
-      onRenderRequest: render
+      onRenderRequest: requestRender
     })
   }
 
@@ -862,7 +883,7 @@ export function createDesktopOnboardingAppRuntime(
       navigateToOnboarding: () => {
         window.history.pushState({}, "", "/")
       },
-      onRenderRequest: render
+      onRenderRequest: requestRender
     })
 
     if (activeSession) {
@@ -879,7 +900,7 @@ export function createDesktopOnboardingAppRuntime(
       onAfterStateReset: () => {
         state.password = ""
       },
-      onRenderRequest: render
+      onRenderRequest: requestRender
     })
 
     if (activeSession) {
@@ -945,7 +966,7 @@ export function createDesktopOnboardingAppRuntime(
           void passwordVault.clearForIdentity({ serverUrl, username })
         }
 
-        render()
+        requestRender()
       },
       onLogin: () => {
         void handleLogin()
@@ -973,7 +994,7 @@ export function createDesktopOnboardingAppRuntime(
           navigateToWall: () => {
             window.history.pushState({}, "", WALL_PATHNAME)
           },
-          onRenderRequest: render
+          onRenderRequest: requestRender
         })
       },
       renderLibraryExtras: () => {
@@ -1005,7 +1026,7 @@ export function createDesktopOnboardingAppRuntime(
             }
 
             state.platformWarning = warning
-            render()
+            requestRender()
           })
         })
         displayLabel.append(displaySelect)
@@ -1029,7 +1050,7 @@ export function createDesktopOnboardingAppRuntime(
             }
 
             state.platformWarning = warning
-            render()
+            requestRender()
           })
         })
 
@@ -1101,7 +1122,7 @@ export function createDesktopOnboardingAppRuntime(
           body: fallbackContent.body,
           onBack: () => {
             window.history.pushState({}, "", "/")
-            render()
+            requestRender()
           }
         })
         container.append(fallback)
@@ -1148,7 +1169,7 @@ export function createDesktopOnboardingAppRuntime(
           onExportCrashReport: () => {
             exportCrashReport(handoff)
           },
-          onRenderRequest: render
+          onRenderRequest: requestRender
         }),
         resolveDetailPlacement: resolveWallDetailPlacement,
         controls: {
@@ -1169,6 +1190,10 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function render(): void {
+    if (isDisposed) {
+      return
+    }
+
     const url = new URL(window.location.href)
 
     if (url.pathname === WALL_PATHNAME) {
@@ -1188,17 +1213,21 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function onPopState(): void {
-    render()
+    requestRender()
   }
 
   return {
     start: () => {
+      isDisposed = false
       window.addEventListener("popstate", onPopState)
-      render()
+      requestRender()
       queueRememberedPasswordHydration()
       void initializePlatformExtensions()
     },
     dispose: () => {
+      isDisposed = true
+      platformInitNonce += 1
+      passwordHydrationNonce += 1
       stopDiagnosticsSampling()
       stopWallStreamLoop()
       wallInteractionController.detach()

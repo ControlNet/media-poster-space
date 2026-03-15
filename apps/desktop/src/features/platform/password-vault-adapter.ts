@@ -97,10 +97,12 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes
 }
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(buffer).set(bytes)
-  return buffer
+function toCryptoBufferSource(bytes: Uint8Array): BufferSource {
+  if (typeof Buffer === "function") {
+    return Buffer.from(bytes)
+  }
+
+  return bytes.slice()
 }
 
 function readPasswordPayload(localStorageRef: Storage): EncryptedPasswordPayload {
@@ -148,9 +150,11 @@ async function derivePasswordKey(deviceId: string, salt: Uint8Array): Promise<Cr
     return null
   }
 
+  const deviceIdBytes = toCryptoBufferSource(new TextEncoder().encode(deviceId))
+
   const baseKey = await subtle.importKey(
     "raw",
-    new TextEncoder().encode(deviceId),
+    deviceIdBytes,
     "PBKDF2",
     false,
     ["deriveKey"]
@@ -159,7 +163,7 @@ async function derivePasswordKey(deviceId: string, salt: Uint8Array): Promise<Cr
   return subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: toArrayBuffer(salt),
+      salt: toCryptoBufferSource(salt),
       iterations: 150_000,
       hash: "SHA-256"
     },
@@ -219,10 +223,10 @@ export function createEncryptedLocalPasswordVault(
         const plainBuffer = await subtle.decrypt(
           {
             name: "AES-GCM",
-            iv: toArrayBuffer(iv)
+            iv: toCryptoBufferSource(iv)
           },
           key,
-          toArrayBuffer(cipherBytes)
+          toCryptoBufferSource(cipherBytes)
         )
 
         return new TextDecoder().decode(plainBuffer)
@@ -260,10 +264,10 @@ export function createEncryptedLocalPasswordVault(
       const cipherBuffer = await subtle.encrypt(
         {
           name: "AES-GCM",
-          iv: toArrayBuffer(iv)
+          iv: toCryptoBufferSource(iv)
         },
         key,
-        toArrayBuffer(new TextEncoder().encode(request.password))
+        toCryptoBufferSource(new TextEncoder().encode(request.password))
       )
 
       const payload = readPasswordPayload(localStorageRef)
