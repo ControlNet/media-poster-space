@@ -5,7 +5,7 @@
   "identifier": "space.media.poster",
   "build": {
     "beforeDevCommand": "pnpm --filter @mps/desktop dev",
-    "beforeBuildCommand": "pnpm --filter @mps/desktop build",
+    "beforeBuildCommand": "pnpm --filter @mps/desktop run build:ui",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173"
   },
@@ -24,6 +24,13 @@
   },
   "bundle": {
     "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "targets": "all",
     "linux": {
       "appimage": {
