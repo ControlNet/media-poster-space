@@ -8,7 +8,8 @@
     "lint": "echo \"@mps/desktop lint placeholder\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "pnpm run typecheck && pnpm run test",
+    "build:ui": "vite build --base ./",
+    "build": "pnpm run typecheck && pnpm run test && pnpm run build:ui",
     "build:release": "node ../../scripts/release/package-desktop-release.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^22.10.10",
     "jsdom": "^24.1.3",
     "typescript": "^5.7.3",
