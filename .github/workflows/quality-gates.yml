@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches:
+      - master
       - main
   workflow_dispatch:
     inputs:
@@ -45,6 +46,83 @@ jobs:
 
       - name: Verify docs parity
         run: pnpm -w verify:docs-parity --strict
+
+  release-build-artifacts:
+    name: release-build-artifacts
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.10.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Build release artifacts
+        run: pnpm -w build:release
+
+      - name: Verify release artifacts
+        run: pnpm -w verify:release-artifacts
+
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-web-static
+          path: |
+            release/stable/v*/web/mps-web-v*-static.tar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload desktop linux64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-linux64
+          path: |
+            release/stable/v*/desktop/mps-desktop-v*-linux-x64-portable.tar
+            release/stable/v*/desktop/mps-desktop-v*-linux-x64.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload desktop macos universal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-macos-universal
+          path: |
+            release/stable/v*/desktop/mps-desktop-v*-macos-universal-portable.tar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload desktop win64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-win64
+          path: |
+            release/stable/v*/desktop/mps-desktop-v*-windows-x64-portable.tar
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: |
+            release/stable/metadata.json
+            release/stable/v*/CHANGELOG.md
+          if-no-files-found: error
+          retention-days: 14
 
   web-e2e-smoke:
     name: web-e2e-smoke
