@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["tailwind.config.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["tailwind.config.ts", "src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"]
 }
