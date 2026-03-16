@@ -46,6 +46,23 @@ interface FetchHarnessMovieItem {
   Genres?: string[]
 }
 
+function createDeferred(): {
+  promise: Promise<void>
+  resolve: () => void
+} {
+  let resolve = (): void => {}
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = () => {
+      nextResolve()
+    }
+  })
+
+  return {
+    promise,
+    resolve
+  }
+}
+
 function createPosterLibraryItems(startIndex: number, count: number): FetchHarnessMovieItem[] {
   return Array.from({ length: count }, (_, offset) => {
     const posterIndex = startIndex + offset
@@ -421,6 +438,157 @@ beforeEach(() => {
 })
 
 describe("desktop onboarding auth runtime", () => {
+  it("automatically runs preflight on startup when a remembered server address exists", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+    window.localStorage.setItem("mps.onboarding.remembered-server", TEST_SERVER)
+
+    const platformHarness = createPlatformHarness()
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    await vi.waitFor(() => {
+      expect(getInput("server-url-input").value).toBe(TEST_SERVER)
+      expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
+    })
+  })
+
+  it("switches provider theming and blocks unsupported providers during phase 1", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+    const platformHarness = createPlatformHarness()
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    clickByTestId("provider-option-emby")
+
+    await vi.waitFor(() => {
+      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
+      expect(getElement("server-status-indicator").textContent).toContain("Emby support is coming soon")
+      expect(getInput("server-url-input").disabled).toBe(true)
+      expect(getInput("server-url-input").placeholder).toBe("https://emby.yourdomain.com")
+      expect(getElement("login-submit").textContent).toContain("Emby support coming soon")
+      expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    clickByTestId("provider-option-plex")
+
+    await vi.waitFor(() => {
+      expect(getElement("provider-support-banner").textContent).toContain("Plex support is coming soon")
+      expect(getInput("server-url-input").placeholder).toBe("https://plex.yourdomain.com")
+      expect(getElement("login-submit").textContent).toContain("Plex support coming soon")
+    })
+
+    clickByTestId("provider-option-jellyfin")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
+      expect(getInput("server-url-input").disabled).toBe(false)
+      expect(getInput("server-url-input").placeholder).toBe("https://jellyfin.yourdomain.com")
+      expect(getElement("login-submit").textContent).toContain("Authenticate Jellyfin")
+      expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  it("ignores stale Jellyfin login completion after provider changes mid-flight", async () => {
+    let listLibrariesRequestCount = 0
+    const authenticationReleased = createDeferred()
+
+    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+
+      if (url.endsWith("/System/Info/Public")) {
+        return new Response(JSON.stringify({ Version: "10.9.0" }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*"
+          }
+        })
+      }
+
+      if (url.endsWith("/Users/AuthenticateByName")) {
+        if ((init?.method ?? "GET").toUpperCase() !== "POST") {
+          return new Response(JSON.stringify({}), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*"
+            }
+          })
+        }
+
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) as { Username?: string } : {}
+        if (!body.Username) {
+          return new Response(JSON.stringify({}), {
+            status: 400,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*"
+            }
+          })
+        }
+
+        await authenticationReleased.promise
+        return new Response(JSON.stringify({
+          AccessToken: "token-abc",
+          User: {
+            Id: "user-1",
+            Name: body.Username ?? "demo-user"
+          }
+        }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*"
+          }
+        })
+      }
+
+      if (url.endsWith("/Users/user-1/Views")) {
+        listLibrariesRequestCount += 1
+        return new Response(JSON.stringify({ Items: [] }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        })
+      }
+
+      throw new Error(`Unexpected fetch in stale-login test: ${url}`)
+    }) as typeof fetch
+
+    const platformHarness = createPlatformHarness()
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    setInputValue("server-url-input", TEST_SERVER)
+    await triggerServerStatusCheck()
+    setInputValue("username-input", "demo-user")
+    setInputValue("password-input", "secret-pass")
+    clickByTestId("login-submit")
+
+    clickByTestId("provider-option-emby")
+
+    await vi.waitFor(() => {
+      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
+    })
+
+    authenticationReleased.resolve()
+
+    await vi.waitFor(() => {
+      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
+      expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeNull()
+      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeNull()
+      expect(listLibrariesRequestCount).toBe(0)
+    })
+  })
+
   it("completes 3-step onboarding and persists encrypted remember-password data", async () => {
     const fetchHarness = createFetchHarness({ allowLogin: true })
     globalThis.fetch = fetchHarness
@@ -581,6 +749,11 @@ describe("desktop onboarding auth runtime", () => {
       expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
     })
 
+    const preflightRequestCountBeforeRelaunch = fetchHarness.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      return url.endsWith("/System/Info/Public")
+    }).length
+
     runtime.dispose()
 
     window.sessionStorage.clear()
@@ -602,6 +775,11 @@ describe("desktop onboarding auth runtime", () => {
       expect.stringContaining("/Users/AuthenticateByName"),
       expect.anything()
     )
+    const preflightRequestCountAfterRelaunch = fetchHarness.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      return url.endsWith("/System/Info/Public")
+    }).length
+    expect(preflightRequestCountAfterRelaunch).toBe(preflightRequestCountBeforeRelaunch + 1)
 
     relaunchedRuntime.dispose()
   }, 15_000)

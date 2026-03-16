@@ -56,6 +56,7 @@ import {
   type MediaIngestionRefreshTrigger,
   type MediaItem,
   type MediaLibrary,
+  type OnboardingProviderId,
   type ProviderErrorCategory,
   type ProviderSession,
   type OnboardingAppRuntime,
@@ -167,6 +168,18 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
   }
 }
 
+function isAvailableOnboardingProvider(providerId: OnboardingProviderId): boolean {
+  return providerId === "jellyfin"
+}
+
+function toUnavailableProviderMessage(providerId: OnboardingProviderId): string | null {
+  if (providerId === "jellyfin") {
+    return null
+  }
+
+  return `${providerId === "emby" ? "Emby" : "Plex"} support is coming soon`
+}
+
 function isHealthyWallPosterGridStreamApplyResult(
   result: WallPosterGridStreamApplyResult
 ): boolean {
@@ -234,6 +247,32 @@ export function createDesktopOnboardingAppRuntime(
   let isWallRendering = false
   let wallPatchDeferredDuringRender = false
   let preflightInFlightPromise: Promise<void> | null = null
+  let preflightRequestNonce = 0
+  let loginRequestNonce = 0
+
+  function shouldTriggerInitialRememberedServerPreflight(): boolean {
+    if (state.serverUrl.trim().length === 0 || !isAvailableOnboardingProvider(state.selectedProviderId)) {
+      return false
+    }
+
+    if (isWallRouteActive()) {
+      return false
+    }
+
+    const hasAutomaticWallEntryPrerequisites = state.rememberPasswordRequested
+      && state.username.trim().length > 0
+      && readWallHandoff() !== null
+
+    return !hasAutomaticWallEntryPrerequisites
+  }
+
+  function triggerInitialRememberedServerPreflight(): void {
+    if (!shouldTriggerInitialRememberedServerPreflight()) {
+      return
+    }
+
+    void handlePreflight({ force: false })
+  }
 
   function applyWallInteractionTransition(transition: WallInteractionTransitionResult): boolean {
     return applyWallInteractionTransitionState(state, transition)
@@ -879,6 +918,10 @@ export function createDesktopOnboardingAppRuntime(
       return
     }
 
+    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+      return
+    }
+
     const serverUrl = state.serverUrl.trim()
     const username = state.username.trim()
     if (!serverUrl || !username) {
@@ -931,6 +974,16 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function handlePreflight(options: { force?: boolean } = {}): Promise<void> {
+    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+      state.preflightPending = false
+      state.preflightCheckedServerUrl = null
+      state.preflightServerVersion = null
+      state.preflightLatencyMs = null
+      state.preflightError = null
+      requestRender()
+      return Promise.resolve()
+    }
+
     state.serverUrl = state.serverUrl.trim()
 
     if (preflightInFlightPromise) {
@@ -941,6 +994,8 @@ export function createDesktopOnboardingAppRuntime(
       return Promise.resolve()
     }
 
+    const requestNonce = ++preflightRequestNonce
+
     const preflightPromise = runOnboardingPreflight({
       state,
       preflight: (request) => {
@@ -948,6 +1003,9 @@ export function createDesktopOnboardingAppRuntime(
       },
       origin: window.location.origin,
       persistRememberedServer,
+      shouldApplyResult: () => {
+        return requestNonce === preflightRequestNonce && state.selectedProviderId === "jellyfin"
+      },
       onSuccess: () => {
         queueRememberedPasswordHydration()
       },
@@ -963,12 +1021,21 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   async function handleLogin(): Promise<void> {
+    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+      state.authError = toUnavailableProviderMessage(state.selectedProviderId)
+        ?? "This provider is not yet available."
+      requestRender()
+      return
+    }
+
     if (!hasSuccessfulPreflightForServer(state)) {
       await handlePreflight({ force: false })
       if (!hasSuccessfulPreflightForServer(state)) {
         return
       }
     }
+
+    const requestNonce = ++loginRequestNonce
 
     await runOnboardingLogin({
       state,
@@ -985,6 +1052,9 @@ export function createDesktopOnboardingAppRuntime(
       persistRememberedServer,
       saveSession,
       toAuthErrorMessage,
+      shouldApplyResult: () => {
+        return requestNonce === loginRequestNonce && state.selectedProviderId === "jellyfin"
+      },
       resolveSelectedLibraryIds: ({ defaultSelectedLibraryIds }) => {
         const handoff = readWallHandoff()
         return handoff?.selectedLibraryIds ?? defaultSelectedLibraryIds
@@ -1109,9 +1179,30 @@ export function createDesktopOnboardingAppRuntime(
       createElement,
       state,
       descriptionText:
-        "Desktop onboarding: server preflight, username/password authentication, then library selection.",
+        "Choose your media platform, connect the server, then continue through authentication and library selection.",
       rememberPasswordLabel: "Remember password (stored encrypted on this device)",
+      authenticationAvailable: isAvailableOnboardingProvider(state.selectedProviderId),
+      providerSelectionMessage: toUnavailableProviderMessage(state.selectedProviderId),
       toLibraryCheckboxTestId,
+      onProviderChange: (providerId) => {
+        resetAutomaticWallEntryAttempt()
+        preflightRequestNonce += 1
+        loginRequestNonce += 1
+        preflightInFlightPromise = null
+        state.selectedProviderId = providerId
+        state.session = null
+        state.libraries = []
+        state.selectedLibraryIds = new Set<string>()
+        state.preflightPending = false
+        state.preflightCheckedServerUrl = null
+        state.preflightServerVersion = null
+        state.preflightLatencyMs = null
+        state.preflightError = null
+        state.loginPending = false
+        state.authError = null
+        state.password = ""
+        requestRender()
+      },
       onServerInput: (value) => {
         resetAutomaticWallEntryAttempt()
         state.serverUrl = value
@@ -1427,6 +1518,7 @@ export function createDesktopOnboardingAppRuntime(
       resetAutomaticWallEntryAttempt()
       window.addEventListener("popstate", onPopState)
       requestRender()
+      triggerInitialRememberedServerPreflight()
       queueRememberedPasswordHydration()
       void initializePlatformExtensions()
     },
