@@ -51,6 +51,14 @@ function hashFrame(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex")
 }
 
+async function triggerServerStatusCheck(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByTestId("server-url-input").evaluate((element) => {
+    (element as HTMLInputElement).blur()
+  })
+
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
+}
+
 async function captureSeededSceneFrameHash(browser: Browser, seed: string): Promise<{
   renderInput: string
   frameHash: string
@@ -243,7 +251,7 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
   const loginStart = Date.now()
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("remember-username-checkbox").check()

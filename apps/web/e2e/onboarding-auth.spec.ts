@@ -23,6 +23,14 @@ async function wireSuccessfulPreflight(page: Page): Promise<void> {
   })
 }
 
+async function triggerServerStatusCheck(page: Page): Promise<void> {
+  await page.getByTestId("server-url-input").evaluate((element) => {
+    (element as HTMLInputElement).blur()
+  })
+
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
+}
+
 async function wireAuthentication(page: Page, options: {
   allowLogin: boolean
 }): Promise<void> {
@@ -433,13 +441,7 @@ test("completes preflight -> login -> library selection and enters poster wall",
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await Promise.all([
-    page.waitForResponse((response) => {
-      return response.request().method() === "GET"
-        && response.url().includes("/System/Info/Public")
-    }),
-    page.getByTestId("preflight-check-button").click()
-  ])
+  await triggerServerStatusCheck(page)
 
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
@@ -534,8 +536,8 @@ test("exports queue refill diagnostics with non-null adapter state on web runtim
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
-  await expect(page.getByTestId("preflight-check-button")).toHaveText("Preflight server")
+  await triggerServerStatusCheck(page)
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await expect(page.getByTestId("username-input")).toHaveValue("demo-user")
@@ -624,13 +626,7 @@ test("restores remembered server and username with empty password after restart"
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await Promise.all([
-    page.waitForResponse((response) => {
-      return response.request().method() === "GET"
-        && response.url().includes("/System/Info/Public")
-    }),
-    page.getByTestId("preflight-check-button").click()
-  ])
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("remember-username-checkbox").check()
@@ -680,7 +676,7 @@ test("remembers library selection after logout and next login on web", async ({ 
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -723,7 +719,7 @@ test("change server returns to login step and clears saved session before enteri
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -801,7 +797,7 @@ test("reopens root route into the wall when a saved session and handoff exist", 
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -864,7 +860,7 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1021,7 +1017,7 @@ test("handles healthy stream without poster-item-0 sentinel and limits fallback 
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1118,7 +1114,7 @@ test("does not replace visible posters during healthy refreshes", async ({ page 
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1236,7 +1232,7 @@ test("shows non-blocking warning when fullscreen request is denied", async ({ pa
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1340,7 +1336,7 @@ test("updates the wall clock without remounting the wall", async ({ page }) => {
   `)
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1400,7 +1396,7 @@ test("keeps the existing wall mounted when entering fullscreen", async ({ page }
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1503,7 +1499,7 @@ test("poster tile clicks no longer open detail card and Escape is ignored", asyn
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1670,7 +1666,7 @@ test("shows explicit auth error and keeps session token cleared on invalid crede
   await wireAuthentication(page, { allowLogin: false })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
 
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("wrong-pass")
@@ -1743,7 +1739,7 @@ test("restores cached posters on offline restart within 5 seconds", async ({ pag
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1814,7 +1810,7 @@ test("shows reconnect guide within 60s when token is revoked", async ({ page }) 
   })
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -1855,7 +1851,7 @@ test("logout clears session artifacts while preserving remembered server and use
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await page.getByTestId("remember-server-checkbox").check()
-  await page.getByTestId("preflight-check-button").click()
+  await triggerServerStatusCheck(page)
 
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
