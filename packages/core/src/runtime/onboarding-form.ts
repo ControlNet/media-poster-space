@@ -297,6 +297,7 @@ function createProviderOption(
   option.style.display = "flex"
   option.style.flexDirection = "column"
   option.style.alignItems = "center"
+  option.style.justifyContent = "center"
   option.style.gap = "0.75rem"
   option.style.boxShadow = isActive ? `0 0 24px ${providerPresentation.accentGlow}` : "none"
   option.style.transition = "transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease"
