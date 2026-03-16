@@ -127,7 +127,7 @@ type FullscreenCapableElement = HTMLElement & {
 }
 
 function isFullscreenActive(doc: FullscreenCapableDocument = document): boolean {
-  return doc.fullscreenElement !== null || doc.webkitFullscreenElement !== null
+  return doc.fullscreenElement != null || doc.webkitFullscreenElement != null
 }
 
 function canRequestFullscreen(target: FullscreenCapableElement): boolean {
@@ -799,9 +799,6 @@ export function createOnboardingAppRuntime(
           wallControlsHidden: state.wallControlsHidden
         })
       )
-    },
-    onEscape: () => {
-      return dismissActiveDetailCard()
     },
     onRenderRequest: () => {
       requestWallInteractionPatchOrRender()

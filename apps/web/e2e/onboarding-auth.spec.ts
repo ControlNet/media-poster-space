@@ -255,7 +255,10 @@ async function clickVisibleManualRefreshButton(page: Page): Promise<void> {
   const manualRefreshButton = page.getByTestId("manual-refresh-button").first()
 
   await page.evaluate(() => {
-    window.dispatchEvent(new Event("pointermove"))
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      pointerType: "mouse"
+    }))
   })
 
   await expect(manualRefreshButton).toBeVisible()
@@ -1248,10 +1251,7 @@ test("shows non-blocking warning when fullscreen request is denied", async ({ pa
     root.requestFullscreen = () => Promise.reject(new Error("denied"))
   })
 
-  await page.evaluate(() => {
-    const fullscreenButton = document.querySelector<HTMLElement>('[data-testid="wall-fullscreen-button"]')
-    fullscreenButton?.click()
-  })
+  await page.getByTestId("wall-fullscreen-button").first().click()
   const warning = page.getByTestId("wall-fullscreen-warning").first()
   await expect(warning).toBeVisible()
   await expect(warning).toContainText("denied")
@@ -1407,6 +1407,7 @@ test("keeps the existing wall mounted when entering fullscreen", async ({ page }
   await page.getByTestId("onboarding-finish").click()
 
   await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
+  await expect(page.getByTestId("wall-fullscreen-button").first()).toHaveAttribute("title", "Enter fullscreen")
   const baselineSnapshot = await captureWallIdentityProbeSnapshot(page, "before-fullscreen")
   expect(baselineSnapshot.baselineEstablished).toBe(true)
   expect(baselineSnapshot.sameWallRootAsBaseline).toBe(true)
@@ -1432,6 +1433,13 @@ test("keeps the existing wall mounted when entering fullscreen", async ({ page }
     }
   })
 
+  await page.evaluate(() => {
+    const fullscreenButton = document.querySelector<HTMLButtonElement>('[data-testid="wall-fullscreen-button"]')
+    fullscreenButton?.focus()
+  })
+  await page.keyboard.press("Enter")
+  await expect(page.getByTestId("wall-fullscreen-button").first()).toHaveAttribute("title", "Enter fullscreen")
+
   await page.getByTestId("wall-fullscreen-button").first().click()
 
   const afterFullscreenSnapshot = await captureWallIdentityProbeSnapshot(page, "after-fullscreen")
@@ -1442,7 +1450,7 @@ test("keeps the existing wall mounted when entering fullscreen", async ({ page }
   await expect(page.getByText("No posters ingested yet. Try manual refresh once ingestion is ready.")).toHaveCount(0)
 })
 
-test("poster tile clicks no longer open detail card", async ({ page }) => {
+test("poster tile clicks no longer open detail card and Escape is ignored", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -1614,7 +1622,7 @@ test("poster tile clicks no longer open detail card", async ({ page }) => {
 
     delete windowWithProbeState.__task1BaselineProbeState
   })
-  const beforeEscape = await captureWallIdentityProbeSnapshot(page, "escape-before")
+  const beforeEscapeKey = await captureWallIdentityProbeSnapshot(page, "escape-key-before")
 
   const detailVisibilityBeforeEscape = await page.evaluate(() => {
     const detailCardNode = document.querySelector<HTMLElement>('[data-testid="detail-card"]')
@@ -1637,24 +1645,24 @@ test("poster tile clicks no longer open detail card", async ({ page }) => {
     return getComputedStyle(detailCardNode).visibility
   })
 
-  const afterEscape = await captureWallIdentityProbeSnapshot(page, "escape-after")
+  const afterEscapeKey = await captureWallIdentityProbeSnapshot(page, "escape-key-after")
 
-  expect(beforeEscape.sameWallRootAsBaseline).toBe(true)
-  expect(beforeEscape.sameWallGridAsBaseline).toBe(true)
+  expect(beforeEscapeKey.sameWallRootAsBaseline).toBe(true)
+  expect(beforeEscapeKey.sameWallGridAsBaseline).toBe(true)
   expect(detailVisibilityBeforeEscape).toBe("hidden")
   expect(detailVisibilityAfterEscape).toBe("hidden")
-  expect(afterEscape.sameWallRootAsBaseline).toBe(true)
-  expect(afterEscape.sameWallGridAsBaseline).toBe(true)
+  expect(afterEscapeKey.sameWallRootAsBaseline).toBe(true)
+  expect(afterEscapeKey.sameWallGridAsBaseline).toBe(true)
 
   const evidence = {
-    probe: "task-7-escape-detail",
+    probe: "task-7-ignore-escape-key",
     detailVisibilityBeforeEscape,
     detailVisibilityAfterEscape,
-    sameWallRootAsBaseline: afterEscape.sameWallRootAsBaseline,
-    sameWallGridAsBaseline: afterEscape.sameWallGridAsBaseline
+    sameWallRootAsBaseline: afterEscapeKey.sameWallRootAsBaseline,
+    sameWallGridAsBaseline: afterEscapeKey.sameWallGridAsBaseline
   }
 
-  console.log(`[task-7-escape-detail] ${JSON.stringify(evidence)}`)
+  console.log(`[task-7-ignore-escape-key] ${JSON.stringify(evidence)}`)
 })
 
 test("shows explicit auth error and keeps session token cleared on invalid credentials", async ({ page }) => {
