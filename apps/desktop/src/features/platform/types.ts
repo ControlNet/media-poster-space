@@ -38,6 +38,8 @@ export interface DesktopPlatformBridge {
   setDisplaySelection: (displayId: string | null) => Promise<void>
   getAutostartEnabled: () => Promise<boolean>
   setAutostartEnabled: (enabled: boolean) => Promise<void>
+  getFullscreenEnabled: () => Promise<boolean>
+  setFullscreenEnabled: (enabled: boolean) => Promise<void>
   readCredential: (identity: DesktopCredentialIdentity) => Promise<string | null>
   writeCredential: (request: DesktopCredentialWriteRequest) => Promise<DesktopCredentialWriteResult>
   clearCredential: (identity: DesktopCredentialIdentity) => Promise<void>

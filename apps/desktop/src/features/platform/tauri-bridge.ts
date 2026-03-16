@@ -171,6 +171,24 @@ export function createDesktopPlatformBridge(localStorageRef: Storage | null): De
       const invoke = tauriCore.invoke
       await invoke("platform_set_autostart", { enabled })
     },
+    getFullscreenEnabled: async () => {
+      const tauriCore = getTauriCore()
+      if (!tauriCore) {
+        return document.fullscreenElement !== null
+      }
+
+      const invoke = tauriCore.invoke
+      return invoke<boolean>("platform_get_fullscreen")
+    },
+    setFullscreenEnabled: async (enabled) => {
+      const tauriCore = getTauriCore()
+      if (!tauriCore) {
+        return
+      }
+
+      const invoke = tauriCore.invoke
+      await invoke("platform_set_fullscreen", { enabled })
+    },
     readCredential: async (identity) => {
       const tauriCore = getTauriCore()
       if (!tauriCore) {

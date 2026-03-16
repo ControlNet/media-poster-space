@@ -396,6 +396,18 @@ fn platform_set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn platform_get_fullscreen(window: Window) -> Result<bool, String> {
+    window.is_fullscreen().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn platform_set_fullscreen(window: Window, enabled: bool) -> Result<(), String> {
+    window
+        .set_fullscreen(enabled)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn platform_read_credential(
     app: AppHandle,
     server_url: String,
@@ -503,6 +515,8 @@ pub fn run() {
             platform_set_display_selection,
             platform_get_autostart,
             platform_set_autostart,
+            platform_get_fullscreen,
+            platform_set_fullscreen,
             platform_read_credential,
             platform_write_credential,
             platform_clear_credential,
