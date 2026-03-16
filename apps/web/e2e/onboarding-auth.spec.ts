@@ -3,6 +3,23 @@ import { expect, test, type Page } from "@playwright/test"
 
 const TEST_SERVER = "https://jellyfin.test"
 
+function createDeferred(): {
+  promise: Promise<void>
+  resolve: () => void
+} {
+  let resolve = (): void => {}
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = () => {
+      nextResolve()
+    }
+  })
+
+  return {
+    promise,
+    resolve
+  }
+}
+
 // verify-wall-contracts literal anchors (kept as comments for contract parity checks)
 // page.getByTestId("exit-hotspot")
 // page.locator('[data-testid="wall-controls-container"]:visible')
@@ -354,6 +371,124 @@ test.beforeEach(async ({ page }) => {
     window.localStorage.clear()
     window.sessionStorage.clear()
   })
+})
+
+test("automatically runs preflight on startup when a remembered server address exists", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.evaluate(({ rememberedServerKey, serverUrl }) => {
+    window.localStorage.setItem(rememberedServerKey, serverUrl)
+  }, {
+    rememberedServerKey: "mps.onboarding.remembered-server",
+    serverUrl: TEST_SERVER
+  })
+
+  await page.reload()
+
+  await expect(page.getByTestId("server-url-input")).toHaveValue(TEST_SERVER)
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
+})
+
+test("switches provider theming and blocks unsupported providers during phase 1", async ({ page }) => {
+  await expect(page.getByTestId("onboarding-title")).toContainText("Connect Media Server")
+
+  await page.getByTestId("provider-option-emby").click()
+  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Emby support is coming soon")
+  await expect(page.getByTestId("server-url-input")).toBeDisabled()
+  await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://emby.yourdomain.com")
+  await expect(page.getByTestId("login-submit")).toBeDisabled()
+  await expect(page.getByTestId("login-submit")).toContainText("Emby support coming soon")
+
+  await page.getByTestId("provider-option-plex").click()
+  await expect(page.getByTestId("provider-support-banner")).toContainText("Plex support is coming soon")
+  await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://plex.yourdomain.com")
+  await expect(page.getByTestId("login-submit")).toContainText("Plex support coming soon")
+
+  await page.getByTestId("provider-option-jellyfin").click()
+  await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
+  await expect(page.getByTestId("server-url-input")).toBeEnabled()
+  await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://jellyfin.yourdomain.com")
+  await expect(page.getByTestId("login-submit")).toBeEnabled()
+  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Jellyfin")
+})
+
+test("ignores stale Jellyfin login completion after provider changes mid-flight", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+
+  let listLibrariesRequestCount = 0
+  const authenticationReleased = createDeferred()
+
+  await page.route("**/Users/AuthenticateByName", async (route, request) => {
+    if (request.method() !== "POST") {
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*"
+        },
+        body: JSON.stringify({})
+      })
+      return
+    }
+
+    const payload = request.postDataJSON() as { Username?: string }
+    if (!payload.Username) {
+      await route.fulfill({
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*"
+        },
+        body: JSON.stringify({})
+      })
+      return
+    }
+
+    await authenticationReleased.promise
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        AccessToken: "token-abc",
+        User: {
+          Id: "user-1",
+          Name: payload.Username ?? "demo-user"
+        }
+      })
+    })
+  })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    listLibrariesRequestCount += 1
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ Items: [] })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await triggerServerStatusCheck(page)
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+
+  await page.getByTestId("provider-option-emby").click()
+  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
+
+  authenticationReleased.resolve()
+
+  await page.waitForTimeout(250)
+  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
+  await expect(page.getByTestId("library-checkbox-movies-main")).toHaveCount(0)
+  await expect(page.getByTestId("poster-wall-root")).toHaveCount(0)
+  expect(listLibrariesRequestCount).toBe(0)
 })
 
 test("completes preflight -> login -> library selection and enters poster wall", async ({ page }) => {
@@ -755,7 +890,19 @@ test("change server returns to login step and clears saved session before enteri
 })
 
 test("reopens root route into the wall when a saved session and handoff exist", async ({ page }) => {
-  await wireSuccessfulPreflight(page)
+  let preflightRequestCount = 0
+  await page.route("**/System/Info/Public", async (route) => {
+    preflightRequestCount += 1
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "access-control-allow-origin": "*"
+      },
+      body: JSON.stringify({ Version: "10.9.0" })
+    })
+  })
+
   await wireAuthentication(page, { allowLogin: true })
 
   await page.route("**/Users/user-1/Views", async (route) => {
@@ -807,11 +954,14 @@ test("reopens root route into the wall when a saved session and handoff exist", 
 
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
 
+  const preflightRequestCountBeforeResume = preflightRequestCount
+
   await page.goto("/")
 
   await expect(page).toHaveURL(/\/wall$/)
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
   await expect(page.getByTestId("server-url-input")).toHaveCount(0)
+  expect(preflightRequestCount).toBe(preflightRequestCountBeforeResume)
 })
 
 test("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async ({ page }) => {

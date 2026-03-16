@@ -58,6 +58,7 @@ import {
   type MediaIngestionRefreshTrigger,
   type MediaItem,
   type MediaLibrary,
+  type OnboardingProviderId,
   type ProviderErrorCategory,
   type ProviderSession,
   type OnboardingAppRuntime,
@@ -191,6 +192,18 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
   }
 }
 
+function isAvailableOnboardingProvider(providerId: OnboardingProviderId): boolean {
+  return providerId === "jellyfin"
+}
+
+function toUnavailableProviderMessage(providerId: OnboardingProviderId): string | null {
+  if (providerId === "jellyfin") {
+    return null
+  }
+
+  return `${providerId === "emby" ? "Emby" : "Plex"} support is coming soon`
+}
+
 export function createOnboardingAppRuntime(
   target: HTMLElement,
   options: {
@@ -218,6 +231,24 @@ export function createOnboardingAppRuntime(
   let isRendering = false
   let renderDeferred = false
   let preflightInFlightPromise: Promise<void> | null = null
+  let preflightRequestNonce = 0
+  let loginRequestNonce = 0
+
+  function shouldTriggerInitialRememberedServerPreflight(): boolean {
+    if (state.serverUrl.trim().length === 0 || !isAvailableOnboardingProvider(state.selectedProviderId)) {
+      return false
+    }
+
+    return !isWallRouteActive()
+  }
+
+  function triggerInitialRememberedServerPreflight(): void {
+    if (!shouldTriggerInitialRememberedServerPreflight()) {
+      return
+    }
+
+    void handlePreflight({ force: false })
+  }
 
   function applyWallInteractionTransition(transition: WallInteractionTransitionResult): boolean {
     return applyWallInteractionTransitionState(state, transition)
@@ -879,6 +910,16 @@ export function createOnboardingAppRuntime(
   }
 
   function handlePreflight(options: { force?: boolean } = {}): Promise<void> {
+    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+      state.preflightPending = false
+      state.preflightCheckedServerUrl = null
+      state.preflightServerVersion = null
+      state.preflightLatencyMs = null
+      state.preflightError = null
+      render()
+      return Promise.resolve()
+    }
+
     state.serverUrl = state.serverUrl.trim()
 
     if (preflightInFlightPromise) {
@@ -889,6 +930,8 @@ export function createOnboardingAppRuntime(
       return Promise.resolve()
     }
 
+    const requestNonce = ++preflightRequestNonce
+
     const preflightPromise = runOnboardingPreflight({
       state,
       preflight: (request) => {
@@ -896,6 +939,9 @@ export function createOnboardingAppRuntime(
       },
       origin: window.location.origin,
       persistRememberedServer,
+      shouldApplyResult: () => {
+        return requestNonce === preflightRequestNonce && state.selectedProviderId === "jellyfin"
+      },
       onRenderRequest: render
     }).finally(() => {
       if (preflightInFlightPromise === preflightPromise) {
@@ -908,12 +954,21 @@ export function createOnboardingAppRuntime(
   }
 
   async function handleLogin(): Promise<void> {
+    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+      state.authError = toUnavailableProviderMessage(state.selectedProviderId)
+        ?? "This provider is not yet available."
+      render()
+      return
+    }
+
     if (!hasSuccessfulPreflightForServer(state)) {
       await handlePreflight({ force: false })
       if (!hasSuccessfulPreflightForServer(state)) {
         return
       }
     }
+
+    const requestNonce = ++loginRequestNonce
 
     await runOnboardingLogin({
       state,
@@ -930,6 +985,9 @@ export function createOnboardingAppRuntime(
       persistRememberedServer,
       saveSession,
       toAuthErrorMessage,
+      shouldApplyResult: () => {
+        return requestNonce === loginRequestNonce && state.selectedProviderId === "jellyfin"
+      },
       resolveSelectedLibraryIds: ({ session, libraries, defaultSelectedLibraryIds }) => {
         return readPersistedLibrarySelection(session, libraries) ?? defaultSelectedLibraryIds
       },
@@ -1053,13 +1111,33 @@ export function createOnboardingAppRuntime(
     const onboardingView = createOnboardingFormView({
       createElement,
       state,
-      descriptionText: "Three-step onboarding: server preflight, username/password authentication, then library selection.",
+      descriptionText: "Choose your media platform, connect the server, then continue through authentication and library selection.",
       rememberPasswordLabel: platform.canPersistPassword
         ? "Remember password"
         : "Remember password (Desktop app only)",
       rememberPasswordDisabled: !platform.canPersistPassword,
       showRememberPasswordToggle: platform.canPersistPassword,
+      authenticationAvailable: isAvailableOnboardingProvider(state.selectedProviderId),
+      providerSelectionMessage: toUnavailableProviderMessage(state.selectedProviderId),
       toLibraryCheckboxTestId,
+      onProviderChange: (providerId) => {
+        preflightRequestNonce += 1
+        loginRequestNonce += 1
+        preflightInFlightPromise = null
+        state.selectedProviderId = providerId
+        state.session = null
+        state.libraries = []
+        state.selectedLibraryIds = new Set<string>()
+        state.preflightPending = false
+        state.preflightCheckedServerUrl = null
+        state.preflightServerVersion = null
+        state.preflightLatencyMs = null
+        state.preflightError = null
+        state.loginPending = false
+        state.authError = null
+        state.password = ""
+        render()
+      },
       onServerInput: (value) => {
         state.serverUrl = value
         state.preflightError = null
@@ -1282,6 +1360,7 @@ export function createOnboardingAppRuntime(
       document.addEventListener("fullscreenchange", onFullscreenChange)
       document.addEventListener("fullscreenerror", onFullscreenError)
       render()
+      triggerInitialRememberedServerPreflight()
     },
     dispose: () => {
       stopDiagnosticsSampling()
