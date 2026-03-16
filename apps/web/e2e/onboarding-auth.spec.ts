@@ -391,7 +391,16 @@ test("automatically runs preflight on startup when a remembered server address e
 })
 
 test("switches provider theming and blocks unsupported providers during phase 1", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
   await expect(page.getByTestId("onboarding-title")).toContainText("Connect Media Server")
+
+  await page.getByTestId("server-url-input").evaluate((element, serverUrl) => {
+    const input = element as HTMLInputElement
+    input.value = serverUrl
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+  }, TEST_SERVER)
 
   await page.getByTestId("provider-option-emby").click()
   await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
@@ -409,7 +418,9 @@ test("switches provider theming and blocks unsupported providers during phase 1"
   await page.getByTestId("provider-option-jellyfin").click()
   await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
   await expect(page.getByTestId("server-url-input")).toBeEnabled()
+  await expect(page.getByTestId("server-url-input")).toHaveValue(TEST_SERVER)
   await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://jellyfin.yourdomain.com")
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
   await expect(page.getByTestId("login-submit")).toBeEnabled()
   await expect(page.getByTestId("login-submit")).toContainText("Authenticate Jellyfin")
 })

@@ -1137,6 +1137,10 @@ export function createOnboardingAppRuntime(
         state.authError = null
         state.password = ""
         render()
+
+        if (providerId === "jellyfin") {
+          void handlePreflight({ force: false })
+        }
       },
       onServerInput: (value) => {
         state.serverUrl = value
