@@ -71,6 +71,9 @@ export interface OnboardingBaseState<
   rememberUsername: boolean
   rememberPasswordRequested: boolean
   preflightPending: boolean
+  preflightCheckedServerUrl: string | null
+  preflightServerVersion: string | null
+  preflightLatencyMs: number | null
   loginPending: boolean
   finishPending: boolean
   preflightError: string | null
@@ -115,6 +118,9 @@ export function createOnboardingBaseState<
     rememberUsername: options.rememberedUsername.length > 0,
     rememberPasswordRequested: options.rememberPasswordRequested,
     preflightPending: false,
+    preflightCheckedServerUrl: null,
+    preflightServerVersion: null,
+    preflightLatencyMs: null,
     loginPending: false,
     finishPending: false,
     preflightError: null,

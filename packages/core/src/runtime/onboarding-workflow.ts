@@ -8,6 +8,42 @@ export interface OnboardingPreflightState {
   preflightError: string | null
   authError: string | null
   preflightPending: boolean
+  preflightCheckedServerUrl: string | null
+  preflightServerVersion: string | null
+  preflightLatencyMs: number | null
+}
+
+export function hasSuccessfulPreflightForServer(state: Pick<
+  OnboardingPreflightState,
+  "serverUrl" | "preflightError" | "preflightCheckedServerUrl" | "preflightServerVersion"
+>): boolean {
+  const trimmedServerUrl = state.serverUrl.trim()
+
+  return trimmedServerUrl.length > 0
+    && state.preflightError === null
+    && state.preflightCheckedServerUrl === trimmedServerUrl
+    && state.preflightServerVersion !== null
+}
+
+export function shouldRunAutomaticPreflight(state: Pick<
+  OnboardingPreflightState,
+  "serverUrl"
+  | "preflightPending"
+  | "preflightError"
+  | "preflightCheckedServerUrl"
+  | "preflightServerVersion"
+>): boolean {
+  const trimmedServerUrl = state.serverUrl.trim()
+
+  if (trimmedServerUrl.length === 0 || state.preflightPending) {
+    return false
+  }
+
+  if (hasSuccessfulPreflightForServer(state)) {
+    return false
+  }
+
+  return state.preflightCheckedServerUrl !== trimmedServerUrl || state.preflightError !== null
 }
 
 export interface RunOnboardingPreflightOptions {
@@ -26,12 +62,18 @@ export async function runOnboardingPreflight(options: RunOnboardingPreflightOpti
   options.state.authError = null
 
   if (!trimmedServerUrl) {
-    options.state.preflightError = "Server URL is required before preflight."
+    options.state.preflightPending = false
+    options.state.preflightCheckedServerUrl = null
+    options.state.preflightServerVersion = null
+    options.state.preflightLatencyMs = null
     options.onRenderRequest()
     return
   }
 
   options.state.preflightPending = true
+  options.state.preflightCheckedServerUrl = trimmedServerUrl
+  options.state.preflightServerVersion = null
+  options.state.preflightLatencyMs = null
   options.onRenderRequest()
 
   const result = await options.preflight({
@@ -43,11 +85,15 @@ export async function runOnboardingPreflight(options: RunOnboardingPreflightOpti
 
   if (!result.ok) {
     options.state.preflightError = result.error.message
+    options.state.preflightServerVersion = null
+    options.state.preflightLatencyMs = null
     options.onRenderRequest()
     return
   }
 
-  options.state.serverUrl = trimmedServerUrl
+  options.state.preflightCheckedServerUrl = trimmedServerUrl
+  options.state.preflightServerVersion = result.serverVersion ?? null
+  options.state.preflightLatencyMs = result.latencyMs ?? null
   options.persistRememberedServer()
   await options.onSuccess?.()
   options.onRenderRequest()
