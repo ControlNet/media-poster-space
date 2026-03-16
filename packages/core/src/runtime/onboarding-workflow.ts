@@ -51,6 +51,7 @@ export interface RunOnboardingPreflightOptions {
   preflight: (request: ProviderPreflightRequest) => Promise<ProviderPreflightResult>
   origin: string
   persistRememberedServer: () => void
+  shouldApplyResult?: () => boolean
   onSuccess?: () => void | Promise<void>
   onRenderRequest: () => void
 }
@@ -80,6 +81,10 @@ export async function runOnboardingPreflight(options: RunOnboardingPreflightOpti
     serverUrl: trimmedServerUrl,
     origin: options.origin
   })
+
+  if (options.shouldApplyResult && !options.shouldApplyResult()) {
+    return
+  }
 
   options.state.preflightPending = false
 
@@ -134,6 +139,7 @@ export interface RunOnboardingLoginOptions<Session extends ProviderSession, Libr
     username: string
     password: string
   }) => void | Promise<void>
+  shouldApplyResult?: () => boolean
   getLibraryId?: (library: Library) => string
   onRenderRequest: () => void
 }
@@ -170,7 +176,16 @@ export async function runOnboardingLogin<
       deviceId: options.deviceId
     })
 
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     const libraries = await options.listLibraries(session)
+
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     const defaultSelectedLibraryIds = libraries.map((library) => getLibraryId(library))
     const resolvedSelectedLibraryIds = options.resolveSelectedLibraryIds
       ? await options.resolveSelectedLibraryIds({
@@ -194,15 +209,29 @@ export async function runOnboardingLogin<
     options.state.password = ""
     options.persistRememberedUsername()
     options.persistRememberedServer()
+
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     await options.onAfterSessionEstablished?.({
       session,
       serverUrl: trimmedServerUrl,
       username: trimmedUsername,
       password: submittedPassword
     })
+
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     options.saveSession(session)
     options.onRenderRequest()
   } catch (error) {
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     options.state.loginPending = false
     options.state.session = null
     options.state.password = ""

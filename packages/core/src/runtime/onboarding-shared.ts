@@ -5,6 +5,7 @@ import {
   type DiagnosticsLogEntry,
   type DiagnosticsSample
 } from "./diagnostics"
+import type { OnboardingProviderId } from "./onboarding-form"
 
 export const ONBOARDING_REMEMBERED_SERVER_STORAGE_KEY = "mps.onboarding.remembered-server"
 export const ONBOARDING_REMEMBERED_USERNAME_STORAGE_KEY = "mps.onboarding.remembered-username"
@@ -64,6 +65,7 @@ export interface OnboardingBaseState<
   ErrorCategory,
   Trigger
 > {
+  selectedProviderId: OnboardingProviderId
   serverUrl: string
   username: string
   password: string
@@ -111,6 +113,7 @@ export function createOnboardingBaseState<
   rememberPasswordRequested: boolean
 }): OnboardingBaseState<Session, Library, Item, ErrorCategory, Trigger> {
   return {
+    selectedProviderId: "jellyfin",
     serverUrl: options.rememberedServer,
     username: options.rememberedUsername,
     password: "",
