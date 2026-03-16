@@ -63,7 +63,22 @@ function clickByTestId(testId: string): void {
     throw new Error(`Missing element: ${testId}`)
   }
 
+  element.dispatchEvent(createMousePointerEvent("pointerdown", { button: 0 }))
   element.click()
+}
+
+function createMousePointerEvent(type: string, init: {
+  bubbles?: boolean
+  button?: number
+} = {}): Event {
+  const event = new Event(type, { bubbles: init.bubbles ?? true })
+  Object.defineProperty(event, "pointerType", {
+    value: "mouse"
+  })
+  Object.defineProperty(event, "button", {
+    value: init.button ?? 0
+  })
+  return event
 }
 
 function setInputValue(testId: string, value: string): void {

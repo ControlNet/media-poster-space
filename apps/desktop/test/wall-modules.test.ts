@@ -16,6 +16,20 @@ import {
 import type { DesktopDisplayOption, DesktopPlatformBridge } from "../src/features/platform/tauri-bridge"
 import { createWallInteractionController } from "@mps/core"
 
+function createMousePointerEvent(type: string, init: {
+  bubbles?: boolean
+  button?: number
+} = {}): Event {
+  const event = new Event(type, { bubbles: init.bubbles ?? true })
+  Object.defineProperty(event, "pointerType", {
+    value: "mouse"
+  })
+  Object.defineProperty(event, "button", {
+    value: init.button ?? 0
+  })
+  return event
+}
+
 function createPlatformBridgeMock(overrides: Partial<DesktopPlatformBridge> = {}): DesktopPlatformBridge {
   return {
     getCapabilities: async () => ({
@@ -36,6 +50,8 @@ function createPlatformBridgeMock(overrides: Partial<DesktopPlatformBridge> = {}
     setDisplaySelection: async () => undefined,
     getAutostartEnabled: async () => false,
     setAutostartEnabled: async () => undefined,
+    getFullscreenEnabled: async () => false,
+    setFullscreenEnabled: async () => undefined,
     readCredential: async () => null,
     writeCredential: async () => ({
       storageKind: "secure-service",
@@ -89,14 +105,13 @@ describe("desktop wall interaction controller", () => {
         controlsHidden = false
         return true
       },
-      onEscape: () => false,
       onRenderRequest: () => {
         renderCount += 1
       }
     })
 
     controller.attach()
-    window.dispatchEvent(new Event("pointermove"))
+    window.dispatchEvent(createMousePointerEvent("pointermove"))
 
     expect(controller.isIdleHideScheduled()).toBe(true)
     expect(renderCount).toBe(1)
@@ -110,12 +125,10 @@ describe("desktop wall interaction controller", () => {
     expect(controller.isIdleHideScheduled()).toBe(false)
   })
 
-  it("keeps keyboard scope Escape-only and preserves route guards for dismiss", async () => {
+  it("ignores keyboard events and preserves route guards for idle scheduling", async () => {
     vi.useFakeTimers()
 
     let routeActive = true
-    let escapeShouldRender = false
-    let escapeCalls = 0
     let idleHideCalls = 0
     let renderCount = 0
 
@@ -127,38 +140,24 @@ describe("desktop wall interaction controller", () => {
         return true
       },
       onRevealControls: () => false,
-      onEscape: () => {
-        escapeCalls += 1
-        return escapeShouldRender
-      },
       onRenderRequest: () => {
         renderCount += 1
       }
     })
 
     controller.attach()
+    document.body.dispatchEvent(new FocusEvent("focusin", { bubbles: true }))
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
 
-    expect(escapeCalls).toBe(0)
     expect(renderCount).toBe(0)
     expect(controller.isIdleHideScheduled()).toBe(false)
-
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
-    expect(escapeCalls).toBe(1)
-    expect(renderCount).toBe(0)
-    expect(controller.isIdleHideScheduled()).toBe(false)
-
-    escapeShouldRender = true
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
-    expect(escapeCalls).toBe(2)
-    expect(renderCount).toBe(1)
-    expect(controller.isIdleHideScheduled()).toBe(true)
 
     routeActive = false
     await vi.advanceTimersByTimeAsync(8_000)
 
     expect(idleHideCalls).toBe(0)
-    expect(renderCount).toBe(1)
+    expect(renderCount).toBe(0)
 
     controller.detach()
   })
