@@ -134,6 +134,7 @@ interface OnboardingState extends OnboardingBaseState<
   platformDisplays: DesktopDisplayOption[]
   selectedDisplayId: string | null
   autostartEnabled: boolean
+  fullscreenEnabled: boolean
   platformWarning: string | null
 }
 
@@ -159,6 +160,7 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
     platformDisplays: [],
     selectedDisplayId: null,
     autostartEnabled: false,
+    fullscreenEnabled: false,
     platformWarning: null
   }
 }
@@ -218,6 +220,8 @@ export function createDesktopOnboardingAppRuntime(
   let isDisposed = false
 
   let passwordHydrationNonce = 0
+  let automaticWallEntryAttemptKey: string | null = null
+  let automaticWallEntryInFlight = false
   const diagnosticsLogStore = createDiagnosticsLogStore()
   let diagnosticsLastExportAt: string | null = null
   let diagnosticsExportError: string | null = null
@@ -379,10 +383,13 @@ export function createDesktopOnboardingAppRuntime(
   async function initializePlatformExtensions(): Promise<void> {
     const initNonce = ++platformInitNonce
 
-    const platformState = await initializeDesktopWallPlatform({
-      platformBridge,
-      existingWarning: state.platformWarning
-    })
+    const [platformState, fullscreenEnabled] = await Promise.all([
+      initializeDesktopWallPlatform({
+        platformBridge,
+        existingWarning: state.platformWarning
+      }),
+      platformBridge.getFullscreenEnabled()
+    ])
 
     if (isDisposed || platformInitNonce !== initNonce) {
       return
@@ -393,6 +400,7 @@ export function createDesktopOnboardingAppRuntime(
     state.platformDisplays = platformState.platformDisplays
     state.selectedDisplayId = platformState.selectedDisplayId
     state.autostartEnabled = platformState.autostartEnabled
+    state.fullscreenEnabled = fullscreenEnabled
     state.platformWarning = platformState.platformWarning
 
     requestRender()
@@ -403,10 +411,7 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function readActiveSession(): ProviderSession | null {
-    return readOnboardingActiveSession({
-      currentSession: state.session,
-      sessionStorageRef
-    })
+    return readPersistedActiveSession()
   }
 
   function ensureIngestionRuntime(session: ProviderSession, selectedLibraryIds: readonly string[]): void {
@@ -723,9 +728,6 @@ export function createDesktopOnboardingAppRuntime(
         })
       )
     },
-    onEscape: () => {
-      return dismissActiveDetailCard()
-    },
     onRenderRequest: () => {
       requestWallInteractionPatchOrRender()
     }
@@ -760,18 +762,60 @@ export function createDesktopOnboardingAppRuntime(
 
   function clearSessionArtifacts(): void {
     clearOnboardingSessionArtifacts(sessionStorageRef)
+    clearOnboardingSessionArtifacts(localStorageRef)
   }
 
   function saveSession(session: ProviderSession): void {
     saveOnboardingSession(sessionStorageRef, session)
+    saveOnboardingSession(localStorageRef, session)
   }
 
   function saveWallHandoff(handoff: WallHandoff): void {
     saveOnboardingWallHandoff(sessionStorageRef, handoff)
+    saveOnboardingWallHandoff(localStorageRef, handoff)
   }
 
   function readWallHandoff(): WallHandoff | null {
-    return readOnboardingWallHandoff(sessionStorageRef)
+    const handoffFromSession = readOnboardingWallHandoff(sessionStorageRef)
+    if (handoffFromSession) {
+      return handoffFromSession
+    }
+
+    const persistedHandoff = readOnboardingWallHandoff(localStorageRef)
+    if (persistedHandoff) {
+      saveOnboardingWallHandoff(sessionStorageRef, persistedHandoff)
+    }
+
+    return persistedHandoff
+  }
+
+  function readPersistedActiveSession(): ProviderSession | null {
+    const sessionFromSessionStorage = readOnboardingActiveSession({
+      currentSession: state.session,
+      sessionStorageRef
+    })
+    if (sessionFromSessionStorage) {
+      if (!sessionStorageRef?.getItem(AUTH_SESSION_STORAGE_KEY)) {
+        saveOnboardingSession(sessionStorageRef, sessionFromSessionStorage)
+      }
+
+      return sessionFromSessionStorage
+    }
+
+    const persistedSession = readOnboardingActiveSession({
+      currentSession: null,
+      sessionStorageRef: localStorageRef
+    })
+    if (persistedSession) {
+      saveOnboardingSession(sessionStorageRef, persistedSession)
+    }
+
+    return persistedSession
+  }
+
+  function resetAutomaticWallEntryAttempt(): void {
+    automaticWallEntryAttemptKey = null
+    automaticWallEntryInFlight = false
   }
 
   function queueRememberedPasswordHydration(): void {
@@ -801,6 +845,86 @@ export function createDesktopOnboardingAppRuntime(
       state.password = rememberedPassword
       requestRender()
     })
+  }
+
+  async function tryAutomaticWallEntry(): Promise<void> {
+    if (
+      isDisposed
+      || isWallRouteActive()
+      || automaticWallEntryInFlight
+      || state.preflightPending
+      || state.loginPending
+      || state.finishPending
+    ) {
+      return
+    }
+
+    const handoff = readWallHandoff()
+    if (!handoff || handoff.selectedLibraryIds.length === 0) {
+      return
+    }
+
+    const persistedSession = readPersistedActiveSession()
+    if (persistedSession) {
+      state.session = persistedSession
+      window.history.replaceState({}, "", WALL_PATHNAME)
+      requestRender()
+      return
+    }
+
+    if (!state.rememberPasswordRequested) {
+      return
+    }
+
+    const serverUrl = state.serverUrl.trim()
+    const username = state.username.trim()
+    if (!serverUrl || !username) {
+      return
+    }
+
+    const automaticWallEntryKey = `${serverUrl}::${username}::${handoff.selectedLibraryIds.join(",")}`
+    if (automaticWallEntryAttemptKey === automaticWallEntryKey) {
+      return
+    }
+
+    automaticWallEntryAttemptKey = automaticWallEntryKey
+    automaticWallEntryInFlight = true
+
+    try {
+      const rememberedPassword = await passwordVault.read({ serverUrl, username })
+      if (isDisposed || !rememberedPassword) {
+        return
+      }
+
+      state.password = rememberedPassword
+      state.preflightError = null
+      state.authError = null
+      await handleLogin()
+      if (isDisposed || !state.session) {
+        return
+      }
+
+      const availableLibraryIds = new Set(state.libraries.map((library) => library.id))
+      state.selectedLibraryIds = new Set(handoff.selectedLibraryIds.filter((libraryId) => availableLibraryIds.has(libraryId)))
+      if (state.selectedLibraryIds.size === 0) {
+        return
+      }
+
+      runOnboardingFinish({
+        state,
+        resolveRememberPasswordRequested: () => {
+          return state.rememberPasswordRequested
+        },
+        saveSession,
+        saveWallHandoff,
+        navigateToWall: () => {
+          window.history.pushState({}, "", WALL_PATHNAME)
+        },
+        onRenderRequest: requestRender
+      })
+    } finally {
+      automaticWallEntryInFlight = false
+    }
   }
 
   async function handlePreflight(): Promise<void> {
@@ -834,6 +958,10 @@ export function createDesktopOnboardingAppRuntime(
       persistRememberedServer,
       saveSession,
       toAuthErrorMessage,
+      resolveSelectedLibraryIds: ({ defaultSelectedLibraryIds }) => {
+        const handoff = readWallHandoff()
+        return handoff?.selectedLibraryIds ?? defaultSelectedLibraryIds
+      },
       onAfterSessionEstablished: async ({ serverUrl, username, password }) => {
         persistRememberPasswordPreference()
 
@@ -860,9 +988,7 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   async function handleLogout(): Promise<void> {
-    const activeSession = parseJson<ProviderSession>(
-      sessionStorageRef?.getItem(AUTH_SESSION_STORAGE_KEY) ?? null
-    )
+    const activeSession = readPersistedActiveSession()
 
     await runOnboardingLogoutReset({
       state,
@@ -872,6 +998,7 @@ export function createDesktopOnboardingAppRuntime(
         await passwordVault.clearAll()
       },
       onAfterCommonStateReset: () => {
+        resetAutomaticWallEntryAttempt()
         state.password = ""
         state.libraryError = null
       },
@@ -887,7 +1014,16 @@ export function createDesktopOnboardingAppRuntime(
     })
 
     if (activeSession) {
-      void provider.invalidateSession(activeSession).catch(() => undefined)
+      void provider.invalidateSession(activeSession).catch((error) => {
+        appendDiagnosticsLog({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          event: "auth.logout.invalidate-session-failed",
+          details: {
+            message: error instanceof Error ? error.message : "Unknown logout invalidation failure"
+          }
+        })
+      })
     }
   }
 
@@ -898,14 +1034,45 @@ export function createDesktopOnboardingAppRuntime(
       state,
       clearSessionArtifacts,
       onAfterStateReset: () => {
+        resetAutomaticWallEntryAttempt()
         state.password = ""
       },
       onRenderRequest: requestRender
     })
 
     if (activeSession) {
-      void provider.invalidateSession(activeSession).catch(() => undefined)
+      void provider.invalidateSession(activeSession).catch((error) => {
+        appendDiagnosticsLog({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          event: "auth.change-server.invalidate-session-failed",
+          details: {
+            message: error instanceof Error ? error.message : "Unknown step-back invalidation failure"
+          }
+        })
+      })
     }
+  }
+
+  function handleFullscreenToggle(): void {
+    const nextFullscreenEnabled = !state.fullscreenEnabled
+    void platformBridge.setFullscreenEnabled(nextFullscreenEnabled).then(() => {
+      if (isDisposed) {
+        return
+      }
+
+      state.fullscreenEnabled = nextFullscreenEnabled
+      requestRender()
+    }).catch((error) => {
+      if (isDisposed) {
+        return
+      }
+
+      state.platformWarning = error instanceof Error
+        ? error.message
+        : "Desktop fullscreen request failed."
+      requestRender()
+    })
   }
 
   function renderOnboarding(container: HTMLElement): void {
@@ -919,6 +1086,7 @@ export function createDesktopOnboardingAppRuntime(
       rememberPasswordLabel: "Remember password (stored encrypted on this device)",
       toLibraryCheckboxTestId,
       onServerInput: (value) => {
+        resetAutomaticWallEntryAttempt()
         state.serverUrl = value
         state.preflightError = null
 
@@ -934,6 +1102,7 @@ export function createDesktopOnboardingAppRuntime(
         void handlePreflight()
       },
       onUsernameInput: (value) => {
+        resetAutomaticWallEntryAttempt()
         state.username = value
         state.authError = null
 
@@ -942,6 +1111,7 @@ export function createDesktopOnboardingAppRuntime(
         }
       },
       onPasswordInput: (value) => {
+        resetAutomaticWallEntryAttempt()
         state.password = value
         state.authError = null
       },
@@ -953,11 +1123,13 @@ export function createDesktopOnboardingAppRuntime(
         state.rememberPasswordRequested = remember
         persistRememberPasswordPreference()
 
-        if (state.rememberPasswordRequested) {
+      if (state.rememberPasswordRequested) {
+          resetAutomaticWallEntryAttempt()
           queueRememberedPasswordHydration()
           return
         }
 
+        resetAutomaticWallEntryAttempt()
         state.password = ""
         const serverUrl = state.serverUrl.trim()
         const username = state.username.trim()
@@ -1173,7 +1345,9 @@ export function createDesktopOnboardingAppRuntime(
         }),
         resolveDetailPlacement: resolveWallDetailPlacement,
         controls: {
-          showFullscreenControl: false
+          showFullscreenControl: true,
+          fullscreenActive: state.fullscreenEnabled,
+          onToggleFullscreen: handleFullscreenToggle
         }
       })
 
@@ -1195,6 +1369,10 @@ export function createDesktopOnboardingAppRuntime(
     }
 
     const url = new URL(window.location.href)
+
+    if (url.pathname !== WALL_PATHNAME) {
+      void tryAutomaticWallEntry()
+    }
 
     if (url.pathname === WALL_PATHNAME) {
       startDiagnosticsSampling()
@@ -1219,6 +1397,7 @@ export function createDesktopOnboardingAppRuntime(
   return {
     start: () => {
       isDisposed = false
+      resetAutomaticWallEntryAttempt()
       window.addEventListener("popstate", onPopState)
       requestRender()
       queueRememberedPasswordHydration()
@@ -1226,6 +1405,7 @@ export function createDesktopOnboardingAppRuntime(
     },
     dispose: () => {
       isDisposed = true
+      resetAutomaticWallEntryAttempt()
       platformInitNonce += 1
       passwordHydrationNonce += 1
       stopDiagnosticsSampling()

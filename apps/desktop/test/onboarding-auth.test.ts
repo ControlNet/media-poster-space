@@ -72,7 +72,22 @@ function clickByTestId(testId: string): void {
     throw new Error(`Missing element: ${testId}`)
   }
 
+  element.dispatchEvent(createMousePointerEvent("pointerdown", { button: 0 }))
   element.click()
+}
+
+function createMousePointerEvent(type: string, init: {
+  bubbles?: boolean
+  button?: number
+} = {}): Event {
+  const event = new Event(type, { bubbles: init.bubbles ?? true })
+  Object.defineProperty(event, "pointerType", {
+    value: "mouse"
+  })
+  Object.defineProperty(event, "button", {
+    value: init.button ?? 0
+  })
+  return event
 }
 
 function getElement(testId: string): HTMLElement {
@@ -304,15 +319,17 @@ interface PlatformHarnessOptions {
   linuxFallbackWarning?: string | null
   initialDisplayId?: string | null
   initialAutostartEnabled?: boolean
+  initialFullscreenEnabled?: boolean
   displays?: DesktopDisplayOption[]
 }
 
 function createPlatformHarness(options: PlatformHarnessOptions = {}): {
   bridge: DesktopPlatformBridge
-  snapshot: () => { displayId: string | null; autostartEnabled: boolean }
+  snapshot: () => { displayId: string | null; autostartEnabled: boolean; fullscreenEnabled: boolean }
 } {
   let displayId: string | null = options.initialDisplayId ?? "display-primary"
   let autostartEnabled = options.initialAutostartEnabled ?? false
+  let fullscreenEnabled = options.initialFullscreenEnabled ?? false
 
   const displayOptions = options.displays ?? [
     {
@@ -346,6 +363,10 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
     setAutostartEnabled: async (enabled) => {
       autostartEnabled = enabled
     },
+    getFullscreenEnabled: async () => fullscreenEnabled,
+    setFullscreenEnabled: async (enabled) => {
+      fullscreenEnabled = enabled
+    },
     readCredential: async ({ serverUrl, username }) => {
       return credentialStore.get(`${serverUrl}::${username}`) ?? null
     },
@@ -368,7 +389,8 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
     bridge,
     snapshot: () => ({
       displayId,
-      autostartEnabled
+      autostartEnabled,
+      fullscreenEnabled
     })
   }
 }
@@ -493,11 +515,67 @@ describe("desktop onboarding auth runtime", () => {
     restartedRuntime.start()
 
     await vi.waitFor(() => {
-      expect(getInput("password-input").value).toBe("super-secret")
+      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
     })
 
     restartedRuntime.dispose()
   })
+
+  it("relaunches directly into the wall when remembered password and wall handoff are available", async () => {
+    const fetchHarness = createFetchHarness({ allowLogin: true })
+    globalThis.fetch = fetchHarness
+    const platformHarness = createPlatformHarness()
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    setInputValue("server-url-input", TEST_SERVER)
+    setChecked("remember-server-checkbox", true)
+    clickByTestId("preflight-check-button")
+
+    setInputValue("username-input", "demo-user")
+    setInputValue("password-input", "super-secret")
+    setChecked("remember-username-checkbox", true)
+    setChecked("remember-password-checkbox", true)
+    clickByTestId("login-submit")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+    })
+
+    setChecked("library-checkbox-shows-main", false)
+    clickByTestId("onboarding-finish")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+    })
+
+    runtime.dispose()
+
+    window.sessionStorage.clear()
+    window.localStorage.removeItem("mps.auth.session")
+    window.history.pushState({}, "", "/")
+
+    const relaunchStartedAt = Date.now()
+    const relaunchedRuntime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    relaunchedRuntime.start()
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+    }, { timeout: 5_000 })
+
+    expect(Date.now() - relaunchStartedAt).toBeLessThanOrEqual(5_000)
+    expect(fetchHarness).toHaveBeenCalledWith(
+      expect.stringContaining("/Users/AuthenticateByName"),
+      expect.anything()
+    )
+
+    relaunchedRuntime.dispose()
+  }, 15_000)
 
   it("persists selected display and autostart settings across desktop restarts", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true })
@@ -524,7 +602,8 @@ describe("desktop onboarding auth runtime", () => {
 
     expect(platformHarness.snapshot()).toEqual({
       displayId: "display-2",
-      autostartEnabled: true
+      autostartEnabled: true,
+      fullscreenEnabled: false
     })
 
     runtime.dispose()
@@ -553,6 +632,45 @@ describe("desktop onboarding auth runtime", () => {
     })
 
     restartedRuntime.dispose()
+  })
+
+  it("shows a fullscreen button on the desktop wall, ignores keyboard activation, and toggles on click", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+    const platformHarness = createPlatformHarness()
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    setInputValue("server-url-input", TEST_SERVER)
+    clickByTestId("preflight-check-button")
+    setInputValue("username-input", "demo-user")
+    setInputValue("password-input", "super-secret")
+    clickByTestId("login-submit")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+    })
+
+    setChecked("library-checkbox-shows-main", false)
+    clickByTestId("onboarding-finish")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="wall-fullscreen-button"]')).toBeTruthy()
+    })
+
+    const fullscreenButton = document.querySelector('[data-testid="wall-fullscreen-button"]') as HTMLButtonElement | null
+    fullscreenButton?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    expect(platformHarness.snapshot().fullscreenEnabled).toBe(false)
+
+    clickByTestId("wall-fullscreen-button")
+
+    await vi.waitFor(() => {
+      expect(platformHarness.snapshot().fullscreenEnabled).toBe(true)
+    })
+
+    runtime.dispose()
   })
 
   it("restores cached posters on offline desktop startup within 5 seconds", async () => {
@@ -639,7 +757,7 @@ describe("desktop onboarding auth runtime", () => {
       clickByTestId("poster-item-1")
       expect(getComputedStyle(detailCard).visibility).toBe("hidden")
   
-      window.dispatchEvent(new Event("pointermove"))
+      window.dispatchEvent(createMousePointerEvent("pointermove"))
       await Promise.resolve()
   
       vi.advanceTimersByTime(8_000)
@@ -650,7 +768,7 @@ describe("desktop onboarding auth runtime", () => {
       expect(getElement("poster-wall-root")).toBe(wallRoot)
       expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
   
-      window.dispatchEvent(new Event("pointermove"))
+      window.dispatchEvent(createMousePointerEvent("pointermove"))
       expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
       expect(getElement("poster-wall-root")).toBe(wallRoot)
       expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
@@ -659,15 +777,15 @@ describe("desktop onboarding auth runtime", () => {
       expect(getComputedStyle(getElement("detail-card")).visibility).toBe("hidden")
       expect(getElement("poster-wall-root")).toBe(wallRoot)
       expect(getElement("wall-poster-grid")).toBe(wallPosterGrid)
-  
+
       const evidence = {
-        probe: "task-7-desktop-escape-detail",
+        probe: "task-7-desktop-ignore-escape",
         detailVisibility: getComputedStyle(getElement("detail-card")).visibility,
         controlsVisibility: getComputedStyle(getElement("manual-refresh-button")).visibility,
         sameWallRoot: getElement("poster-wall-root") === wallRoot,
         sameWallGrid: getElement("wall-poster-grid") === wallPosterGrid
       }
-      console.log(`[task-7-desktop-escape-detail] ${JSON.stringify(evidence)}`)
+      console.log(`[task-7-desktop-ignore-escape] ${JSON.stringify(evidence)}`)
     } finally {
       vi.useRealTimers()
       runtime.dispose()
@@ -737,7 +855,7 @@ describe("desktop onboarding auth runtime", () => {
         expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeNull()
       })
 
-      window.dispatchEvent(new Event("pointermove"))
+      window.dispatchEvent(createMousePointerEvent("pointermove"))
       await vi.waitFor(() => {
         expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
       })
@@ -747,7 +865,7 @@ describe("desktop onboarding auth runtime", () => {
       })
       const diagnosticsClosedIdleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
 
-      window.dispatchEvent(new Event("pointermove"))
+      window.dispatchEvent(createMousePointerEvent("pointermove"))
       await vi.waitFor(() => {
         expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
       })
