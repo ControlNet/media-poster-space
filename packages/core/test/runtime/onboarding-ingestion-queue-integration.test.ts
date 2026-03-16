@@ -528,6 +528,39 @@ describe("onboarding ingestion queue integration", () => {
     }
   });
 
+  it("retains the final visible poster while a refill is still pending", async () => {
+    const state = createTestOnboardingState();
+    const runtimeItems = createMediaBatch(1, 1);
+    const refillRequest = createDeferredPromise<readonly MediaItem[]>();
+    const queueFetchItems = vi.fn(async (requestedCount: number) => {
+      expect(requestedCount).toBe(39);
+      return refillRequest.promise;
+    });
+
+    const harness = createControllerHarness({
+      state,
+      runtimeItems,
+      queueFetchItems
+    });
+
+    harness.controller.ensureRuntime(TEST_SESSION, ["movies"]);
+
+    await vi.waitFor(() => {
+      expect(state.ingestionItemCount).toBe(1);
+    });
+
+    const consumedPoster = await harness.controller.consumeNextPosterForStream();
+
+    expect(consumedPoster?.id).toBe(runtimeItems[0]?.id);
+    expect(state.ingestionItemCount).toBe(1);
+
+    await vi.waitFor(() => {
+      expect(queueFetchItems).toHaveBeenCalledTimes(1);
+    });
+
+    refillRequest.resolve([]);
+  });
+
   it("defers incoming posters until entry slots reopen without dropping them", async () => {
     vi.stubGlobal("window", {
       innerWidth: 100,

@@ -594,10 +594,22 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       await refillPosterQueueIfNeeded("stream-consume")
     }
 
+    const currentQueueItems = [...posterQueueState.items]
     const consumeResult = consumeRuntimePosterQueueItem({
       state: posterQueueState
     })
-    posterQueueState = consumeResult.nextState
+
+    const shouldRetainLastVisiblePoster =
+      consumeResult.consumedItem !== null
+      && currentQueueItems.length === 1
+      && consumeResult.nextState.items.length === 0
+
+    posterQueueState = shouldRetainLastVisiblePoster
+      ? createRuntimePosterQueueState({
+          items: currentQueueItems
+        })
+      : consumeResult.nextState
+
     syncWallItemsFromQueue()
     options.state.activePosterIndex = options.normalizeWallActivePosterIndex(
       options.state.activePosterIndex,
