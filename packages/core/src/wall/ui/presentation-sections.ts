@@ -1,6 +1,7 @@
 import type { MediaItem } from "../../types/media"
 
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyHover } from "./mouse-only-button"
 import type { WallHandoff } from "./types"
 
 export type WallPosterRowDirection = "normal" | "reverse"
@@ -942,6 +943,7 @@ export function createWallPosterGridSection(
           ...(rowIndex === 0 && cycle === 0 ? { testId: `poster-item-${mappedIndex}` } : {})
         }) as HTMLButtonElement
         tile.type = "button"
+        tile.tabIndex = -1
         tile.style.width = "200px"
         tile.style.height = "300px"
         tile.style.padding = "0"
@@ -971,12 +973,11 @@ export function createWallPosterGridSection(
         applyWallPosterTileMedia(tileState, item)
 
         tile.append(posterThumb)
-        tile.addEventListener("mouseenter", () => {
+        bindMouseOnlyHover(tile, () => {
           tile.style.transform = "translateZ(50px) scale(1.05)"
           tile.style.borderColor = "rgba(255, 255, 255, 0.2)"
           posterThumb.style.filter = "grayscale(0%) brightness(1.1)"
-        })
-        tile.addEventListener("mouseleave", () => {
+        }, () => {
           tile.style.transform = "translateZ(0) scale(1)"
           tile.style.borderColor = "rgba(255, 255, 255, 0.05)"
           posterThumb.style.filter = "grayscale(20%) brightness(0.8)"

@@ -1,4 +1,5 @@
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyButtonAction } from "./mouse-only-button"
 
 const WALL_PARALLAX_STYLE_ID = "mps-wall-parallax-style"
 
@@ -140,7 +141,7 @@ export function createWallFallbackShell(
   backButton.style.background = "linear-gradient(130deg, color-mix(in srgb, var(--mps-color-surface-raised) 92%, black) 0%, color-mix(in srgb, var(--mps-color-surface) 88%, black) 100%)"
   backButton.style.color = "var(--mps-color-foreground-emphasis)"
   backButton.style.fontWeight = "600"
-  backButton.addEventListener("click", options.onBack)
+  bindMouseOnlyButtonAction(backButton, options.onBack)
 
   fallbackCard.append(title, body, backButton)
   fallback.append(fallbackCard)

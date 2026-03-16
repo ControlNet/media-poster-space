@@ -11,7 +11,6 @@ export function createWallInteractionController(options: {
   isWallRouteActive: () => boolean
   onIdleHide: () => boolean
   onRevealControls: () => boolean
-  onEscape: () => boolean
   onRenderRequest: () => void
 }): WallInteractionController {
   const {
@@ -19,12 +18,15 @@ export function createWallInteractionController(options: {
     isWallRouteActive,
     onIdleHide,
     onRevealControls,
-    onEscape,
     onRenderRequest
   } = options
 
   let wallIdleTimerId: ReturnType<typeof setTimeout> | null = null
   let wallInteractionListenersAttached = false
+
+  function isMousePointerEvent(event: Event): event is Event & { pointerType: string } {
+    return "pointerType" in event && event.pointerType === "mouse"
+  }
 
   function clearWallIdleTimer(): void {
     if (wallIdleTimerId) {
@@ -64,26 +66,12 @@ export function createWallInteractionController(options: {
     }
   }
 
-  function onWallPointerOrFocusInteraction(): void {
+  function onWallPointerInteraction(event: Event): void {
+    if (!isMousePointerEvent(event)) {
+      return
+    }
+
     revealAndResetIdleTimer()
-  }
-
-  function onWallKeyDown(event: KeyboardEvent): void {
-    if (!isWallRouteActive()) {
-      return
-    }
-
-    if (event.key !== "Escape") {
-      return
-    }
-
-    const shouldRender = onEscape()
-    if (!shouldRender) {
-      return
-    }
-
-    scheduleIdleHide()
-    onRenderRequest()
   }
 
   function attach(): void {
@@ -91,10 +79,8 @@ export function createWallInteractionController(options: {
       return
     }
 
-    window.addEventListener("pointerdown", onWallPointerOrFocusInteraction)
-    window.addEventListener("pointermove", onWallPointerOrFocusInteraction)
-    window.addEventListener("focusin", onWallPointerOrFocusInteraction)
-    window.addEventListener("keydown", onWallKeyDown)
+    window.addEventListener("pointerdown", onWallPointerInteraction)
+    window.addEventListener("pointermove", onWallPointerInteraction)
     wallInteractionListenersAttached = true
   }
 
@@ -104,10 +90,8 @@ export function createWallInteractionController(options: {
       return
     }
 
-    window.removeEventListener("pointerdown", onWallPointerOrFocusInteraction)
-    window.removeEventListener("pointermove", onWallPointerOrFocusInteraction)
-    window.removeEventListener("focusin", onWallPointerOrFocusInteraction)
-    window.removeEventListener("keydown", onWallKeyDown)
+    window.removeEventListener("pointerdown", onWallPointerInteraction)
+    window.removeEventListener("pointermove", onWallPointerInteraction)
     wallInteractionListenersAttached = false
     clearWallIdleTimer()
   }

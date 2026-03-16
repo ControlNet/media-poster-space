@@ -1,4 +1,5 @@
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyButtonAction } from "./mouse-only-button"
 
 export function createWallIngestionErrorSection(
   createElement: ElementFactory,
@@ -104,7 +105,7 @@ export function createWallReconnectGuideSection(
   reconnectAction.style.textTransform = "uppercase"
   reconnectAction.style.letterSpacing = "0.06em"
   reconnectAction.style.boxShadow = "0 10px 22px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
-  reconnectAction.addEventListener("click", options.onReturnToOnboarding)
+  bindMouseOnlyButtonAction(reconnectAction, options.onReturnToOnboarding)
 
   reconnectGuide.append(reconnectLabel, reconnectReason, reconnectMeta, reconnectAction)
   return reconnectGuide
