@@ -1,4 +1,5 @@
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyButtonAction, bindMouseOnlyHover } from "./mouse-only-button"
 
 export function createWallControlsSection(
   createElement: ElementFactory,
@@ -43,7 +44,7 @@ export function createWallControlsSection(
   }
 
   function attachButtonHover(button: HTMLButtonElement, tone: "accent" | "neutral" | "danger", isActive: boolean = false): void {
-    button.addEventListener("mouseenter", () => {
+    bindMouseOnlyHover(button, () => {
       button.style.transform = "translateY(-2px) scale(1.05)"
       if (tone === "accent" || isActive) {
         button.style.background = "color-mix(in srgb, var(--mps-color-accent) 25%, transparent)"
@@ -55,9 +56,7 @@ export function createWallControlsSection(
         button.style.background = "rgba(255, 255, 255, 0.1)"
         button.style.color = "white"
       }
-    })
-
-    button.addEventListener("mouseleave", () => {
+    }, () => {
       button.style.transform = "translateY(0)"
       if (isActive) {
         button.style.background = "color-mix(in srgb, var(--mps-color-accent) 15%, transparent)"
@@ -82,7 +81,7 @@ export function createWallControlsSection(
     refreshButton.style.opacity = "0.5"
     refreshButton.style.animation = "spin 2s linear infinite"
   }
-  refreshButton.addEventListener("click", options.onRefresh)
+  bindMouseOnlyButtonAction(refreshButton, options.onRefresh)
 
   const diagIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`
   const diagnosticsButton = createElement("button", { testId: "diagnostics-open" }) as HTMLButtonElement
@@ -92,7 +91,7 @@ export function createWallControlsSection(
   applyIconButtonSkin(diagnosticsButton, options.diagnosticsOpen)
   attachButtonHover(diagnosticsButton, "neutral", options.diagnosticsOpen)
   diagnosticsButton.style.pointerEvents = "auto"
-  diagnosticsButton.addEventListener("click", options.onToggleDiagnostics)
+  bindMouseOnlyButtonAction(diagnosticsButton, options.onToggleDiagnostics)
 
   const logoutIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`
   const logoutButton = createElement("button", { testId: "logout-button" }) as HTMLButtonElement
@@ -101,7 +100,7 @@ export function createWallControlsSection(
   applyIconButtonSkin(logoutButton)
   attachButtonHover(logoutButton, "danger")
   logoutButton.style.pointerEvents = "auto"
-  logoutButton.addEventListener("click", options.onLogout)
+  bindMouseOnlyButtonAction(logoutButton, options.onLogout)
 
   const controlsContainer = createElement("div", { testId: "wall-controls-container" })
   controlsContainer.style.position = "fixed"
@@ -145,7 +144,7 @@ export function createWallControlsSection(
     applyIconButtonSkin(fullscreenButton)
     attachButtonHover(fullscreenButton, "neutral")
     fullscreenButton.style.pointerEvents = "auto"
-    fullscreenButton.addEventListener("click", options.onToggleFullscreen)
+    bindMouseOnlyButtonAction(fullscreenButton, options.onToggleFullscreen)
     navbar.append(fullscreenButton)
   }
 

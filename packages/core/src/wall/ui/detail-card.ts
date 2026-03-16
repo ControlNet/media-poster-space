@@ -6,6 +6,7 @@ import {
 import type { MediaItem } from "../../types/media"
 
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyButtonAction } from "./mouse-only-button"
 import {
   formatWallDetailMeta,
   hasWallText
@@ -149,7 +150,7 @@ export function createWallDetailCard(
   exitHotspot.style.textTransform = "uppercase"
   exitHotspot.style.letterSpacing = "0.06em"
   exitHotspot.style.boxShadow = "0 10px 20px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(122, 217, 255, 0.08)"
-  exitHotspot.addEventListener("click", options.onClose)
+  bindMouseOnlyButtonAction(exitHotspot, options.onClose)
 
   detailBody.append(accentRail)
   detailBody.append(detailTitle)

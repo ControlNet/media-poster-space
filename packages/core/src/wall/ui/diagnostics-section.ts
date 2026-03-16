@@ -1,4 +1,5 @@
 import type { ElementFactory } from "./element-factory"
+import { bindMouseOnlyButtonAction } from "./mouse-only-button"
 import type { WallDiagnosticsSample, WallHandoff } from "./types"
 
 export function createWallDiagnosticsSection(
@@ -183,7 +184,7 @@ export function createWallDiagnosticsSection(
   profileToggle.style.fontSize = "0.72rem"
   profileToggle.style.letterSpacing = "0.06em"
   profileToggle.style.boxShadow = "0 10px 22px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
-  profileToggle.addEventListener("click", options.onToggleDetailProfile)
+  bindMouseOnlyButtonAction(profileToggle, options.onToggleDetailProfile)
 
   const diagnosticsExportButton = createElement("button", {
     textContent: "Export crash package",
@@ -200,7 +201,7 @@ export function createWallDiagnosticsSection(
   diagnosticsExportButton.style.fontSize = "0.72rem"
   diagnosticsExportButton.style.letterSpacing = "0.06em"
   diagnosticsExportButton.style.boxShadow = "0 12px 24px rgba(12, 24, 44, 0.32), inset 0 0 0 1px rgba(122, 217, 255, 0.1)"
-  diagnosticsExportButton.addEventListener("click", options.onExportCrashReport)
+  bindMouseOnlyButtonAction(diagnosticsExportButton, options.onExportCrashReport)
 
   const diagnosticsExportStatus = createElement("p", {
     textContent: options.diagnosticsExportError
