@@ -91,6 +91,20 @@ function setInputValue(testId: string, value: string): void {
   element.dispatchEvent(new Event("input", { bubbles: true }))
 }
 
+async function triggerServerStatusCheck(): Promise<void> {
+  const element = document.querySelector('[data-testid="server-url-input"]')
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error("Missing input: server-url-input")
+  }
+
+  element.dispatchEvent(new Event("blur"))
+
+  await vi.waitFor(() => {
+    const status = document.querySelector('[data-testid="server-status-indicator"]')
+    expect(status?.textContent).toContain("Server reachable")
+  })
+}
+
 function setChecked(testId: string, checked: boolean): void {
   const element = document.querySelector(`[data-testid="${testId}"]`)
   if (!(element instanceof HTMLInputElement)) {
@@ -110,7 +124,7 @@ function createFetchHarness(getMode: () => FetchMode): typeof fetch {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "access-control-allow-origin": "http://localhost"
+          "access-control-allow-origin": "*"
         }
       })
     }
@@ -123,7 +137,10 @@ function createFetchHarness(getMode: () => FetchMode): typeof fetch {
         }),
         {
           status: 200,
-          headers: { "content-type": "application/json" }
+          headers: {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*"
+          }
         }
       )
     }
@@ -429,7 +446,7 @@ describe("desktop mandatory v1 gate suite", () => {
     const loginStart = Date.now()
     setInputValue("server-url-input", TEST_SERVER)
     setChecked("remember-server-checkbox", true)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "secret-pass")
     setChecked("remember-username-checkbox", true)

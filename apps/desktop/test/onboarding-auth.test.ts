@@ -114,6 +114,15 @@ function setInputValue(testId: string, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }))
 }
 
+async function triggerServerStatusCheck(): Promise<void> {
+  const input = getInput("server-url-input")
+  input.dispatchEvent(new Event("blur"))
+
+  await vi.waitFor(() => {
+    expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
+  })
+}
+
 function setChecked(testId: string, checked: boolean): void {
   const input = getInput(testId)
   input.checked = checked
@@ -141,7 +150,7 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
         status: 200,
         headers: {
           "content-type": "application/json",
-          "access-control-allow-origin": "http://localhost"
+          "access-control-allow-origin": "*"
         }
       })
     }
@@ -154,7 +163,7 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
           status: 400,
           headers: {
             "content-type": "application/json",
-            "access-control-allow-origin": "http://localhost"
+            "access-control-allow-origin": "*"
           }
         })
       }
@@ -163,7 +172,8 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
         return new Response(JSON.stringify({ Message: "unauthorized" }), {
           status: 401,
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
+            "access-control-allow-origin": "*"
           }
         })
       }
@@ -177,7 +187,8 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
       }), {
         status: 200,
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "access-control-allow-origin": "*"
         }
       })
     }
@@ -422,7 +433,7 @@ describe("desktop onboarding auth runtime", () => {
 
     setInputValue("server-url-input", TEST_SERVER)
     setChecked("remember-server-checkbox", true)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
@@ -521,6 +532,24 @@ describe("desktop onboarding auth runtime", () => {
     restartedRuntime.dispose()
   })
 
+  it("sign-in triggers preflight automatically when the server field was not blurred", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    setInputValue("server-url-input", TEST_SERVER)
+    setInputValue("username-input", "demo-user")
+    setInputValue("password-input", "super-secret")
+    clickByTestId("login-submit")
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+    })
+
+    runtime.dispose()
+  })
+
   it("relaunches directly into the wall when remembered password and wall handoff are available", async () => {
     const fetchHarness = createFetchHarness({ allowLogin: true })
     globalThis.fetch = fetchHarness
@@ -533,7 +562,7 @@ describe("desktop onboarding auth runtime", () => {
 
     setInputValue("server-url-input", TEST_SERVER)
     setChecked("remember-server-checkbox", true)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
@@ -587,7 +616,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
     clickByTestId("login-submit")
@@ -614,7 +643,7 @@ describe("desktop onboarding auth runtime", () => {
     restartedRuntime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
     clickByTestId("login-submit")
@@ -644,7 +673,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
     clickByTestId("login-submit")
@@ -680,7 +709,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
@@ -726,7 +755,7 @@ describe("desktop onboarding auth runtime", () => {
   
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
   
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
@@ -813,7 +842,7 @@ describe("desktop onboarding auth runtime", () => {
 
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -936,7 +965,7 @@ describe("desktop onboarding auth runtime", () => {
 
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -1108,7 +1137,7 @@ describe("desktop onboarding auth runtime", () => {
 
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -1254,7 +1283,7 @@ describe("desktop onboarding auth runtime", () => {
 
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -1345,7 +1374,7 @@ describe("desktop onboarding auth runtime", () => {
 
     try {
       setInputValue("server-url-input", TEST_SERVER)
-      clickByTestId("preflight-check-button")
+      await triggerServerStatusCheck()
       setInputValue("username-input", "demo-user")
       setInputValue("password-input", "super-secret")
       clickByTestId("login-submit")
@@ -1431,7 +1460,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
     setChecked("remember-password-checkbox", true)
@@ -1468,7 +1497,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
     clickByTestId("login-submit")
@@ -1495,7 +1524,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "wrong-pass")
@@ -1524,7 +1553,7 @@ describe("desktop onboarding auth runtime", () => {
     runtime.start()
 
     setInputValue("server-url-input", TEST_SERVER)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
@@ -1630,7 +1659,7 @@ describe("desktop onboarding auth runtime", () => {
 
     setInputValue("server-url-input", TEST_SERVER)
     setChecked("remember-server-checkbox", true)
-    clickByTestId("preflight-check-button")
+    await triggerServerStatusCheck()
 
     setInputValue("username-input", "demo-user")
     setInputValue("password-input", "super-secret")
