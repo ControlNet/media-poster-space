@@ -259,6 +259,57 @@
         .svg-emby { fill: #52b54b; }
         .svg-plex { fill: #e5a00d; }
 
+        /* Status Bar Simulation */
+        .status-message {
+            margin-top: 0.5rem;
+            padding: 0.6rem 0.85rem;
+            border-radius: 0.6rem;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-message.pending .status-dot {
+            background: var(--provider-accent);
+            box-shadow: 0 0 10px var(--provider-accent);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-message.success {
+            background: rgba(82, 181, 75, 0.1);
+            border-color: rgba(82, 181, 75, 0.2);
+            color: #8ce685;
+        }
+
+        .status-message.success .status-dot {
+            background: #52b54b;
+            box-shadow: 0 0 10px #52b54b;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
     </style>
 </head>
 <body class="provider-jellyfin">
@@ -295,6 +346,12 @@
                         <label for="server-url">SERVER ADDRESS</label>
                     </div>
                     <input id="server-url" type="url" placeholder="https://jellyfin.yourdomain.com" value="">
+                    
+                    <!-- Simulating Server Status -->
+                    <div class="status-message pending" id="server-status">
+                        <div class="status-dot"></div>
+                        <span class="status-text">Checking server reachability...</span>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -355,6 +412,15 @@
             form.offsetHeight; // trigger reflow
             form.style.animation = null;
         }
+
+        // Simulate Status Change for Demo
+        setTimeout(() => {
+            const statusBox = document.getElementById('server-status');
+            const statusText = statusBox.querySelector('.status-text');
+            
+            statusBox.className = 'status-message success';
+            statusText.textContent = 'Server reachable. Version 10.9.1 detected.';
+        }, 2500);
     </script>
 </body>
 </html>
