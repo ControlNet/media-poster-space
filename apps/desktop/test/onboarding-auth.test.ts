@@ -463,6 +463,8 @@ describe("desktop onboarding auth runtime", () => {
     })
     runtime.start()
 
+    setInputValue("server-url-input", TEST_SERVER)
+
     clickByTestId("provider-option-emby")
 
     await vi.waitFor(() => {
@@ -487,7 +489,9 @@ describe("desktop onboarding auth runtime", () => {
     await vi.waitFor(() => {
       expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
       expect(getInput("server-url-input").disabled).toBe(false)
+      expect(getInput("server-url-input").value).toBe(TEST_SERVER)
       expect(getInput("server-url-input").placeholder).toBe("https://jellyfin.yourdomain.com")
+      expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
       expect(getElement("login-submit").textContent).toContain("Authenticate Jellyfin")
       expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(false)
     })

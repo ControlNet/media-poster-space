@@ -1202,6 +1202,10 @@ export function createDesktopOnboardingAppRuntime(
         state.authError = null
         state.password = ""
         requestRender()
+
+        if (providerId === "jellyfin") {
+          void handlePreflight({ force: false })
+        }
       },
       onServerInput: (value) => {
         resetAutomaticWallEntryAttempt()
