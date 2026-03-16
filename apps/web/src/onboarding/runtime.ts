@@ -25,12 +25,14 @@ import {
   shouldSuppressIdleHideTransitionWhenDiagnosticsOpen,
   createOnboardingWallRouteView,
   getOnboardingWallFallbackContent,
+  hasSuccessfulPreflightForServer,
   prepareOnboardingWallRoute,
   runOnboardingBackToServer,
   runOnboardingFinish,
   runOnboardingLogin,
   runOnboardingLogoutReset,
   runOnboardingPreflight,
+  shouldRunAutomaticPreflight,
   createOnboardingDiagnosticsController,
   createOnboardingElementFactory,
   getOrCreateDeviceId,
@@ -215,6 +217,7 @@ export function createOnboardingAppRuntime(
   let wallPatchDeferredDuringRender = false
   let isRendering = false
   let renderDeferred = false
+  let preflightInFlightPromise: Promise<void> | null = null
 
   function applyWallInteractionTransition(transition: WallInteractionTransitionResult): boolean {
     return applyWallInteractionTransitionState(state, transition)
@@ -875,8 +878,18 @@ export function createOnboardingAppRuntime(
     return persistedWallHandoff
   }
 
-  async function handlePreflight(): Promise<void> {
-    await runOnboardingPreflight({
+  function handlePreflight(options: { force?: boolean } = {}): Promise<void> {
+    state.serverUrl = state.serverUrl.trim()
+
+    if (preflightInFlightPromise) {
+      return preflightInFlightPromise
+    }
+
+    if (!options.force && !shouldRunAutomaticPreflight(state)) {
+      return Promise.resolve()
+    }
+
+    const preflightPromise = runOnboardingPreflight({
       state,
       preflight: (request) => {
         return provider.preflight(request)
@@ -884,10 +897,24 @@ export function createOnboardingAppRuntime(
       origin: window.location.origin,
       persistRememberedServer,
       onRenderRequest: render
+    }).finally(() => {
+      if (preflightInFlightPromise === preflightPromise) {
+        preflightInFlightPromise = null
+      }
     })
+
+    preflightInFlightPromise = preflightPromise
+    return preflightPromise
   }
 
   async function handleLogin(): Promise<void> {
+    if (!hasSuccessfulPreflightForServer(state)) {
+      await handlePreflight({ force: false })
+      if (!hasSuccessfulPreflightForServer(state)) {
+        return
+      }
+    }
+
     await runOnboardingLogin({
       state,
       authenticate: (credentials) => {
@@ -1037,12 +1064,12 @@ export function createOnboardingAppRuntime(
         state.serverUrl = value
         state.preflightError = null
       },
+      onServerBlur: () => {
+        void handlePreflight({ force: false })
+      },
       onRememberServerChange: (remember) => {
         state.rememberServer = remember
         persistRememberedServer()
-      },
-      onPreflight: () => {
-        void handlePreflight()
       },
       onUsernameInput: (value) => {
         state.username = value

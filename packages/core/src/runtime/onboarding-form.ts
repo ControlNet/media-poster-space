@@ -5,6 +5,9 @@ export interface OnboardingFormViewState {
   serverUrl: string
   rememberServer: boolean
   preflightPending: boolean
+  preflightCheckedServerUrl: string | null
+  preflightServerVersion: string | null
+  preflightLatencyMs: number | null
   preflightError: string | null
   username: string
   password: string
@@ -27,8 +30,8 @@ export interface CreateOnboardingFormViewOptions {
   showRememberPasswordToggle?: boolean
   toLibraryCheckboxTestId: (libraryId: string) => string
   onServerInput: (value: string) => void
+  onServerBlur: (value: string) => void
   onRememberServerChange: (remember: boolean) => void
-  onPreflight: () => void
   onUsernameInput: (value: string) => void
   onPasswordInput: (value: string) => void
   onRememberUsernameChange: (remember: boolean) => void
@@ -44,6 +47,106 @@ export interface CreateOnboardingFormViewOptions {
 function appendCheckboxLabelText(createElement: OnboardingElementFactory, label: HTMLLabelElement, text: string): void {
   const copy = createElement("span", { textContent: text })
   label.append(copy)
+}
+
+function formatServerStatusText(state: Pick<
+  OnboardingFormViewState,
+  "serverUrl"
+  | "preflightPending"
+  | "preflightCheckedServerUrl"
+  | "preflightServerVersion"
+  | "preflightLatencyMs"
+  | "preflightError"
+>): string {
+  const trimmedServerUrl = state.serverUrl.trim()
+  const isCurrentServerChecked = state.preflightCheckedServerUrl === trimmedServerUrl
+
+  if (trimmedServerUrl.length === 0) {
+    return "Enter your Jellyfin server URL. Status checks run automatically when you leave this field."
+  }
+
+  if (state.preflightPending) {
+    return "Checking Jellyfin server availability…"
+  }
+
+  if (isCurrentServerChecked && state.preflightError) {
+    return `Server unavailable — ${state.preflightError}`
+  }
+
+  if (isCurrentServerChecked && state.preflightServerVersion) {
+    const latencySuffix = typeof state.preflightLatencyMs === "number"
+      ? ` · ${Math.max(0, Math.round(state.preflightLatencyMs))}ms`
+      : ""
+
+    return `Server reachable · Jellyfin ${state.preflightServerVersion}${latencySuffix}`
+  }
+
+  return "Server status will refresh automatically after you leave this field."
+}
+
+function resolveServerStatusTone(state: Pick<
+  OnboardingFormViewState,
+  "serverUrl" | "preflightPending" | "preflightCheckedServerUrl" | "preflightServerVersion" | "preflightError"
+>): "idle" | "checking" | "ok" | "error" {
+  const trimmedServerUrl = state.serverUrl.trim()
+  const isCurrentServerChecked = state.preflightCheckedServerUrl === trimmedServerUrl
+
+  if (trimmedServerUrl.length === 0) {
+    return "idle"
+  }
+
+  if (state.preflightPending) {
+    return "checking"
+  }
+
+  if (isCurrentServerChecked && state.preflightError) {
+    return "error"
+  }
+
+  if (isCurrentServerChecked && state.preflightServerVersion) {
+    return "ok"
+  }
+
+  return "idle"
+}
+
+function applyServerStatusPresentation(
+  element: HTMLElement,
+  state: Pick<
+    OnboardingFormViewState,
+    "serverUrl"
+    | "preflightPending"
+    | "preflightCheckedServerUrl"
+    | "preflightServerVersion"
+    | "preflightLatencyMs"
+    | "preflightError"
+  >
+): void {
+  const tone = resolveServerStatusTone(state)
+  element.textContent = formatServerStatusText(state)
+
+  switch (tone) {
+    case "checking":
+      element.style.borderColor = "rgba(122, 217, 255, 0.45)"
+      element.style.background = "rgba(19, 44, 64, 0.42)"
+      element.style.color = "#c8f3ff"
+      break
+    case "ok":
+      element.style.borderColor = "rgba(106, 214, 141, 0.48)"
+      element.style.background = "rgba(18, 51, 34, 0.42)"
+      element.style.color = "#d7ffe3"
+      break
+    case "error":
+      element.style.borderColor = "rgba(255, 130, 130, 0.45)"
+      element.style.background = "rgba(89, 24, 24, 0.38)"
+      element.style.color = "#ffd8d8"
+      break
+    default:
+      element.style.borderColor = "rgba(255, 255, 255, 0.08)"
+      element.style.background = "rgba(255, 255, 255, 0.03)"
+      element.style.color = "rgba(255, 255, 255, 0.68)"
+      break
+  }
 }
 
 export function createOnboardingFormView(options: CreateOnboardingFormViewOptions): HTMLElement {
@@ -108,13 +211,28 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     serverInput.style.boxShadow = "inset 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(122, 217, 255, 0.1)"
     serverInput.style.background = "rgba(0, 0, 0, 0.5)"
   })
+  const serverStatus = createElement("p", { testId: "server-status-indicator" })
+  serverStatus.style.margin = "0"
+  serverStatus.style.padding = "0.75rem 0.85rem"
+  serverStatus.style.border = "1px solid rgba(255, 255, 255, 0.08)"
+  serverStatus.style.borderRadius = "0.7rem"
+  serverStatus.style.fontSize = "0.84rem"
+  serverStatus.style.lineHeight = "1.45"
+  serverStatus.style.letterSpacing = "0.01em"
+  applyServerStatusPresentation(serverStatus, state)
+
+  serverInput.addEventListener("input", () => {
+    options.onServerInput(serverInput.value)
+    applyServerStatusPresentation(serverStatus, {
+      ...state,
+      serverUrl: serverInput.value
+    })
+  })
   serverInput.addEventListener("blur", () => {
     serverInput.style.borderColor = "rgba(255, 255, 255, 0.1)"
     serverInput.style.boxShadow = "inset 0 2px 4px rgba(0, 0, 0, 0.2)"
     serverInput.style.background = "rgba(0, 0, 0, 0.3)"
-  })
-  serverInput.addEventListener("input", () => {
-    options.onServerInput(serverInput.value)
+    options.onServerBlur(serverInput.value)
   })
   serverLabel.append(serverInput)
 
@@ -132,51 +250,6 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
   })
   rememberServerLabel.append(rememberServer)
   appendCheckboxLabelText(createElement, rememberServerLabel, "Remember last server")
-
-  const preflightButton = createElement("button", {
-    textContent: state.preflightPending ? "Checking…" : "Preflight server",
-    testId: "preflight-check-button"
-  }) as HTMLButtonElement
-  preflightButton.type = "button"
-  preflightButton.disabled = state.preflightPending
-  preflightButton.style.padding = "0.75rem 1rem"
-  preflightButton.style.borderRadius = "0.6rem"
-  preflightButton.style.border = "1px solid color-mix(in srgb, var(--mps-color-accent-ring) 50%, transparent)"
-  preflightButton.style.background = "linear-gradient(135deg, color-mix(in srgb, var(--mps-color-accent-muted) 80%, black) 0%, color-mix(in srgb, var(--mps-color-accent-soft) 70%, black) 100%)"
-  preflightButton.style.color = "var(--mps-color-foreground-emphasis)"
-  preflightButton.style.fontWeight = "500"
-  preflightButton.style.letterSpacing = "0.02em"
-  preflightButton.style.boxShadow = "0 8px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
-  preflightButton.style.transition = "transform 0.1s ease, box-shadow 0.2s ease, filter 0.2s ease"
-  preflightButton.style.cursor = state.preflightPending ? "default" : "pointer"
-  preflightButton.style.opacity = state.preflightPending ? "0.7" : "1"
-
-  if (!state.preflightPending) {
-    preflightButton.addEventListener("mouseenter", () => {
-      preflightButton.style.transform = "translateY(-1px)"
-      preflightButton.style.boxShadow = "0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)"
-      preflightButton.style.filter = "brightness(1.1)"
-    })
-    preflightButton.addEventListener("mouseleave", () => {
-      preflightButton.style.transform = "translateY(0)"
-      preflightButton.style.boxShadow = "0 8px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
-      preflightButton.style.filter = "brightness(1)"
-    })
-    preflightButton.addEventListener("mousedown", () => {
-      preflightButton.style.transform = "translateY(1px)"
-      preflightButton.style.boxShadow = "0 4px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05)"
-    })
-  }
-
-  preflightButton.addEventListener("click", options.onPreflight)
-
-  if (state.preflightError) {
-    const preflightError = createElement("p", { textContent: state.preflightError })
-    preflightError.style.margin = "0"
-    preflightError.style.color = "#ffb4b4"
-    preflightError.style.fontSize = "0.85rem"
-    card.append(preflightError)
-  }
 
   const loginForm = createElement("form") as HTMLFormElement
   loginForm.noValidate = true
@@ -311,7 +384,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
     testId: "login-submit"
   }) as HTMLButtonElement
   loginButton.type = "submit"
-  loginButton.disabled = state.loginPending
+  loginButton.disabled = state.loginPending || state.preflightPending
   loginButton.style.padding = "0.75rem 1rem"
   loginButton.style.borderRadius = "0.6rem"
   loginButton.style.border = "1px solid color-mix(in srgb, var(--mps-color-accent-ring) 50%, transparent)"
@@ -321,11 +394,11 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
   loginButton.style.letterSpacing = "0.02em"
   loginButton.style.boxShadow = "0 8px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
   loginButton.style.transition = "transform 0.1s ease, box-shadow 0.2s ease, filter 0.2s ease"
-  loginButton.style.cursor = state.loginPending ? "default" : "pointer"
-  loginButton.style.opacity = state.loginPending ? "0.7" : "1"
+  loginButton.style.cursor = state.loginPending || state.preflightPending ? "default" : "pointer"
+  loginButton.style.opacity = state.loginPending || state.preflightPending ? "0.7" : "1"
   loginButton.style.marginTop = "0.5rem"
 
-  if (!state.loginPending) {
+  if (!state.loginPending && !state.preflightPending) {
     loginButton.addEventListener("mouseenter", () => {
       loginButton.style.transform = "translateY(-1px)"
       loginButton.style.boxShadow = "0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)"
@@ -469,7 +542,7 @@ export function createOnboardingFormView(options: CreateOnboardingFormViewOption
 
   if (!isStep2) {
     // Step 1: Connection & Login
-    card.append(heading, description, serverLabel, rememberServerLabel, preflightButton, loginForm)
+    card.append(heading, description, serverLabel, rememberServerLabel, serverStatus, loginForm)
   } else {
     // Step 2: Library Selection
     const step2Header = createElement("div")
