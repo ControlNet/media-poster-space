@@ -55,7 +55,3 @@ MPS_GATE_FORCE_FAIL=logout-cleanup pnpm -w turbo run e2e:web e2e:desktop
 ```
 
 Supported force-fail values are `login-flow`, `offline-cached-first-paint`, `token-revoked-recovery`, `logout-cleanup`, and `visual-baseline`.
-
-## Known non-blocking warning
-
-Web builds may report unresolved `/fonts/soehne-*.woff2` warnings when those static font files are not present in the deploy target. This warning is currently non-blocking for build completion.
