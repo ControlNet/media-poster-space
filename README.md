@@ -9,7 +9,9 @@
 
 Media Poster Space is an open source poster-wall project on **Web** and **Desktop**.
 
-Visit [https://mps.controlnet.space/](https://mps.controlnet.space/).
+**Web**: Visit [https://mps.controlnet.space/](https://mps.controlnet.space/).
+
+**Desktop**: Download [windows-x64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-windows-x64-native.zip), [linux-x64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-linux-x64-native.zip), [macos-arm64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-macos-arm64-native.zip).
 
 ## Run locally
 
