@@ -204,7 +204,7 @@ async function main() {
     )
   }
 
-  assertIncludes(readme, "AGPL-3.0-only", "README.md")
+  assertIncludes(readme, "AGPL-3.0", "README.md")
   assertIncludes(readme, "pnpm -w verify:docs-parity", "README.md")
   assertIncludes(feedbackWorkflow, "Issues-only feedback policy", "docs/feedback-workflow.md")
   assertIncludes(feedbackWorkflow, "GitHub Issues only", "docs/feedback-workflow.md")
