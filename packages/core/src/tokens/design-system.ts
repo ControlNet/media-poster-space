@@ -57,17 +57,16 @@ export const elevationScale = {
 } as const;
 
 export const brandTypography = {
-  displayFamily: '"Soehne Breit"',
-  bodyFamily: '"Soehne Buch"',
+  displayFamily: '"Avenir Next Condensed"',
+  bodyFamily: '"Avenir Next"',
   fallbackSans: [
-    '"Avenir Next"',
     '"Segoe UI"',
     "system-ui",
     "-apple-system",
     '"Helvetica Neue"',
     "sans-serif"
   ],
-  fallbackDisplay: ['"Avenir Next Condensed"', '"Segoe UI"', "system-ui", "sans-serif"],
+  fallbackDisplay: ['"Segoe UI"', "system-ui", "sans-serif"],
   monoFamily: ['"IBM Plex Mono"', '"SFMono-Regular"', "ui-monospace", "Menlo", "monospace"]
 } as const;
 
@@ -206,7 +205,6 @@ export function createDynamicAccentTokens(mediaAccent?: string): DynamicAccentTo
 }
 
 export function getBrandFontFamilies(options?: {
-  brandFontLoaded?: boolean;
   displayFamily?: string;
   bodyFamily?: string;
 }): {
@@ -214,13 +212,8 @@ export function getBrandFontFamilies(options?: {
   body: readonly string[];
   mono: readonly string[];
 } {
-  const hasBrandFont = options?.brandFontLoaded ?? true;
-  const display = hasBrandFont
-    ? [options?.displayFamily ?? brandTypography.displayFamily, ...brandTypography.fallbackDisplay]
-    : [...brandTypography.fallbackDisplay];
-  const body = hasBrandFont
-    ? [options?.bodyFamily ?? brandTypography.bodyFamily, ...brandTypography.fallbackSans]
-    : [...brandTypography.fallbackSans];
+  const display = [options?.displayFamily ?? brandTypography.displayFamily, ...brandTypography.fallbackDisplay];
+  const body = [options?.bodyFamily ?? brandTypography.bodyFamily, ...brandTypography.fallbackSans];
 
   return {
     display,
