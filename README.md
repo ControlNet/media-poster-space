@@ -13,6 +13,8 @@ Media Poster Space is an open source poster-wall project on **Web** and **Deskto
 
 **Desktop**: Download [windows-x64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-windows-x64-native.zip), [linux-x64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-linux-x64-native.zip), [macos-arm64](https://nightly.link/ControlNet/media-poster-space/workflows/quality-gates.yml/master/desktop-macos-arm64-native.zip).
 
+![screenshot](assets/screenshot.webp)
+
 ## Run locally
 
 ### Setup
