@@ -1,25 +1,3 @@
-@font-face {
-  font-family: "Soehne Breit";
-  src:
-    local("Soehne Breit"),
-    local("Söhne Breit"),
-    url("/fonts/soehne-breit.woff2") format("woff2");
-  font-display: swap;
-  font-style: normal;
-  font-weight: 400 700;
-}
-
-@font-face {
-  font-family: "Soehne Buch";
-  src:
-    local("Soehne Buch"),
-    local("Söhne Buch"),
-    url("/fonts/soehne-buch.woff2") format("woff2");
-  font-display: swap;
-  font-style: normal;
-  font-weight: 300 700;
-}
-
 :root {
   color-scheme: dark;
   --mps-color-canvas: #080c14;
@@ -44,14 +22,9 @@
   --mps-color-accent-ring: #dcbc7c;
   --mps-elevation-orbit: 0 0 0 1px rgba(122, 217, 255, 0.28), 0 0 40px rgba(122, 217, 255, 0.26), 0 0 74px rgba(8, 19, 35, 0.88);
 
-  --mps-font-display: "Soehne Breit", "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
-  --mps-font-body: "Soehne Buch", "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
-  --mps-font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
-}
-
-[data-brand-font="fallback"] {
   --mps-font-display: "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
   --mps-font-body: "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --mps-font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
 }
 
 body {

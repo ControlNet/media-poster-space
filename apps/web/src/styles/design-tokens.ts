@@ -24,8 +24,8 @@ export function createDynamicAccentCssVariables(mediaAccent?: string): CssTokenV
   };
 }
 
-export function createTypographyCssVariables(brandFontLoaded = true): CssTokenVariables {
-  const fontFamilies = getBrandFontFamilies({ brandFontLoaded });
+export function createTypographyCssVariables(): CssTokenVariables {
+  const fontFamilies = getBrandFontFamilies();
 
   return {
     "--mps-font-display": toFontFamilyValue(fontFamilies.display),
@@ -57,7 +57,7 @@ export function createCinematicBaseCssVariables(mediaAccent?: string): CssTokenV
     "--mps-elevation-dramatic": elevationScale.dramatic,
     "--mps-elevation-orbit": elevationScale.orbit,
     ...createDynamicAccentCssVariables(mediaAccent),
-    ...createTypographyCssVariables(true)
+    ...createTypographyCssVariables()
   };
 }
 
@@ -70,5 +70,5 @@ export const cinematicTokenScales = {
 export const brandFontMetadata = {
   displayFamily: brandTypography.displayFamily,
   bodyFamily: brandTypography.bodyFamily,
-  fallbackBodyFamily: toFontFamilyValue(getBrandFontFamilies({ brandFontLoaded: false }).body)
+  fallbackBodyFamily: toFontFamilyValue(getBrandFontFamilies().body)
 } as const;

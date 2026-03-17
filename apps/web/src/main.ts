@@ -1,14 +1,9 @@
 import {
-  createCinematicBaseCssVariables,
-  createTypographyCssVariables
+  createCinematicBaseCssVariables
 } from "./styles";
 import { createWallSceneRuntime, shouldRenderWallScene } from "./scene";
 import { createOnboardingAppRuntime } from "./onboarding/runtime";
 import { restorePendingPagesRedirect } from "./routing/base-path";
-
-type FontMode = "brand" | "fallback";
-
-const FONT_MODE_QUERY_PARAM = "brandFont";
 
 function applyCssVariables(variables: Record<`--${string}`, string>, target: HTMLElement): void {
   for (const [name, value] of Object.entries(variables)) {
@@ -16,24 +11,11 @@ function applyCssVariables(variables: Record<`--${string}`, string>, target: HTM
   }
 }
 
-function resolveFontMode(searchParams: URLSearchParams): FontMode {
-  return searchParams.get(FONT_MODE_QUERY_PARAM) === "fallback" ? "fallback" : "brand";
-}
-
 const rootElement = document.documentElement;
 restorePendingPagesRedirect();
 const currentUrl = new URL(window.location.href);
-const fontMode = resolveFontMode(currentUrl.searchParams);
 
 applyCssVariables(createCinematicBaseCssVariables(), rootElement);
-
-if (fontMode === "fallback") {
-  rootElement.dataset.brandFont = "fallback";
-  applyCssVariables(createTypographyCssVariables(false), rootElement);
-} else {
-  delete rootElement.dataset.brandFont;
-  applyCssVariables(createTypographyCssVariables(true), rootElement);
-}
 
 document.body.replaceChildren();
 

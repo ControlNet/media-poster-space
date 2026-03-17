@@ -45,15 +45,16 @@ describe("design-tokens", () => {
     expect(accent.contrastRatio).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("provides automatic system fallback chain when brand fonts fail to load", () => {
-    const fallbackStack = getBrandFontFamilies({ brandFontLoaded: false });
-    const cssFallbackVariables = createTypographyCssVariables(false);
+  it("uses fallback-first typography stacks for the app shell", () => {
+    const fallbackStack = getBrandFontFamilies();
+    const cssFallbackVariables = createTypographyCssVariables();
 
     expect(fallbackStack.display[0]).toBe('"Avenir Next Condensed"');
     expect(fallbackStack.body[0]).toBe('"Avenir Next"');
     expect(fallbackStack.body).toContain("system-ui");
     expect(cssFallbackVariables["--mps-font-body"]).toContain("system-ui");
     expect(cssFallbackVariables["--mps-font-body"]).not.toContain("Soehne Buch");
+    expect(cssFallbackVariables["--mps-font-display"]).not.toContain("Soehne Breit");
     expect(brandFontMetadata.fallbackBodyFamily).toContain("system-ui");
   });
 
@@ -85,7 +86,8 @@ describe("design-tokens", () => {
 
     expect(variables["--mps-color-canvas"]).toBe(cinematicDarkPalette.canvas);
     expect(variables["--mps-color-accent"]).toBe("#4d8ad1");
-    expect(variables["--mps-font-display"]).toContain("Soehne Breit");
+    expect(variables["--mps-font-display"]).toContain("Avenir Next Condensed");
+    expect(variables["--mps-font-display"]).not.toContain("Soehne Breit");
   });
 
   it("projects afterglow orbit semantic tokens without breaking legacy cinematic keys", () => {
