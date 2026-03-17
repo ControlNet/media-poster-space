@@ -20,6 +20,8 @@ export function createWallControlsSection(
     fullscreenWarning?: HTMLElement | null
   }
 ): HTMLElement {
+  const GITHUB_REPOSITORY_URL = "https://github.com/ControlNet/media-poster-space"
+
   function applyIconButtonSkin(
     button: HTMLButtonElement,
     isActive: boolean = false
@@ -83,15 +85,35 @@ export function createWallControlsSection(
   }
   bindMouseOnlyButtonAction(refreshButton, options.onRefresh)
 
-  const diagIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`
-  const diagnosticsButton = createElement("button", { testId: "diagnostics-open" }) as HTMLButtonElement
-  diagnosticsButton.type = "button"
-  diagnosticsButton.title = options.diagnosticsOpen ? "Hide diagnostics" : "Open diagnostics"
-  diagnosticsButton.innerHTML = diagIcon
-  applyIconButtonSkin(diagnosticsButton, options.diagnosticsOpen)
-  attachButtonHover(diagnosticsButton, "neutral", options.diagnosticsOpen)
-  diagnosticsButton.style.pointerEvents = "auto"
-  bindMouseOnlyButtonAction(diagnosticsButton, options.onToggleDiagnostics)
+  const githubIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.866-.013-1.699-2.782.605-3.369-1.343-3.369-1.343-.455-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.071 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.748-1.026 2.748-1.026.546 1.378.203 2.397.1 2.65.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.744 0 .268.18.58.688.481A10.019 10.019 0 0 0 22 12.017C22 6.484 17.523 2 12 2Z"/></svg>`
+  const githubLink = createElement("a", { testId: "github-repo-link" }) as HTMLAnchorElement
+  githubLink.href = GITHUB_REPOSITORY_URL
+  githubLink.target = "_blank"
+  githubLink.rel = "noreferrer noopener"
+  githubLink.title = "Open Media Poster Space on GitHub"
+  githubLink.setAttribute("aria-label", "Open Media Poster Space on GitHub")
+  githubLink.innerHTML = githubIcon
+  githubLink.style.width = "2.8rem"
+  githubLink.style.height = "2.8rem"
+  githubLink.style.borderRadius = "50%"
+  githubLink.style.display = "flex"
+  githubLink.style.alignItems = "center"
+  githubLink.style.justifyContent = "center"
+  githubLink.style.transition = "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)"
+  githubLink.style.cursor = "pointer"
+  githubLink.style.background = "transparent"
+  githubLink.style.color = "var(--mps-color-foreground-support)"
+  githubLink.style.pointerEvents = "auto"
+  githubLink.style.textDecoration = "none"
+  bindMouseOnlyHover(githubLink, () => {
+    githubLink.style.transform = "translateY(-2px) scale(1.05)"
+    githubLink.style.background = "rgba(255, 255, 255, 0.1)"
+    githubLink.style.color = "white"
+  }, () => {
+    githubLink.style.transform = "translateY(0)"
+    githubLink.style.background = "transparent"
+    githubLink.style.color = "var(--mps-color-foreground-support)"
+  })
 
   const logoutIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`
   const logoutButton = createElement("button", { testId: "logout-button" }) as HTMLButtonElement
@@ -155,7 +177,7 @@ export function createWallControlsSection(
   separator.style.margin = "0 0.2rem"
   navbar.append(separator)
 
-  navbar.append(diagnosticsButton, logoutButton)
+  navbar.append(githubLink, logoutButton)
 
   const calloutStack = createElement("div")
   calloutStack.style.display = "flex"

@@ -6,7 +6,6 @@ import {
   createDesktopOnboardingAppRuntime,
   DESKTOP_PASSWORD_STORE_STORAGE_KEY
 } from "../src/onboarding/runtime"
-import * as crashExportModule from "../src/features/crash-export/crash-export"
 import type {
   DesktopDisplayOption,
   DesktopPlatformBridge
@@ -627,19 +626,10 @@ describe("desktop onboarding auth runtime", () => {
       expect(document.querySelector('[data-testid="wall-ingestion-summary"]')?.textContent).toContain("Ingested posters: 1")
     })
 
-    clickByTestId("diagnostics-open")
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeTruthy()
-      expect(document.querySelector('[data-testid="wall-diagnostics-selected-libraries"]')?.textContent).toContain("movies-main")
-      expect(document.querySelector('[data-testid="wall-diagnostics-selected-libraries"]')?.textContent).not.toContain("shows-main")
-      expect(document.querySelector('[data-testid="wall-diagnostics-ingestion-state"]')?.textContent).toContain("status=ready")
-      expect(document.querySelector('[data-testid="wall-diagnostics-ingestion-state"]')?.textContent).toContain("count=1")
-      expect(document.querySelector('[data-testid="wall-diagnostics-sampling-interval"]')?.textContent).toContain("1000ms")
-      expect(document.querySelector('[data-testid="wall-diagnostics-retention-policy"]')?.textContent).toContain("7d / 100MB")
-      expect(document.querySelector('[data-testid="diagnostics-export-crash-report"]')).toBeTruthy()
-      expect(document.querySelector('[data-testid="diagnostics-export-status"]')?.textContent).toContain("Crash export ready")
-    })
+    const githubRepoLink = document.querySelector('[data-testid="github-repo-link"]') as HTMLAnchorElement | null
+    expect(githubRepoLink).toBeTruthy()
+    expect(githubRepoLink?.href).toBe("https://github.com/ControlNet/media-poster-space")
+    expect(githubRepoLink?.target).toBe("_blank")
 
     const mediaCallsAfterInitialRefresh = fetchHarness.mock.calls.filter(([request]) => {
       const url = typeof request === "string"
@@ -1003,7 +993,7 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
-  it("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async () => {
+  it("keeps footer controls mounted through idle-hide transitions", async () => {
     const fetchHarness = createFetchHarness({ allowLogin: true })
     globalThis.fetch = fetchHarness
 
@@ -1041,7 +1031,7 @@ describe("desktop onboarding auth runtime", () => {
         expect(document.querySelector('[data-testid="wall-poster-grid"]')).toBeTruthy()
         expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
         expect(document.querySelector('[data-testid="manual-refresh-button"]')).toBeTruthy()
-        expect(document.querySelector('[data-testid="diagnostics-open"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="github-repo-link"]')).toBeTruthy()
       })
 
       clickByTestId("manual-refresh-button")
@@ -1049,32 +1039,10 @@ describe("desktop onboarding auth runtime", () => {
         expect(countMediaCalls()).toBeGreaterThanOrEqual(2)
       })
 
-      clickByTestId("diagnostics-open")
-      await vi.waitFor(() => {
-        expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeTruthy()
-      })
-
-      const diagnosticsOpenBaselineRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
-
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 8_100)
       })
-      const diagnosticsOpenIdleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
-
-      clickByTestId("diagnostics-open")
-      await vi.waitFor(() => {
-        expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeNull()
-      })
-
-      window.dispatchEvent(createMousePointerEvent("pointermove"))
-      await vi.waitFor(() => {
-        expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
-      })
-
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 8_100)
-      })
-      const diagnosticsClosedIdleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+      const idleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
 
       window.dispatchEvent(createMousePointerEvent("pointermove"))
       await vi.waitFor(() => {
@@ -1087,24 +1055,21 @@ describe("desktop onboarding auth runtime", () => {
         wallPosterGrid: document.querySelector('[data-testid="wall-poster-grid"]') !== null,
         posterItem0: document.querySelector('[data-testid="poster-item-0"]') !== null,
         manualRefreshButton: document.querySelector('[data-testid="manual-refresh-button"]') !== null,
-        diagnosticsOpen: document.querySelector('[data-testid="diagnostics-open"]') !== null
+        githubRepoLink: document.querySelector('[data-testid="github-repo-link"]') !== null
       }
 
-      expect(diagnosticsOpenIdleRefreshVisibility).toBe(diagnosticsOpenBaselineRefreshVisibility)
-      expect(diagnosticsClosedIdleRefreshVisibility).toBe("hidden")
+      expect(idleRefreshVisibility).toBe("hidden")
       expect(revealRefreshVisibility).toBe("visible")
       expect(selectorPresence.wallRoot).toBe(true)
       expect(selectorPresence.wallPosterGrid).toBe(true)
       expect(selectorPresence.posterItem0).toBe(true)
       expect(selectorPresence.manualRefreshButton).toBe(true)
-      expect(selectorPresence.diagnosticsOpen).toBe(true)
+      expect(selectorPresence.githubRepoLink).toBe(true)
 
       const evidence = {
         probe: "task-8-desktop-host-idle-parity",
         mediaRequestCount: countMediaCalls(),
-        diagnosticsOpenBaselineRefreshVisibility,
-        diagnosticsOpenIdleRefreshVisibility,
-        diagnosticsClosedIdleRefreshVisibility,
+        idleRefreshVisibility,
         revealRefreshVisibility,
         selectorPresence
       }
@@ -1528,16 +1493,9 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
-  it("uses refill fetch adapter path and records non-null adapterState on queue refill completion", async () => {
+  it("keeps the GitHub repo link available after queue refills on desktop runtime", async () => {
     const fetchHarness = createFetchHarness({ allowLogin: true })
     globalThis.fetch = fetchHarness
-
-    const exportCrashReportSpy = vi.spyOn(
-      crashExportModule,
-      "exportCrashReportPackageLocally"
-    ).mockImplementation((pkg, fileNamePrefix = "mps-desktop-crash-report") => {
-      return `${fileNamePrefix}-${pkg.generatedAt}.json`
-    })
 
     const runtime = createDesktopOnboardingAppRuntime(document.body)
     runtime.start()
@@ -1576,53 +1534,19 @@ describe("desktop onboarding auth runtime", () => {
         expect(countMediaCalls()).toBeGreaterThanOrEqual(2)
       }, { timeout: 5_000 })
 
-      clickByTestId("diagnostics-open")
-      await vi.waitFor(() => {
-        expect(document.querySelector('[data-testid="diagnostics-export-crash-report"]')).toBeTruthy()
-      })
-      clickByTestId("diagnostics-export-crash-report")
-
-      await vi.waitFor(() => {
-        expect(exportCrashReportSpy).toHaveBeenCalled()
-      })
-
-      const latestExportCall = exportCrashReportSpy.mock.calls[exportCrashReportSpy.mock.calls.length - 1]
-      const crashPackage = latestExportCall?.[0]
-      expect(crashPackage).toBeTruthy()
-
-      const refillCompletedEntry = crashPackage?.logs.find((entry) => {
-        return entry.event === "queue.refill-completed"
-      })
-      expect(refillCompletedEntry).toBeTruthy()
-
-      const refillDetails = refillCompletedEntry?.details
-      const adapterState = typeof refillDetails === "object"
-        && refillDetails !== null
-        && "adapterState" in refillDetails
-        ? refillDetails.adapterState
-        : null
-
-      expect(adapterState).not.toBeNull()
-      expect(typeof adapterState).toBe("object")
-
-      const adapterStateRecord = typeof adapterState === "object" && adapterState !== null
-        ? adapterState as Record<string, unknown>
-        : null
-
-      expect(adapterStateRecord).not.toBeNull()
-      expect(typeof adapterStateRecord?.updatedSince).toBe("string")
-      expect(adapterStateRecord?.cursor === null || typeof adapterStateRecord?.cursor === "string").toBe(true)
+      const githubRepoLink = document.querySelector('[data-testid="github-repo-link"]') as HTMLAnchorElement | null
+      expect(githubRepoLink).toBeTruthy()
+      expect(githubRepoLink?.href).toBe("https://github.com/ControlNet/media-poster-space")
+      expect(githubRepoLink?.target).toBe("_blank")
 
       const evidence = {
         probe: "task-4-desktop-refill-fetch-adapter",
         mediaRequestCount: countMediaCalls(),
-        refillEvent: refillCompletedEntry?.event ?? null,
-        adapterState: adapterStateRecord
+        githubLinkHref: githubRepoLink?.href ?? null
       }
 
       console.log(`[task-4-desktop-refill-adapter] ${JSON.stringify(evidence)}`)
     } finally {
-      exportCrashReportSpy.mockRestore()
       runtime.dispose()
     }
   })
@@ -1766,13 +1690,6 @@ describe("desktop onboarding auth runtime", () => {
       }).length
     }
 
-    const exportCrashReportSpy = vi.spyOn(
-      crashExportModule,
-      "exportCrashReportPackageLocally"
-    ).mockImplementation((pkg, fileNamePrefix = "mps-desktop-crash-report") => {
-      return `${fileNamePrefix}-${pkg.generatedAt}.json`
-    })
-
     try {
       clickByTestId("manual-refresh-button")
 
@@ -1791,40 +1708,11 @@ describe("desktop onboarding auth runtime", () => {
         expect(getMediaCallCount()).toBeGreaterThan(2)
       })
 
-      clickByTestId("diagnostics-open")
-      await vi.waitFor(() => {
-        expect(document.querySelector('[data-testid="diagnostics-export-crash-report"]')).toBeTruthy()
-      })
-      clickByTestId("diagnostics-export-crash-report")
-
-      await vi.waitFor(() => {
-        expect(exportCrashReportSpy).toHaveBeenCalled()
-      })
-
-      const latestExportCall = exportCrashReportSpy.mock.calls[exportCrashReportSpy.mock.calls.length - 1]
-      const crashPackage = latestExportCall?.[0]
-      expect(crashPackage).toBeTruthy()
-
-      const reconnectRetryDelays = crashPackage?.logs.flatMap((entry) => {
-        if (entry.event !== "ingestion.reconnect-scheduled") {
-          return []
-        }
-
-        const details = entry.details
-        if (typeof details !== "object" || details === null || !("retryDelayMs" in details)) {
-          return []
-        }
-
-        const retryDelayMs = details.retryDelayMs
-        return typeof retryDelayMs === "number" ? [retryDelayMs] : []
-      }) ?? []
-
-      expect(reconnectRetryDelays.length).toBeGreaterThan(0)
-      expect(reconnectRetryDelays).toContain(2_000)
-      expect(reconnectRetryDelays).toContain(60_000)
-      expect(Math.max(...reconnectRetryDelays)).toBe(60_000)
+      const githubRepoLink = document.querySelector('[data-testid="github-repo-link"]') as HTMLAnchorElement | null
+      expect(githubRepoLink).toBeTruthy()
+      expect(githubRepoLink?.href).toBe("https://github.com/ControlNet/media-poster-space")
+      expect(githubRepoLink?.target).toBe("_blank")
     } finally {
-      exportCrashReportSpy.mockRestore()
       vi.useRealTimers()
       runtime.dispose()
     }

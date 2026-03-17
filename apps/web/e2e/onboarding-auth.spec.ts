@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises"
 import { expect, test, type Page } from "@playwright/test"
 
 const TEST_SERVER = "https://jellyfin.test"
@@ -111,7 +110,7 @@ interface WallIdentityProbeSnapshot {
     wallPosterGrid: boolean
     posterItem0: boolean
     manualRefreshButton: boolean
-    diagnosticsOpen: boolean
+    githubRepoLink: boolean
   }
   baselineEstablished: boolean
   sameWallRootAsBaseline: boolean | null
@@ -131,7 +130,7 @@ async function captureWallIdentityProbeSnapshot(page: Page, stage: string): Prom
     const wallPosterGrid = document.querySelector('[data-testid="wall-poster-grid"]')
     const posterItem0 = document.querySelector('[data-testid="poster-item-0"]')
     const manualRefreshButton = document.querySelector('[data-testid="manual-refresh-button"]')
-    const diagnosticsOpen = document.querySelector('[data-testid="diagnostics-open"]')
+    const githubRepoLink = document.querySelector('[data-testid="github-repo-link"]')
 
     if (!windowWithProbeState.__task1BaselineProbeState && wallRoot && wallPosterGrid) {
       windowWithProbeState.__task1BaselineProbeState = {
@@ -149,7 +148,7 @@ async function captureWallIdentityProbeSnapshot(page: Page, stage: string): Prom
         wallPosterGrid: wallPosterGrid !== null,
         posterItem0: posterItem0 !== null,
         manualRefreshButton: manualRefreshButton !== null,
-        diagnosticsOpen: diagnosticsOpen !== null
+        githubRepoLink: githubRepoLink !== null
       },
       baselineEstablished: baseline !== undefined,
       sameWallRootAsBaseline: baseline ? wallRoot === baseline.wallRoot : null,
@@ -605,16 +604,10 @@ test("completes preflight -> login -> library selection and enters poster wall",
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
   await expect(page.getByTestId("wall-ingestion-summary")).toContainText("Ingested posters: 1")
 
-  await page.getByTestId("diagnostics-open").click()
-  await expect(page.getByTestId("wall-diagnostics-panel")).toBeVisible()
-  await expect(page.getByTestId("wall-diagnostics-selected-libraries")).toContainText("movies-main")
-  await expect(page.getByTestId("wall-diagnostics-selected-libraries")).not.toContainText("shows-main")
-  await expect(page.getByTestId("wall-diagnostics-ingestion-state")).toContainText("status=ready")
-  await expect(page.getByTestId("wall-diagnostics-ingestion-state")).toContainText("count=1")
-  await expect(page.getByTestId("wall-diagnostics-sampling-interval")).toContainText("1000ms")
-  await expect(page.getByTestId("wall-diagnostics-retention-policy")).toContainText("7d / 100MB")
-  await expect(page.getByTestId("diagnostics-export-crash-report")).toBeVisible()
-  await expect(page.getByTestId("diagnostics-export-status")).toContainText("Crash export ready")
+  const githubRepoLink = page.getByTestId("github-repo-link")
+  await expect(githubRepoLink).toBeVisible()
+  await expect(githubRepoLink).toHaveAttribute("href", "https://github.com/ControlNet/media-poster-space")
+  await expect(githubRepoLink).toHaveAttribute("target", "_blank")
 
   await page.getByTestId("manual-refresh-button").click()
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
@@ -634,7 +627,7 @@ test("completes preflight -> login -> library selection and enters poster wall",
   expect(persistedValues.wallHandoff).toContain("movies-main")
 })
 
-test("exports queue refill diagnostics with non-null adapter state on web runtime", async ({ page }) => {
+test("keeps the GitHub repo link available after queue refills on web runtime", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -693,58 +686,15 @@ test("exports queue refill diagnostics with non-null adapter state on web runtim
   await page.getByTestId("onboarding-finish").click()
 
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
-  await page.getByTestId("diagnostics-open").first().click()
-  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeVisible()
-
+  const githubRepoLink = page.getByTestId("github-repo-link").first()
+  await expect(githubRepoLink).toBeVisible()
+  await expect(githubRepoLink).toHaveAttribute("href", "https://github.com/ControlNet/media-poster-space")
   await page.getByTestId("manual-refresh-button").first().click()
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
 
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByTestId("diagnostics-export-crash-report").first().click()
-  ])
-
-  const crashReportPath = await download.path()
-  expect(crashReportPath).not.toBeNull()
-  if (!crashReportPath) {
-    throw new Error("Crash report download path was not available.")
-  }
-
-  const crashReportRaw = await readFile(crashReportPath, "utf8")
-  const crashReport = JSON.parse(crashReportRaw) as {
-    logs?: Array<{
-      event?: unknown
-      details?: unknown
-    }>
-  }
-
-  const refillCompletedLog = crashReport.logs?.find((entry) => {
-    return entry.event === "queue.refill-completed"
-  })
-  expect(refillCompletedLog).toBeDefined()
-
-  const refillDetails = refillCompletedLog?.details
-  expect(typeof refillDetails).toBe("object")
-  expect(refillDetails).not.toBeNull()
-  if (!refillDetails || typeof refillDetails !== "object") {
-    throw new Error("Missing refill diagnostics details.")
-  }
-
-  const adapterState = "adapterState" in refillDetails
-    ? (refillDetails as { adapterState: unknown }).adapterState
-    : null
-  expect(adapterState).not.toBeNull()
-  expect(typeof adapterState).toBe("object")
-  if (!adapterState || typeof adapterState !== "object") {
-    throw new Error("Expected non-null adapterState in queue.refill-completed diagnostics.")
-  }
-
-  expect("cursor" in adapterState).toBe(true)
-  expect("updatedSince" in adapterState).toBe(true)
-
   console.log(`[task-3-web-adapter-refill] ${JSON.stringify({
     mediaRequestCount,
-    adapterState
+    githubLinkHref: await githubRepoLink.getAttribute("href")
   })}`)
 })
 
@@ -975,7 +925,7 @@ test("reopens root route into the wall when a saved session and handoff exist", 
   expect(preflightRequestCount).toBe(preflightRequestCountBeforeResume)
 })
 
-test("suppresses idle-hide while diagnostics are open and preserves diagnostics-closed idle-hide behavior", async ({ page }) => {
+test("keeps footer controls mounted through idle-hide transitions", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -1031,7 +981,7 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
   await expect(page.getByTestId("wall-poster-grid").first()).toBeVisible()
   await expect(page.getByTestId("poster-item-0").first()).toBeVisible()
   await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
-  await expect(page.getByTestId("diagnostics-open").first()).toBeVisible()
+  await expect(page.getByTestId("github-repo-link").first()).toBeVisible()
 
   const baseline = await captureWallIdentityProbeSnapshot(page, "initial")
 
@@ -1039,37 +989,8 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
   const afterManualRefresh = await captureWallIdentityProbeSnapshot(page, "after-manual-refresh")
 
-  await page.getByTestId("diagnostics-open").first().click()
-  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeVisible()
-
   await page.waitForTimeout(8_100)
-  const diagnosticsOpenIdleRefreshVisibility = await page.evaluate(() => {
-    const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
-    if (!(refreshButton instanceof HTMLElement)) {
-      return null
-    }
-
-    return getComputedStyle(refreshButton).visibility
-  })
-  const afterDiagnosticsOpenIdle = await captureWallIdentityProbeSnapshot(page, "after-diagnostics-open-idle")
-
-  await page.getByTestId("diagnostics-open").first().click()
-  await expect(page.getByTestId("wall-diagnostics-panel").first()).toBeHidden()
-
-  await page.evaluate(() => {
-    const windowWithProbeState = window as Window & {
-      __task1BaselineProbeState?: {
-        wallRoot: Element
-        wallPosterGrid: Element
-      }
-    }
-
-    delete windowWithProbeState.__task1BaselineProbeState
-  })
-  const diagnosticsClosedBaseline = await captureWallIdentityProbeSnapshot(page, "diagnostics-closed-baseline")
-
-  await page.waitForTimeout(8_100)
-  const diagnosticsClosedIdleRefreshVisibility = await page.evaluate(() => {
+  const idleRefreshVisibility = await page.evaluate(() => {
     const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
     if (!(refreshButton instanceof HTMLElement)) {
       return null
@@ -1081,7 +1002,7 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
   await page.mouse.move(24, 24)
   await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
   await page.waitForTimeout(8_100)
-  const afterDiagnosticsClosedIdle = await captureWallIdentityProbeSnapshot(page, "after-diagnostics-closed-idle")
+  const afterIdle = await captureWallIdentityProbeSnapshot(page, "after-idle")
 
   await page.mouse.move(32, 32)
   await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
@@ -1097,28 +1018,22 @@ test("suppresses idle-hide while diagnostics are open and preserves diagnostics-
 
   expect(afterManualRefresh.sameWallRootAsBaseline).toBe(true)
   expect(afterManualRefresh.sameWallGridAsBaseline).toBe(true)
-  expect(diagnosticsClosedBaseline.sameWallRootAsBaseline).toBe(true)
-  expect(diagnosticsClosedBaseline.sameWallGridAsBaseline).toBe(true)
-  expect(afterDiagnosticsClosedIdle.sameWallRootAsBaseline).toBe(true)
-  expect(afterDiagnosticsClosedIdle.sameWallGridAsBaseline).toBe(true)
+  expect(afterIdle.sameWallRootAsBaseline).toBe(true)
+  expect(afterIdle.sameWallGridAsBaseline).toBe(true)
   expect(afterReveal.sameWallRootAsBaseline).toBe(true)
   expect(afterReveal.sameWallGridAsBaseline).toBe(true)
-  expect(diagnosticsOpenIdleRefreshVisibility).toBe("visible")
-  expect(diagnosticsClosedIdleRefreshVisibility).toBe("visible")
+  expect(idleRefreshVisibility).toBe("visible")
   expect(revealRefreshVisibility).toBe("visible")
 
   const evidence = {
     probe: "task-8-web-host-idle-parity",
     mediaRequestCount,
-    diagnosticsOpenIdleRefreshVisibility,
-    diagnosticsClosedIdleRefreshVisibility,
+    idleRefreshVisibility,
     revealRefreshVisibility,
     snapshots: [
       baseline,
       afterManualRefresh,
-      afterDiagnosticsOpenIdle,
-      diagnosticsClosedBaseline,
-      afterDiagnosticsClosedIdle,
+      afterIdle,
       afterReveal
     ]
   }
@@ -1762,12 +1677,8 @@ test("poster tile clicks no longer open detail card and Escape is ignored", asyn
   })
   await expect(detailCard).toBeHidden()
 
+  await expect(page.getByTestId("github-repo-link").first()).toBeVisible()
   await expect(page.getByTestId("deep-settings-profile-toggle")).toHaveCount(0)
-  await page.getByTestId("diagnostics-open").first().click()
-  await expect(page.getByTestId("deep-settings-profile-toggle")).toBeVisible()
-  await expect(page.getByTestId("deep-settings-profile-current")).toContainText("balanced")
-  await page.getByTestId("deep-settings-profile-toggle").click()
-  await expect(page.getByTestId("deep-settings-profile-current")).toContainText("showcase")
 
   await page.evaluate(() => {
     const windowWithProbeState = window as Window & {

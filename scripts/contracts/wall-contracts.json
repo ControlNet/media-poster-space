@@ -348,22 +348,22 @@
           ]
         },
         {
-          "id": "selector.diagnostics-open",
-          "selector": "diagnostics-open",
+          "id": "selector.github-repo-link",
+          "selector": "github-repo-link",
           "producers": [
             {
               "file": "packages/core/src/wall/ui/controls-section.ts",
-              "contains": "testId: \"diagnostics-open\""
+              "contains": "testId: \"github-repo-link\""
             }
           ],
           "consumers": [
             {
               "file": "apps/web/e2e/onboarding-auth.spec.ts",
-              "contains": "page.getByTestId(\"diagnostics-open\")"
+              "contains": "page.getByTestId(\"github-repo-link\")"
             },
             {
               "file": "apps/desktop/test/onboarding-auth.test.ts",
-              "contains": "clickByTestId(\"diagnostics-open\")"
+              "contains": "document.querySelector('[data-testid=\"github-repo-link\"]')"
             }
           ]
         },
