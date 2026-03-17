@@ -19,7 +19,7 @@ function applyCssVariables(variables: Record<`--${string}`, string>, target: HTM
 
 function createDesktopCssVariables(mediaAccent?: string): Record<`--${string}`, string> {
   const accent = createDynamicAccentTokens(mediaAccent)
-  const fonts = getBrandFontFamilies({ brandFontLoaded: true })
+  const fonts = getBrandFontFamilies()
 
   return {
     "--mps-color-canvas": cinematicDarkPalette.canvas,
