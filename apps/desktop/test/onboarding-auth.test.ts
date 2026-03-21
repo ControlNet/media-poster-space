@@ -1553,6 +1553,99 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
+  it("rearms the manual refresh button after a refresh-time fallback render", async () => {
+    const manualRefreshDeferred = createDeferred()
+    const baseFetchHarness = createFetchHarness({ allowLogin: true })
+    let movieRequestCount = 0
+
+    globalThis.fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+      if (url.includes("/Users/user-1/Items") && url.includes("ParentId=movies-main")) {
+        movieRequestCount += 1
+        if (movieRequestCount === 2) {
+          await manualRefreshDeferred.promise
+        }
+      }
+
+      return baseFetchHarness(input, init)
+    }) as FetchMock & typeof fetch
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    runtime.start()
+
+    const bodyElement = document.body as HTMLElement & {
+      __task12HideWallReadiness?: boolean
+    }
+    const originalBodyQuerySelector = bodyElement.querySelector
+    const querySelectorFromBody = (selectors: string): Element | null => {
+      return originalBodyQuerySelector.call(bodyElement, selectors)
+    }
+
+    try {
+      setInputValue("server-url-input", TEST_SERVER)
+      await triggerServerStatusCheck()
+      setInputValue("username-input", "demo-user")
+      setInputValue("password-input", "super-secret")
+      clickByTestId("login-submit")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
+      })
+
+      setChecked("library-checkbox-shows-main", false)
+      clickByTestId("onboarding-finish")
+
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+      })
+
+      bodyElement.querySelector = (function querySelectorWithTask12ReadinessBlock(
+        this: HTMLElement,
+        selectors: string
+      ): Element | null {
+        const shouldBlockWallReadiness = bodyElement.__task12HideWallReadiness === true
+        const requestsWallReadinessSelectors =
+          selectors === '[data-testid="poster-wall-root"]'
+          || selectors === '[data-testid="wall-poster-grid"]'
+
+        if (shouldBlockWallReadiness && requestsWallReadinessSelectors) {
+          return null
+        }
+
+        return querySelectorFromBody(selectors)
+      }) as typeof bodyElement.querySelector
+
+      bodyElement.__task12HideWallReadiness = true
+      clickByTestId("manual-refresh-button")
+
+      await vi.waitFor(() => {
+        const manualRefreshButton = getElement("manual-refresh-button") as HTMLButtonElement
+        expect(manualRefreshButton.title).toBe("Refreshing…")
+        expect(manualRefreshButton.disabled).toBe(true)
+      })
+
+      bodyElement.__task12HideWallReadiness = false
+      manualRefreshDeferred.resolve()
+
+      await vi.waitFor(() => {
+        const manualRefreshButton = getElement("manual-refresh-button") as HTMLButtonElement
+        expect(manualRefreshButton.title).toBe("Refresh posters now")
+        expect(manualRefreshButton.disabled).toBe(false)
+        expect(manualRefreshButton.style.animation).toBe("")
+      })
+    } finally {
+      bodyElement.__task12HideWallReadiness = false
+      bodyElement.querySelector = originalBodyQuerySelector
+      manualRefreshDeferred.resolve()
+      runtime.dispose()
+    }
+  })
+
   it("shows non-crashing warning when linux secret-service is unavailable and fallback encryption is used", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true })
     const platformHarness = createPlatformHarness({

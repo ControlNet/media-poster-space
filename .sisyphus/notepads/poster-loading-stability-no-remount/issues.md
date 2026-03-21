@@ -2,9 +2,9 @@
 
 - 2026-03-03: Working tree is not clean at session start; many runtime/ui/test files already modified from prior workstream. Need per-task scope checks against existing changes before accepting completion.
 - 2026-03-03: Plan checkboxes are all unchecked despite substantial in-flight code changes; task execution should reconcile implementation status vs plan items to avoid duplicate edits.
-- 2026-03-03: Beads tracker had no ready unblocked item for Task 2 (`bd ready` empty), so a dedicated issue (`media-poster-space-h1y`) was created and tracked manually for this execution.
+- 2026-03-03: The prior tracker queue had no ready unblocked item for Task 2, so a dedicated issue (`media-poster-space-h1y`) was created and tracked manually for this execution.
 - 2026-03-03: `pnpm --filter @mps/web e2e -- --grep "..."` resolved to `playwright ... "--" "--grep"` and returned "No tests found"; using `pnpm --filter @mps/web exec playwright test ... --grep ...` is the reliable targeted probe invocation for this workspace script setup.
-- 2026-03-03: `bd ready` remained empty for Task 3 as well; created and used `media-poster-space-3ku` to keep this non-trivial patch tracked in Beads.
+- 2026-03-03: The prior tracker queue remained empty for Task 3 as well; created and used `media-poster-space-3ku` to keep this non-trivial patch tracked explicitly.
 - 2026-03-03: Enabling desktop refill-adapter wiring changed onboarding regression timing assumptions: media request count before manual refresh increased (adapter top-up call), and reconnect assertions needed fake timers activated before `/wall` entry to avoid real-timer reconnect scheduling.
 - 2026-03-03: Manual refresh reset policy is easy to misread without explicit request-sequence assertions; Task 5 test had to assert post-manual scheduled query to prove cursor source switches to manual page head.
 

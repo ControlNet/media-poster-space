@@ -66,7 +66,7 @@
   - Queue contract (`<10` refill to `40`): delivered and evidenced by queue/runtime tests (`task-3-queue-threshold-tests.txt`, `task-7-watermark-integration.txt`).
   - No 1s remount: **not delivered** in final evidence (`task-10-no-remount-proof.log` shows `allStable=false`, `rootSameNode=false`, `gridSameNode=false` across 11 samples / ~10s).
   - Shared core web/desktop behavior: partially delivered (desktop parity evidence is green; web continuity remains unstable).
-- Out-of-scope additions observed in current diff map: `.beads/issues.jsonl` and `.sisyphus/notepads/media-poster-space-v1/*` bookkeeping updates; these do not satisfy wall runtime scope and should be treated as process artifacts.
+- Out-of-scope additions observed in current diff map: legacy tracker exports and `.sisyphus/notepads/media-poster-space-v1/*` bookkeeping updates; these do not satisfy wall runtime scope and should be treated as process artifacts.
 - Decision: **NO-GO** until web wall root/grid continuity is proven stable for >=10s diagnostics-open runtime and Task 8/10 continuity obligations are re-verified green.
 
 

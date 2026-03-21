@@ -504,6 +504,15 @@ export function createDesktopOnboardingAppRuntime(
       `Ingested posters: ${state.ingestionItemCount}; status: ${state.ingestionStatus}; trigger: ${state.ingestionTrigger ?? "n/a"}; last refresh: ${state.ingestionFetchedAt ?? "pending"}.`
     )
 
+    const manualRefreshButton = target.querySelector<HTMLButtonElement>("[data-testid=\"manual-refresh-button\"]")
+    if (manualRefreshButton) {
+      const isRefreshing = state.ingestionStatus === "refreshing"
+      manualRefreshButton.title = isRefreshing ? "Refreshing…" : "Refresh posters now"
+      manualRefreshButton.disabled = isRefreshing
+      manualRefreshButton.style.opacity = isRefreshing ? "0.5" : "1"
+      manualRefreshButton.style.animation = isRefreshing ? "spin 2s linear infinite" : ""
+    }
+
     if (!state.diagnosticsOpen) {
       return
     }
