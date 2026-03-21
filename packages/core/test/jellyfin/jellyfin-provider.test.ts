@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createEmbyMediaProvider,
   JellyfinMediaProvider,
   JellyfinProviderError,
   createJellyfinMediaProvider
@@ -54,6 +55,7 @@ function browserCorsResponse(body: unknown, status = 200): Response {
 describe("jellyfin-provider-happy", () => {
   it("runs preflight/auth/session/media lifecycle and normalizes media items", async () => {
     const mediaListIncludeItemTypes: string[] = [];
+    const mediaListEnableImages: string[] = [];
 
     const fetchMock = createFetchMock(async (url, init) => {
       const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined;
@@ -94,6 +96,7 @@ describe("jellyfin-provider-happy", () => {
 
       if (url.pathname === "/Users/user-001/Items") {
         mediaListIncludeItemTypes.push(url.searchParams.get("IncludeItemTypes") ?? "");
+        mediaListEnableImages.push(url.searchParams.get("EnableImages") ?? "");
 
         return jsonResponse({
           Items: [
@@ -182,6 +185,7 @@ describe("jellyfin-provider-happy", () => {
     });
 
     expect(mediaListIncludeItemTypes[0]).toBe("Movie,Series,BoxSet,MusicVideo");
+    expect(mediaListEnableImages[0]).toBe("true");
 
     expect(page.items).toHaveLength(1);
     expect(page.items[0]).toMatchObject({
@@ -202,6 +206,124 @@ describe("jellyfin-provider-happy", () => {
 
     await provider.invalidateSession(session);
     expect(fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe("emby-provider-happy", () => {
+  it("targets emby api routes and emits emby-branded session metadata", async () => {
+    const authorizationHeaders: string[] = [];
+    const mediaListEnableImages: string[] = [];
+    const fetchMock = createFetchMock(async (url, init) => {
+      const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+
+      if (url.pathname === "/emby/System/Info/Public") {
+        return jsonResponse(
+          { Version: "4.8.10.0" },
+          { headers: { "access-control-allow-origin": "https://app.local" } }
+        );
+      }
+
+      if (url.pathname === "/emby/Users/AuthenticateByName") {
+        if (body?.Username === "") {
+          return jsonResponse(
+            { Error: "invalid" },
+            {
+              status: 401,
+              headers: { "access-control-allow-origin": "https://app.local" }
+            }
+          );
+        }
+
+        const headers = new Headers(init?.headers);
+        authorizationHeaders.push(headers.get("Authorization") ?? "");
+
+        return jsonResponse({
+          AccessToken: "emby-token-001",
+          User: { Id: "emby-user-001", Name: "emby-user" }
+        });
+      }
+
+      if (url.pathname === "/emby/Users/Me") {
+        return jsonResponse({ Id: "emby-user-001", Name: "emby-user" });
+      }
+
+      if (url.pathname === "/emby/Users/emby-user-001/Views") {
+        return jsonResponse({
+          Items: [{ Id: "emby-library-001", Name: "Movies", CollectionType: "movies" }]
+        });
+      }
+
+      if (url.pathname === "/emby/Users/emby-user-001/Items") {
+        mediaListEnableImages.push(url.searchParams.get("EnableImages") ?? "");
+        return jsonResponse({
+          Items: [
+            {
+              Id: "emby-item-001",
+              Name: "The Creator",
+              Type: "Movie",
+              ImageTags: { Primary: "emby-poster-tag" }
+            }
+          ],
+          TotalRecordCount: 1
+        });
+      }
+
+      if (url.pathname === "/emby/Sessions/Logout") {
+        return new Response(null, { status: 204 });
+      }
+
+      return new Response(null, { status: 404 });
+    });
+
+    const provider = createEmbyMediaProvider({
+      fetch: fetchMock,
+      now: () => new Date("2026-03-20T17:30:00.000Z")
+    });
+
+    const preflight = await provider.preflight({
+      serverUrl: "https://emby.local",
+      origin: "https://app.local"
+    });
+
+    expect(preflight.ok).toBe(true);
+
+    const session = await provider.authenticate({
+      serverUrl: "https://emby.local",
+      username: "emby-user",
+      password: "redacted-password",
+      clientName: "Media Poster Space",
+      deviceId: "device-emby-001"
+    });
+
+    expect(session).toMatchObject({
+      providerId: "emby",
+      userId: "emby-user-001",
+      username: "emby-user",
+      accessToken: "emby-token-001"
+    });
+    expect(authorizationHeaders.some((value) => value.includes("Emby Client="))).toBe(true);
+
+    const libraries = await provider.listLibraries(session);
+    expect(libraries).toEqual([
+      {
+        id: "emby-library-001",
+        name: "Movies",
+        kind: "movies"
+      }
+    ]);
+
+    const page = await provider.listMedia(session, {
+      libraryIds: ["emby-library-001"]
+    });
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      id: "emby-item-001",
+      providerId: "emby"
+    });
+    expect(mediaListEnableImages[0]).toBe("true");
+    expect(page.items[0]?.poster.url).toContain("/emby/Items/emby-item-001/Images/Primary");
+
+    await provider.invalidateSession(session);
   });
 });
 

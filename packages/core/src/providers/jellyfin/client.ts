@@ -24,6 +24,11 @@ interface JellyfinProviderOptions {
   fetch?: FetchLike;
   appVersion?: string;
   now?: () => Date;
+  providerId?: "jellyfin" | "emby";
+  displayName?: string;
+  apiBasePath?: string;
+  authorizationScheme?: string;
+  minSupportedMajorVersion?: number;
 }
 
 interface JellyfinPublicSystemInfo {
@@ -86,6 +91,22 @@ function normalizeServerUrl(serverUrl: string): string {
   return serverUrl.trim().replace(/\/+$/, "");
 }
 
+function normalizeApiBasePath(apiBasePath: string | undefined): string {
+  if (!apiBasePath) {
+    return "";
+  }
+
+  const normalizedApiBasePath = apiBasePath.trim().replace(/^\/+|\/+$/g, "");
+  return normalizedApiBasePath.length > 0 ? `/${normalizedApiBasePath}` : "";
+}
+
+function buildApiUrl(serverUrl: string, endpointPath: string, apiBasePath = ""): string {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl);
+  const normalizedEndpointPath = endpointPath.replace(/^\/+/, "");
+  const url = new URL(`${normalizeApiBasePath(apiBasePath)}/${normalizedEndpointPath}`, `${normalizedServerUrl}/`);
+  return url.toString();
+}
+
 function shouldValidateCors(serverUrl: string, origin: string | undefined): boolean {
   if (!origin) {
     return false;
@@ -98,13 +119,13 @@ function shouldValidateCors(serverUrl: string, origin: string | undefined): bool
   }
 }
 
-function safeMessageFromStatus(status: number, fallback: string): string {
+function safeMessageFromStatus(status: number, fallback: string, providerName: string): string {
   if (status === 401 || status === 403) {
-    return "Authentication was rejected by Jellyfin";
+    return `Authentication was rejected by ${providerName}`;
   }
 
   if (status >= 500) {
-    return "Jellyfin server is temporarily unavailable";
+    return `${providerName} server is temporarily unavailable`;
   }
 
   return fallback;
@@ -124,7 +145,7 @@ function parseMajorVersion(version: string): number | null {
   return Number.isNaN(major) ? null : major;
 }
 
-function toProviderError(error: unknown, fallbackMessage: string): ProviderError {
+function toProviderError(error: unknown, fallbackMessage: string, providerName: string): ProviderError {
   if (error instanceof JellyfinProviderError) {
     return error.providerError;
   }
@@ -132,7 +153,7 @@ function toProviderError(error: unknown, fallbackMessage: string): ProviderError
   if (error instanceof DOMException && error.name === "AbortError") {
     return {
       category: "network",
-      message: "Jellyfin request timed out",
+      message: `${providerName} request timed out`,
       retriable: true
     };
   }
@@ -140,7 +161,7 @@ function toProviderError(error: unknown, fallbackMessage: string): ProviderError
   if (error instanceof TypeError) {
     return {
       category: "network",
-      message: "Could not reach Jellyfin server",
+      message: `Could not reach ${providerName} server`,
       retriable: true
     };
   }
@@ -184,22 +205,27 @@ function toLibraryKind(collectionType: string | undefined): MediaLibrary["kind"]
   }
 }
 
-function makeAuthHeader(clientName: string, deviceId: string, appVersion: string): string {
+function makeAuthHeader(
+  clientName: string,
+  deviceId: string,
+  appVersion: string,
+  authorizationScheme: string
+): string {
   const escapedClientName = clientName.replaceAll('"', "\\\"");
   const escapedDeviceId = deviceId.replaceAll('"', "\\\"");
 
-  return `MediaBrowser Client="${escapedClientName}", Device="${escapedClientName}", DeviceId="${escapedDeviceId}", Version="${appVersion}"`;
+  return `${authorizationScheme} Client="${escapedClientName}", Device="${escapedClientName}", DeviceId="${escapedDeviceId}", Version="${appVersion}"`;
 }
 
 function buildImageUrl(
   serverUrl: string,
   itemId: string,
   imageType: "Primary" | "Backdrop" | "Logo",
-  tag?: string
+  tag?: string,
+  apiBasePath = ""
 ): string {
   const url = new URL(
-    `/Items/${encodeURIComponent(itemId)}/Images/${imageType}`,
-    `${normalizeServerUrl(serverUrl)}/`
+    buildApiUrl(serverUrl, `Items/${encodeURIComponent(itemId)}/Images/${imageType}`, apiBasePath)
   );
 
   if (tag) {
@@ -233,9 +259,9 @@ export class JellyfinProviderError extends Error {
 }
 
 export class JellyfinMediaProvider implements MediaProvider {
-  readonly id = "jellyfin";
+  readonly id: string;
 
-  readonly displayName = "Jellyfin";
+  readonly displayName: string;
 
   readonly capabilities = [
     "preflight",
@@ -252,16 +278,27 @@ export class JellyfinMediaProvider implements MediaProvider {
 
   private readonly now: () => Date;
 
+  private readonly apiBasePath: string;
+
+  private readonly authorizationScheme: string;
+
+  private readonly minSupportedMajorVersion: number;
+
   constructor(options: JellyfinProviderOptions = {}) {
     if (!options.fetch && typeof globalThis.fetch !== "function") {
-      throw new Error("Jellyfin provider requires a fetch implementation");
+      throw new Error(`${options.displayName ?? "Media"} provider requires a fetch implementation`);
     }
 
     const fetchRef = options.fetch ?? globalThis.fetch;
 
     this.fetchImpl = fetchRef.bind(globalThis) as FetchLike;
+    this.id = options.providerId ?? "jellyfin";
+    this.displayName = options.displayName ?? "Jellyfin";
     this.appVersion = options.appVersion ?? "1.0.0";
     this.now = options.now ?? (() => new Date());
+    this.apiBasePath = normalizeApiBasePath(options.apiBasePath);
+    this.authorizationScheme = options.authorizationScheme ?? "MediaBrowser";
+    this.minSupportedMajorVersion = options.minSupportedMajorVersion ?? 10;
   }
 
   async preflight(request: ProviderPreflightRequest): Promise<ProviderPreflightResult> {
@@ -272,7 +309,7 @@ export class JellyfinMediaProvider implements MediaProvider {
 
     try {
       const publicInfoResponse = await this.fetchWithTimeout(
-        `${serverUrl}/System/Info/Public`,
+        buildApiUrl(serverUrl, "System/Info/Public", this.apiBasePath),
         {
           method: "GET",
           headers: this.makeJsonHeaders(request.origin)
@@ -287,7 +324,8 @@ export class JellyfinMediaProvider implements MediaProvider {
             category: publicInfoResponse.status >= 500 ? "network" : "unknown",
             message: safeMessageFromStatus(
               publicInfoResponse.status,
-              "Jellyfin preflight failed while checking server info"
+              `${this.displayName} preflight failed while checking server info`,
+              this.displayName
             ),
             statusCode: publicInfoResponse.status,
             retriable: publicInfoResponse.status >= 500
@@ -308,26 +346,26 @@ export class JellyfinMediaProvider implements MediaProvider {
           ok: false,
           error: {
             category: "version",
-            message: "Jellyfin preflight could not determine server version",
+            message: `${this.displayName} preflight could not determine server version`,
             retriable: false
           }
         };
       }
 
       const majorVersion = parseMajorVersion(version);
-      if (majorVersion === null || majorVersion < 10) {
+      if (majorVersion === null || majorVersion < this.minSupportedMajorVersion) {
         return {
           ok: false,
           error: {
             category: "version",
-            message: "Jellyfin server version is not supported",
+            message: `${this.displayName} server version is not supported`,
             retriable: false
           }
         };
       }
 
       const authCheckResponse = await this.fetchWithTimeout(
-        `${serverUrl}/Users/AuthenticateByName`,
+        buildApiUrl(serverUrl, "Users/AuthenticateByName", this.apiBasePath),
         {
           method: "POST",
           headers: this.makeJsonHeaders(request.origin),
@@ -346,7 +384,7 @@ export class JellyfinMediaProvider implements MediaProvider {
           ok: false,
           error: {
             category: "version",
-            message: "Jellyfin authentication endpoint is unavailable",
+            message: `${this.displayName} authentication endpoint is unavailable`,
             statusCode: authCheckResponse.status,
             retriable: false
           }
@@ -360,7 +398,8 @@ export class JellyfinMediaProvider implements MediaProvider {
             category: authCheckResponse.status >= 500 ? "network" : "unknown",
             message: safeMessageFromStatus(
               authCheckResponse.status,
-              "Jellyfin preflight failed while checking authentication endpoint"
+              `${this.displayName} preflight failed while checking authentication endpoint`,
+              this.displayName
             ),
             statusCode: authCheckResponse.status,
             retriable: authCheckResponse.status >= 500
@@ -376,7 +415,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     } catch (error) {
       return {
         ok: false,
-        error: toProviderError(error, "Jellyfin preflight failed")
+        error: toProviderError(error, `${this.displayName} preflight failed`, this.displayName)
       };
     }
   }
@@ -388,7 +427,7 @@ export class JellyfinMediaProvider implements MediaProvider {
 
     try {
       response = await this.fetchWithTimeout(
-        `${serverUrl}/Users/AuthenticateByName`,
+        buildApiUrl(serverUrl, "Users/AuthenticateByName", this.apiBasePath),
         {
           method: "POST",
           headers: {
@@ -396,7 +435,8 @@ export class JellyfinMediaProvider implements MediaProvider {
             Authorization: makeAuthHeader(
               credentials.clientName,
               credentials.deviceId,
-              this.appVersion
+              this.appVersion,
+              this.authorizationScheme
             )
           },
           body: JSON.stringify({
@@ -407,13 +447,15 @@ export class JellyfinMediaProvider implements MediaProvider {
         DEFAULT_TIMEOUT_MS
       );
     } catch (error) {
-      throw new JellyfinProviderError(toProviderError(error, "Jellyfin authentication request failed"));
+      throw new JellyfinProviderError(
+        toProviderError(error, `${this.displayName} authentication request failed`, this.displayName)
+      );
     }
 
     if (response.status === 401 || response.status === 403) {
       throw new JellyfinProviderError({
         category: "auth",
-        message: "Invalid Jellyfin username or password",
+        message: `Invalid ${this.displayName} username or password`,
         statusCode: response.status,
         retriable: false
       });
@@ -422,7 +464,11 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (!response.ok) {
       throw new JellyfinProviderError({
         category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(response.status, "Jellyfin authentication failed"),
+        message: safeMessageFromStatus(
+          response.status,
+          `${this.displayName} authentication failed`,
+          this.displayName
+        ),
         statusCode: response.status,
         retriable: response.status >= 500
       });
@@ -435,7 +481,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (!accessToken || !userId) {
       throw new JellyfinProviderError({
         category: "auth",
-        message: "Jellyfin authentication response is missing session data",
+        message: `${this.displayName} authentication response is missing session data`,
         retriable: false
       });
     }
@@ -461,7 +507,7 @@ export class JellyfinMediaProvider implements MediaProvider {
 
     try {
       response = await this.fetchWithTimeout(
-        `${serverUrl}/Users/Me`,
+        buildApiUrl(serverUrl, "Users/Me", this.apiBasePath),
         {
           method: "GET",
           headers: this.makeSessionHeaders(snapshot.accessToken)
@@ -469,7 +515,9 @@ export class JellyfinMediaProvider implements MediaProvider {
         DEFAULT_TIMEOUT_MS
       );
     } catch (error) {
-      throw new JellyfinProviderError(toProviderError(error, "Jellyfin session restore failed"));
+      throw new JellyfinProviderError(
+        toProviderError(error, `${this.displayName} session restore failed`, this.displayName)
+      );
     }
 
     if (response.status === 401 || response.status === 403) {
@@ -479,7 +527,11 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (!response.ok) {
       throw new JellyfinProviderError({
         category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(response.status, "Jellyfin session restore failed"),
+        message: safeMessageFromStatus(
+          response.status,
+          `${this.displayName} session restore failed`,
+          this.displayName
+        ),
         statusCode: response.status,
         retriable: response.status >= 500
       });
@@ -505,7 +557,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     let response: Response;
     try {
       response = await this.fetchWithTimeout(
-        `${serverUrl}/Sessions/Logout`,
+        buildApiUrl(serverUrl, "Sessions/Logout", this.apiBasePath),
         {
           method: "POST",
           headers: this.makeSessionHeaders(session.accessToken)
@@ -513,7 +565,9 @@ export class JellyfinMediaProvider implements MediaProvider {
         DEFAULT_TIMEOUT_MS
       );
     } catch (error) {
-      throw new JellyfinProviderError(toProviderError(error, "Jellyfin session invalidation failed"));
+      throw new JellyfinProviderError(
+        toProviderError(error, `${this.displayName} session invalidation failed`, this.displayName)
+      );
     }
 
     if (response.status === 401 || response.status === 403 || response.ok) {
@@ -522,7 +576,11 @@ export class JellyfinMediaProvider implements MediaProvider {
 
     throw new JellyfinProviderError({
       category: response.status >= 500 ? "network" : "unknown",
-      message: safeMessageFromStatus(response.status, "Jellyfin session invalidation failed"),
+      message: safeMessageFromStatus(
+        response.status,
+        `${this.displayName} session invalidation failed`,
+        this.displayName
+      ),
       statusCode: response.status,
       retriable: response.status >= 500
     });
@@ -532,7 +590,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     const serverUrl = normalizeServerUrl(session.serverUrl);
 
     const response = await this.fetchWithTimeout(
-      `${serverUrl}/Users/${encodeURIComponent(session.userId)}/Views`,
+      buildApiUrl(serverUrl, `Users/${encodeURIComponent(session.userId)}/Views`, this.apiBasePath),
       {
         method: "GET",
         headers: this.makeSessionHeaders(session.accessToken)
@@ -543,7 +601,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (response.status === 401 || response.status === 403) {
       throw new JellyfinProviderError({
         category: "auth",
-        message: "Jellyfin session is not authorized to list libraries",
+        message: `${this.displayName} session is not authorized to list libraries`,
         statusCode: response.status,
         retriable: false
       });
@@ -552,7 +610,11 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (!response.ok) {
       throw new JellyfinProviderError({
         category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(response.status, "Failed to list Jellyfin libraries"),
+        message: safeMessageFromStatus(
+          response.status,
+          `Failed to list ${this.displayName} libraries`,
+          this.displayName
+        ),
         statusCode: response.status,
         retriable: response.status >= 500
       });
@@ -580,8 +642,7 @@ export class JellyfinMediaProvider implements MediaProvider {
 
     for (const libraryId of query.libraryIds) {
       const url = new URL(
-        `/Users/${encodeURIComponent(session.userId)}/Items`,
-        `${serverUrl}/`
+        buildApiUrl(serverUrl, `Users/${encodeURIComponent(session.userId)}/Items`, this.apiBasePath)
       );
 
       url.searchParams.set("ParentId", libraryId);
@@ -590,6 +651,7 @@ export class JellyfinMediaProvider implements MediaProvider {
       url.searchParams.set("StartIndex", String(startIndex));
       url.searchParams.set("IncludeItemTypes", ROOT_LIBRARY_ITEM_TYPES);
       url.searchParams.set("Fields", "SortName,OriginalTitle,Overview,Genres,Tags,People,ProductionYear,RunTimeTicks,CommunityRating,CriticRating,DateCreated,DateLastMediaAdded,PremiereDate,ImageTags,BackdropImageTags");
+      url.searchParams.set("EnableImages", "true");
       url.searchParams.set("SortBy", "DateCreated");
       url.searchParams.set("SortOrder", "Descending");
       url.searchParams.set("EnableImageTypes", "Primary,Backdrop,Logo");
@@ -611,7 +673,7 @@ export class JellyfinMediaProvider implements MediaProvider {
       if (response.status === 401 || response.status === 403) {
         throw new JellyfinProviderError({
           category: "auth",
-          message: "Jellyfin session is not authorized to list media",
+          message: `${this.displayName} session is not authorized to list media`,
           statusCode: response.status,
           retriable: false
         });
@@ -620,7 +682,11 @@ export class JellyfinMediaProvider implements MediaProvider {
       if (!response.ok) {
         throw new JellyfinProviderError({
           category: response.status >= 500 ? "network" : "unknown",
-          message: safeMessageFromStatus(response.status, "Failed to list Jellyfin media"),
+          message: safeMessageFromStatus(
+            response.status,
+            `Failed to list ${this.displayName} media`,
+            this.displayName
+          ),
           statusCode: response.status,
           retriable: response.status >= 500
         });
@@ -697,7 +763,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     }
 
     const poster: ArtworkImage = {
-      url: buildImageUrl(serverUrl, item.Id, "Primary", primaryTag)
+      url: buildImageUrl(serverUrl, item.Id, "Primary", primaryTag, this.apiBasePath)
     };
 
     const backdropTag = item.BackdropImageTags?.[0];
@@ -749,11 +815,13 @@ export class JellyfinMediaProvider implements MediaProvider {
     }
 
     if (backdropTag) {
-      mediaItem.backdrop = { url: buildImageUrl(serverUrl, item.Id, "Backdrop", backdropTag) };
+      mediaItem.backdrop = {
+        url: buildImageUrl(serverUrl, item.Id, "Backdrop", backdropTag, this.apiBasePath)
+      };
     }
 
     if (logoTag) {
-      mediaItem.logo = { url: buildImageUrl(serverUrl, item.Id, "Logo", logoTag) };
+      mediaItem.logo = { url: buildImageUrl(serverUrl, item.Id, "Logo", logoTag, this.apiBasePath) };
     }
 
     if (item.DateCreated) {
@@ -839,7 +907,7 @@ export class JellyfinMediaProvider implements MediaProvider {
     if (!allowOrigin || (allowOrigin !== "*" && allowOrigin !== origin)) {
       return {
         category: "cors",
-        message: "Jellyfin server CORS policy does not allow this origin",
+        message: `${this.displayName} server CORS policy does not allow this origin`,
         statusCode: response.status,
         retriable: false
       };
@@ -851,4 +919,23 @@ export class JellyfinMediaProvider implements MediaProvider {
 
 export function createJellyfinMediaProvider(options?: JellyfinProviderOptions): JellyfinMediaProvider {
   return new JellyfinMediaProvider(options);
+}
+
+export class EmbyMediaProvider extends JellyfinMediaProvider {
+  constructor(options: Omit<JellyfinProviderOptions, "providerId" | "displayName" | "apiBasePath" | "authorizationScheme" | "minSupportedMajorVersion"> = {}) {
+    super({
+      ...options,
+      providerId: "emby",
+      displayName: "Emby",
+      apiBasePath: "/emby",
+      authorizationScheme: "Emby",
+      minSupportedMajorVersion: 4
+    });
+  }
+}
+
+export function createEmbyMediaProvider(
+  options?: Omit<JellyfinProviderOptions, "providerId" | "displayName" | "apiBasePath" | "authorizationScheme" | "minSupportedMajorVersion">
+): EmbyMediaProvider {
+  return new EmbyMediaProvider(options);
 }
