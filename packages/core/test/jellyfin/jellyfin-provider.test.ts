@@ -328,6 +328,32 @@ describe("emby-provider-happy", () => {
 });
 
 describe("jellyfin-provider-failure", () => {
+  it("rejects explicit Jellyfin servers when Emby provider is selected", async () => {
+    const provider = createEmbyMediaProvider({
+      fetch: createFetchMock(async (url) => {
+        if (url.pathname === "/emby/System/Info/Public") {
+          return jsonResponse(
+            { Version: "10.10.3", ProductName: "Jellyfin Server" },
+            { headers: { "access-control-allow-origin": "https://app.local" } }
+          );
+        }
+
+        return new Response(null, { status: 404 });
+      })
+    });
+
+    const result = await provider.preflight({
+      serverUrl: "https://media.local",
+      origin: "https://app.local"
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.category).toBe("unknown");
+      expect(result.error.message).toContain("Emby sign-in is not available for detected Jellyfin servers");
+    }
+  });
+
   it("categorizes invalid endpoint preflight failure as network", async () => {
     const provider = new JellyfinMediaProvider({
       fetch: createFetchMock(async () => {

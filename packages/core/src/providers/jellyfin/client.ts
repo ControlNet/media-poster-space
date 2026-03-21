@@ -33,6 +33,8 @@ interface JellyfinProviderOptions {
 
 interface JellyfinPublicSystemInfo {
   Version?: string;
+  ProductName?: string;
+  ServerName?: string;
 }
 
 interface JellyfinUser {
@@ -143,6 +145,22 @@ function parseMajorVersion(version: string): number | null {
 
   const major = Number.parseInt(majorSegment, 10);
   return Number.isNaN(major) ? null : major;
+}
+
+function detectServerProduct(publicInfo: JellyfinPublicSystemInfo): "jellyfin" | "emby" | null {
+  const productName = typeof publicInfo.ProductName === "string"
+    ? publicInfo.ProductName.trim().toLowerCase()
+    : "";
+
+  if (productName.includes("jellyfin")) {
+    return "jellyfin";
+  }
+
+  if (productName.includes("emby")) {
+    return "emby";
+  }
+
+  return null;
 }
 
 function toProviderError(error: unknown, fallbackMessage: string, providerName: string): ProviderError {
@@ -340,6 +358,21 @@ export class JellyfinMediaProvider implements MediaProvider {
 
       const publicInfo = readJsonValue<JellyfinPublicSystemInfo>(await this.readJsonSafely(publicInfoResponse), {});
       const version = typeof publicInfo.Version === "string" ? publicInfo.Version : undefined;
+      const detectedProduct = detectServerProduct(publicInfo);
+
+      if (detectedProduct && detectedProduct !== this.id) {
+        const expectedProviderName = this.displayName;
+        const detectedProviderName = detectedProduct === "jellyfin" ? "Jellyfin" : "Emby";
+
+        return {
+          ok: false,
+          error: {
+            category: "unknown",
+            message: `${expectedProviderName} sign-in is not available for detected ${detectedProviderName} servers`,
+            retriable: false
+          }
+        };
+      }
 
       if (!version) {
         return {
