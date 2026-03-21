@@ -389,7 +389,7 @@ test("automatically runs preflight on startup when a remembered server address e
   await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
 })
 
-test("switches provider theming and blocks unsupported providers during phase 1", async ({ page }) => {
+test("switches provider theming, enables Emby, and keeps Plex blocked", async ({ page }) => {
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -402,12 +402,12 @@ test("switches provider theming and blocks unsupported providers during phase 1"
   }, TEST_SERVER)
 
   await page.getByTestId("provider-option-emby").click()
-  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
-  await expect(page.getByTestId("server-status-indicator")).toContainText("Emby support is coming soon")
-  await expect(page.getByTestId("server-url-input")).toBeDisabled()
+  await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
+  await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
+  await expect(page.getByTestId("server-url-input")).toBeEnabled()
   await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://emby.yourdomain.com")
-  await expect(page.getByTestId("login-submit")).toBeDisabled()
-  await expect(page.getByTestId("login-submit")).toContainText("Emby support coming soon")
+  await expect(page.getByTestId("login-submit")).toBeEnabled()
+  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Emby")
 
   await page.getByTestId("provider-option-plex").click()
   await expect(page.getByTestId("provider-support-banner")).toContainText("Plex support is coming soon")
@@ -490,12 +490,14 @@ test("ignores stale Jellyfin login completion after provider changes mid-flight"
   await page.getByTestId("login-submit").click()
 
   await page.getByTestId("provider-option-emby").click()
-  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
+  await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
+  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Emby")
 
   authenticationReleased.resolve()
 
   await page.waitForTimeout(250)
-  await expect(page.getByTestId("provider-support-banner")).toContainText("Emby support is coming soon")
+  await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
+  await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://emby.yourdomain.com")
   await expect(page.getByTestId("library-checkbox-movies-main")).toHaveCount(0)
   await expect(page.getByTestId("poster-wall-root")).toHaveCount(0)
   expect(listLibrariesRequestCount).toBe(0)
