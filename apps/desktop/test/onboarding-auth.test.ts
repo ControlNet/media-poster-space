@@ -453,7 +453,7 @@ describe("desktop onboarding auth runtime", () => {
     })
   })
 
-  it("switches provider theming and blocks unsupported providers during phase 1", async () => {
+  it("switches provider theming, enables Emby, and keeps Plex blocked", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true })
     const platformHarness = createPlatformHarness()
 
@@ -467,12 +467,12 @@ describe("desktop onboarding auth runtime", () => {
     clickByTestId("provider-option-emby")
 
     await vi.waitFor(() => {
-      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
-      expect(getElement("server-status-indicator").textContent).toContain("Emby support is coming soon")
-      expect(getInput("server-url-input").disabled).toBe(true)
+      expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
+      expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
+      expect(getInput("server-url-input").disabled).toBe(false)
       expect(getInput("server-url-input").placeholder).toBe("https://emby.yourdomain.com")
-      expect(getElement("login-submit").textContent).toContain("Emby support coming soon")
-      expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(true)
+      expect(getElement("login-submit").textContent).toContain("Authenticate Emby")
+      expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(false)
     })
 
     clickByTestId("provider-option-plex")
@@ -579,13 +579,15 @@ describe("desktop onboarding auth runtime", () => {
     clickByTestId("provider-option-emby")
 
     await vi.waitFor(() => {
-      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
+      expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
+      expect(getElement("login-submit").textContent).toContain("Authenticate Emby")
     })
 
     authenticationReleased.resolve()
 
     await vi.waitFor(() => {
-      expect(getElement("provider-support-banner").textContent).toContain("Emby support is coming soon")
+      expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
+      expect(getInput("server-url-input").placeholder).toBe("https://emby.yourdomain.com")
       expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeNull()
       expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeNull()
       expect(listLibrariesRequestCount).toBe(0)

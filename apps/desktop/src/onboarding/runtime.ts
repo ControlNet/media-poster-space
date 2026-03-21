@@ -48,6 +48,7 @@ import {
   createPosterCache,
   createRuntimePosterQueueRefillFetchAdapter,
   createMediaIngestionRuntime,
+  createEmbyMediaProvider,
   createJellyfinMediaProvider,
   normalizeWallActivePosterIndex,
   POSTER_CACHE_DEFAULT_TTL_MS,
@@ -56,6 +57,7 @@ import {
   type MediaIngestionRefreshTrigger,
   type MediaItem,
   type MediaLibrary,
+  type MediaProvider,
   type OnboardingProviderId,
   type ProviderErrorCategory,
   type ProviderSession,
@@ -169,15 +171,15 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
 }
 
 function isAvailableOnboardingProvider(providerId: OnboardingProviderId): boolean {
-  return providerId === "jellyfin"
+  return providerId === "jellyfin" || providerId === "emby"
 }
 
 function toUnavailableProviderMessage(providerId: OnboardingProviderId): string | null {
-  if (providerId === "jellyfin") {
+  if (isAvailableOnboardingProvider(providerId)) {
     return null
   }
 
-  return `${providerId === "emby" ? "Emby" : "Plex"} support is coming soon`
+  return "Plex support is coming soon"
 }
 
 function isHealthyWallPosterGridStreamApplyResult(
@@ -212,7 +214,10 @@ export function createDesktopOnboardingAppRuntime(
     warningLogger?: Pick<Console, "warn">
   } = {}
 ): OnboardingAppRuntime {
-  const provider = createJellyfinMediaProvider()
+  const providers: Record<"jellyfin" | "emby", MediaProvider> = {
+    jellyfin: createJellyfinMediaProvider(),
+    emby: createEmbyMediaProvider()
+  }
   const createElement = createOnboardingElementFactory(document)
   const localStorageRef = safeGetStorage("local")
   const sessionStorageRef = safeGetStorage("session")
@@ -249,6 +254,22 @@ export function createDesktopOnboardingAppRuntime(
   let preflightInFlightPromise: Promise<void> | null = null
   let preflightRequestNonce = 0
   let loginRequestNonce = 0
+
+  function resolveProvider(providerId: OnboardingProviderId): MediaProvider | null {
+    if (!isAvailableOnboardingProvider(providerId)) {
+      return null
+    }
+
+    return providerId === "emby" ? providers.emby : providers.jellyfin
+  }
+
+  function resolveProviderForSession(session: Pick<ProviderSession, "providerId">): MediaProvider {
+    if (session.providerId === "emby") {
+      return providers.emby
+    }
+
+    return providers.jellyfin
+  }
 
   function shouldTriggerInitialRememberedServerPreflight(): boolean {
     if (state.serverUrl.trim().length === 0 || !isAvailableOnboardingProvider(state.selectedProviderId)) {
@@ -385,7 +406,7 @@ export function createDesktopOnboardingAppRuntime(
     toPosterCacheStorageKey,
     createRuntime: ({ session, selectedLibraryIds, onStateChange }) => {
       return createMediaIngestionRuntime({
-        provider,
+        provider: resolveProviderForSession(session),
         session,
         selectedLibraryIds,
         onStateChange
@@ -393,7 +414,7 @@ export function createDesktopOnboardingAppRuntime(
     },
     createQueueRefillFetchAdapter: ({ session, selectedLibraryIds, cursor, updatedSince }) => {
       return createRuntimePosterQueueRefillFetchAdapter({
-        provider,
+        provider: resolveProviderForSession(session),
         session,
         selectedLibraryIds,
         ...(cursor ? { cursor } : {}),
@@ -808,6 +829,7 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function saveSession(session: ProviderSession): void {
+    state.selectedProviderId = session.providerId === "emby" ? "emby" : "jellyfin"
     saveOnboardingSession(sessionStorageRef, session)
     saveOnboardingSession(localStorageRef, session)
   }
@@ -837,6 +859,7 @@ export function createDesktopOnboardingAppRuntime(
       sessionStorageRef
     })
     if (sessionFromSessionStorage) {
+      state.selectedProviderId = sessionFromSessionStorage.providerId === "emby" ? "emby" : "jellyfin"
       if (!sessionStorageRef?.getItem(AUTH_SESSION_STORAGE_KEY)) {
         saveOnboardingSession(sessionStorageRef, sessionFromSessionStorage)
       }
@@ -849,6 +872,7 @@ export function createDesktopOnboardingAppRuntime(
       sessionStorageRef: localStorageRef
     })
     if (persistedSession) {
+      state.selectedProviderId = persistedSession.providerId === "emby" ? "emby" : "jellyfin"
       saveOnboardingSession(sessionStorageRef, persistedSession)
     }
 
@@ -974,7 +998,8 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   function handlePreflight(options: { force?: boolean } = {}): Promise<void> {
-    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+    const selectedProvider = resolveProvider(state.selectedProviderId)
+    if (!selectedProvider) {
       state.preflightPending = false
       state.preflightCheckedServerUrl = null
       state.preflightServerVersion = null
@@ -995,16 +1020,17 @@ export function createDesktopOnboardingAppRuntime(
     }
 
     const requestNonce = ++preflightRequestNonce
+    const requestProviderId = state.selectedProviderId
 
     const preflightPromise = runOnboardingPreflight({
       state,
       preflight: (request) => {
-        return provider.preflight(request)
+        return selectedProvider.preflight(request)
       },
       origin: window.location.origin,
       persistRememberedServer,
       shouldApplyResult: () => {
-        return requestNonce === preflightRequestNonce && state.selectedProviderId === "jellyfin"
+        return requestNonce === preflightRequestNonce && state.selectedProviderId === requestProviderId
       },
       onSuccess: () => {
         queueRememberedPasswordHydration()
@@ -1021,7 +1047,8 @@ export function createDesktopOnboardingAppRuntime(
   }
 
   async function handleLogin(): Promise<void> {
-    if (!isAvailableOnboardingProvider(state.selectedProviderId)) {
+    const selectedProvider = resolveProvider(state.selectedProviderId)
+    if (!selectedProvider) {
       state.authError = toUnavailableProviderMessage(state.selectedProviderId)
         ?? "This provider is not yet available."
       requestRender()
@@ -1036,14 +1063,15 @@ export function createDesktopOnboardingAppRuntime(
     }
 
     const requestNonce = ++loginRequestNonce
+    const requestProviderId = state.selectedProviderId
 
     await runOnboardingLogin({
       state,
       authenticate: (credentials) => {
-        return provider.authenticate(credentials)
+        return selectedProvider.authenticate(credentials)
       },
       listLibraries: (session) => {
-        return provider.listLibraries(session)
+        return selectedProvider.listLibraries(session)
       },
       clientName: "Media Poster Space Desktop",
       deviceId,
@@ -1053,7 +1081,7 @@ export function createDesktopOnboardingAppRuntime(
       saveSession,
       toAuthErrorMessage,
       shouldApplyResult: () => {
-        return requestNonce === loginRequestNonce && state.selectedProviderId === "jellyfin"
+        return requestNonce === loginRequestNonce && state.selectedProviderId === requestProviderId
       },
       resolveSelectedLibraryIds: ({ defaultSelectedLibraryIds }) => {
         const handoff = readWallHandoff()
@@ -1111,7 +1139,8 @@ export function createDesktopOnboardingAppRuntime(
     })
 
     if (activeSession) {
-      void provider.invalidateSession(activeSession).catch((error) => {
+      const activeProvider = resolveProviderForSession(activeSession)
+      void activeProvider.invalidateSession(activeSession).catch((error) => {
         appendDiagnosticsLog({
           timestamp: new Date().toISOString(),
           level: "warn",
@@ -1138,7 +1167,8 @@ export function createDesktopOnboardingAppRuntime(
     })
 
     if (activeSession) {
-      void provider.invalidateSession(activeSession).catch((error) => {
+      const activeProvider = resolveProviderForSession(activeSession)
+      void activeProvider.invalidateSession(activeSession).catch((error) => {
         appendDiagnosticsLog({
           timestamp: new Date().toISOString(),
           level: "warn",
@@ -1203,7 +1233,7 @@ export function createDesktopOnboardingAppRuntime(
         state.password = ""
         requestRender()
 
-        if (providerId === "jellyfin") {
+        if (isAvailableOnboardingProvider(providerId)) {
           void handlePreflight({ force: false })
         }
       },
