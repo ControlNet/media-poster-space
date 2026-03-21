@@ -124,8 +124,18 @@ function inferRepositoryTruth(repositorySignals) {
       web: "No"
     },
     "Provider coverage": {
-      desktop: repositorySignals.desktopRuntime.includes("createJellyfinMediaProvider()") ? "Jellyfin only" : "Unknown",
-      web: repositorySignals.webRuntime.includes("createJellyfinMediaProvider()") ? "Jellyfin only" : "Unknown"
+      desktop: repositorySignals.desktopRuntime.includes("createJellyfinMediaProvider()")
+        && repositorySignals.desktopRuntime.includes("createEmbyMediaProvider()")
+        ? "Jellyfin + Emby"
+        : repositorySignals.desktopRuntime.includes("createJellyfinMediaProvider()")
+          ? "Jellyfin only"
+          : "Unknown",
+      web: repositorySignals.webRuntime.includes("createJellyfinMediaProvider()")
+        && repositorySignals.webRuntime.includes("createEmbyMediaProvider()")
+        ? "Jellyfin + Emby"
+        : repositorySignals.webRuntime.includes("createJellyfinMediaProvider()")
+          ? "Jellyfin only"
+          : "Unknown"
     }
   }
 }
@@ -220,7 +230,6 @@ async function main() {
   if (args.strict) {
     const unsupportedStrictPatterns = [
       /supports\s+plex/i,
-      /supports\s+emby/i,
       /playback controls\s*\|\s*yes/i,
       /pwa install\s*\|\s*(yes|supported)/i,
       /remember password\s*\|\s*yes\s*\|\s*yes/i
