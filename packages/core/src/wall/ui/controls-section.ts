@@ -153,13 +153,12 @@ export function createWallControlsSection(
   navbar.style.backdropFilter = "blur(30px) saturate(1.5)"
   navbar.style.pointerEvents = "auto"
 
-  navbar.append(refreshButton)
-
+  let fullscreenButton: HTMLButtonElement | null = null
   if (options.showFullscreenControl && options.onToggleFullscreen) {
     const expandIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`
     const collapseIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`
-    
-    const fullscreenButton = createElement("button", { testId: "wall-fullscreen-button" }) as HTMLButtonElement
+
+    fullscreenButton = createElement("button", { testId: "wall-fullscreen-button" }) as HTMLButtonElement
     fullscreenButton.type = "button"
     fullscreenButton.title = options.fullscreenActive ? "Exit fullscreen" : "Enter fullscreen"
     fullscreenButton.innerHTML = options.fullscreenActive ? collapseIcon : expandIcon
@@ -167,7 +166,6 @@ export function createWallControlsSection(
     attachButtonHover(fullscreenButton, "neutral")
     fullscreenButton.style.pointerEvents = "auto"
     bindMouseOnlyButtonAction(fullscreenButton, options.onToggleFullscreen)
-    navbar.append(fullscreenButton)
   }
 
   const separator = createElement("div")
@@ -175,9 +173,12 @@ export function createWallControlsSection(
   separator.style.height = "1.5rem"
   separator.style.background = "rgba(255, 255, 255, 0.15)"
   separator.style.margin = "0 0.2rem"
-  navbar.append(separator)
 
-  navbar.append(githubLink, logoutButton)
+  // Leaving the wall on the left, acting on the wall on the right.
+  navbar.append(githubLink, logoutButton, separator, refreshButton)
+  if (fullscreenButton) {
+    navbar.append(fullscreenButton)
+  }
 
   const calloutStack = createElement("div")
   calloutStack.style.display = "flex"
