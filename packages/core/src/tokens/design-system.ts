@@ -24,6 +24,48 @@ export const afterglowOrbitLayer = {
   contrastSupport: "#d8deea"
 } as const;
 
+/**
+ * Flat surface layer for the connect (onboarding) screen.
+ *
+ * Deliberately separate from `cinematicDarkPalette`, which the wall depends on:
+ * the connect screen is matte with hairline borders and near-square corners, and
+ * takes all of its depth from solid tonal steps rather than glass and glow.
+ */
+export const connectSurfaceLayer = {
+  canvas: "#0b0d10",
+  rail: "#08090c",
+  panelSelected: "#0e1116",
+  card: "#111418",
+  cardRaised: "#161b21",
+  hairline: "rgba(255, 255, 255, 0.09)",
+  hairlineStrong: "rgba(255, 255, 255, 0.14)",
+  textPrimary: "#f2f4f6",
+  textMuted: "rgba(242, 244, 246, 0.58)",
+  textDim: "rgba(242, 244, 246, 0.38)",
+  textFaint: "rgba(242, 244, 246, 0.28)",
+  /** Foreground for anything painted in a platform accent - see getContrastRatio. */
+  onAccent: "#0b0d10",
+  radius: "2px",
+  railWidth: "120px",
+  /** Rail hover is paint-only: lifting the background must not change layout. */
+  railHover: "#0d1116",
+  railWashOpacity: "0.16"
+} as const;
+
+/**
+ * Timings for the platform-switch transition on the connect screen.
+ * Panel width carries the motion; tint and content follow it.
+ */
+export const connectMotion = {
+  panelResizeMs: 520,
+  panelResizeEasing: "cubic-bezier(0.22, 0.8, 0.2, 1)",
+  tintMs: 420,
+  railFadeMs: 240,
+  railWashMs: 300,
+  contentRiseMs: 420,
+  contentStaggerMs: 80
+} as const;
+
 export const spacingScale = {
   "2xs": "0.125rem",
   xs: "0.25rem",
@@ -73,6 +115,7 @@ export const brandTypography = {
 export type SpacingToken = keyof typeof spacingScale;
 export type RadiusToken = keyof typeof radiusScale;
 export type ElevationToken = keyof typeof elevationScale;
+export type ConnectSurfaceToken = keyof typeof connectSurfaceLayer;
 
 export interface DynamicAccentTokens {
   source: "media" | "fallback";

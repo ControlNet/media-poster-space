@@ -1,0 +1,257 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Connect screen"
+    },
+    {
+      "id": "page-2",
+      "name": "Not chosen"
+    },
+    {
+      "id": "page-3",
+      "name": "Reference"
+    },
+    {
+      "id": "page-4",
+      "name": "Exploration"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Step 01 · Connect",
+      "page": "page-1",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "is_interactive": true
+    },
+    {
+      "file": "Libraries.dc.html",
+      "title": "Step 02 · Libraries",
+      "page": "page-1",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Marquee.dc.html",
+      "title": "A · Marquee",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Console.dc.html",
+      "title": "B · Console",
+      "page": "page-2",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Stepper.dc.html",
+      "title": "C · Stepper",
+      "page": "page-2",
+      "x": 3120,
+      "y": 0,
+      "w": 1080,
+      "h": 1000
+    },
+    {
+      "file": "Baseline.dc.html",
+      "title": "Baseline — shipping today",
+      "page": "page-3",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1000
+    },
+    {
+      "file": "States.dc.html",
+      "title": "State inventory",
+      "page": "page-1",
+      "x": 3120,
+      "y": 0,
+      "w": 1180,
+      "h": 1040
+    },
+    {
+      "file": "SwissGrid.dc.html",
+      "title": "E · Swiss grid",
+      "page": "page-4",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Phosphor.dc.html",
+      "title": "F · Phosphor terminal",
+      "page": "page-4",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Editorial.dc.html",
+      "title": "G · Editorial",
+      "page": "page-4",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Brutalist.dc.html",
+      "title": "H · Poster brutalism",
+      "page": "page-4",
+      "x": 0,
+      "y": 1150,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Blueprint.dc.html",
+      "title": "I · Blueprint",
+      "page": "page-4",
+      "x": 1560,
+      "y": 1150,
+      "w": 1440,
+      "h": 900
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-chosen",
+      "page": "page-1",
+      "x": 0,
+      "y": -340,
+      "w": 3000,
+      "text": "D · PROVIDER-FIRST — CHOSEN. The platform you pick owns the panel; the two you did not collapse to 120px rails you can click back to.\nSTEP 01 IS LIVE: click a rail and it plays the switch — the panel widths slide over 520ms, the collapsed rail fades out, the new panel's hero, banner and form rise in on an 80ms stagger, and the edge bar and primary button cross-fade to the new platform colour over 420ms.\nHOVER IS PAINT-ONLY: a wash in the platform colour rises from the bottom of the rail, its edge bar goes to full strength and its logo drops the grayscale. Nothing changes width — an earlier version widened the rail on hover, which overflowed the row and shifted the whole selected panel sideways. All of it is honoured under prefers-reduced-motion.\nClicking is the control here, so this artboard has no Provider tweak chip; the other two still have one."
+    },
+    {
+      "id": "note-step1",
+      "page": "page-1",
+      "x": 0,
+      "y": -160,
+      "w": 1440,
+      "text": "Step 01 — server address, credentials, remember toggles. The 4px edge bar and the logo watermark carry the platform colour.\nThe standfirst paragraph and the idle status line are gone on purpose: the status bar only appears once preflight has something real to say (checking, reachable, unavailable, or unsupported), so the resting screen is just the fields."
+    },
+    {
+      "id": "note-step2",
+      "page": "page-1",
+      "x": 1560,
+      "y": -160,
+      "w": 1440,
+      "text": "Step 02 — library selection, same three-panel structure so the rails stay reachable. Library names and kinds are sample data; kinds are the four the code allows (movies, shows, mixed, other). Change server returns to step 01 without a fresh sign-in."
+    },
+    {
+      "id": "note-notchosen",
+      "page": "page-2",
+      "x": 0,
+      "y": -390,
+      "w": 1440,
+      "text": "The three you did not pick, left in the same visual language so the comparison stays honest. Delete this page when you are done with it."
+    },
+    {
+      "id": "note-a",
+      "page": "page-2",
+      "x": 0,
+      "y": -210,
+      "w": 1440,
+      "text": "A · Marquee — the wall on the left, the form on the right, split 58/42. A 3px platform-colour seam replaces the old glow and the poster tiles are flat matte swatches.\nWhy: onboarding is a gate you pass once, for a product whose whole value is the wall — so show the wall.\nTradeoff: the poster panel is pure decoration on a small screen, and the form column stays narrow enough that username and password have to share a row."
+    },
+    {
+      "id": "note-b",
+      "page": "page-2",
+      "x": 1560,
+      "y": -210,
+      "w": 1440,
+      "text": "B · Console — top bar, a 340px platform list plus live preflight readout on the left, form panel on the right.\nWhy: the numbers the app already fetches (version, latency, reachability) become the content instead of one line of chip text.\nTradeoff: still the most utilitarian of the four — it reads like an admin panel, which is an odd doorway to a screensaver."
+    },
+    {
+      "id": "note-c",
+      "page": "page-2",
+      "x": 3120,
+      "y": -210,
+      "w": 1080,
+      "text": "C · Stepper — the real flow made explicit: platform, server, sign in, libraries. Finished steps collapse to a line; markers are squares now, not glowing discs.\nWhy: the shipping card stacks four concerns at once, and the library step currently appears out of nowhere.\nTradeoff: more vertical travel, slower for a returning user who only needs to retype a password, and while step 01 is collapsed only the chosen platform's logo is on screen."
+    },
+    {
+      "id": "note-baseline",
+      "page": "page-3",
+      "x": 0,
+      "y": -200,
+      "w": 1080,
+      "text": "What the app renders today, rebuilt from packages/core/src/runtime/onboarding-form.ts. Kept only as the before picture."
+    },
+    {
+      "id": "note-states",
+      "page": "page-1",
+      "x": 3120,
+      "y": -200,
+      "w": 1180,
+      "text": "State inventory — not a screen, a sheet. Every status and error the connect screen can produce, with the copy the app actually generates (formatServerStatusText, plus the error strings in onboarding-workflow.ts), so you can judge all five tones side by side instead of driving the app into each state. Redrawn in the chosen language; the Provider tweak still works here."
+    },
+    {
+      "id": "note-exploration",
+      "page": "page-4",
+      "x": 0,
+      "y": -390,
+      "w": 1440,
+      "text": "The wider exploration, kept for reference. E still uses the filled colour block for its logos — that is the whole Swiss device in that direction, so it stays as drawn; everywhere else the block is gone."
+    },
+    {
+      "id": "note-e",
+      "page": "page-4",
+      "x": 0,
+      "y": -210,
+      "w": 1440,
+      "text": "E · Swiss grid — neutral near-black, one full-height flat field of the platform colour, Archivo carrying the whole hierarchy. Rules and type only: no cards, no glass, no radii, no shadows. The selected platform row inverts to cream.\nWhy: the three-colour idea taken literally — the colour is a solid band of the screen rather than an edge glow.\nTradeoff: it lives or dies on typographic discipline, and the cream rules introduce a second brand voice to maintain next to the wall's own."
+    },
+    {
+      "id": "note-f",
+      "page": "page-4",
+      "x": 1560,
+      "y": -210,
+      "w": 1440,
+      "text": "F · Phosphor terminal — the whole screen is one mono readout: a numbered platform menu with a colour bar each, fields as prompts with a live caret, preflight as a log.\nWhy: the people wiring this up already SSH into the box, and the app's own preflight data becomes the content instead of a chip.\nTradeoff: illegible as a product to anyone who is not that person, and scanlines are a taste people either love or refuse."
+    },
+    {
+      "id": "note-g",
+      "page": "page-4",
+      "x": 3120,
+      "y": -210,
+      "w": 1440,
+      "text": "G · Editorial — warm espresso stock instead of paper, Bodoni over Newsreader, the platform colour as spot ink on rules and markers. Status sits in the margin as a note, not a chip.\nWhy: the wall is about looking at pictures, so its front matter can read like a printed programme rather than a control panel.\nTradeoff: italic serif at small sizes is the least legible option in this set, and warm brown-black is the one ground here that will not sit flush against the wall's cool #080c14."
+    },
+    {
+      "id": "note-h",
+      "page": "page-4",
+      "x": 0,
+      "y": 960,
+      "w": 1440,
+      "text": "H · Poster brutalism — pure black, Anton at 7.4rem in the platform colour, 4px white rules, hard offset shadows, everything a degree or two off square.\nWhy: by far the most memorable of the set, and switching platform repaints the largest object on screen.\nTradeoff: still loud enough to fight the poster art it is introducing, and all those rotations are a real maintenance tax in production CSS."
+    },
+    {
+      "id": "note-i",
+      "page": "page-4",
+      "x": 1560,
+      "y": 960,
+      "w": 1440,
+      "text": "I · Blueprint — the connection drawn as a schematic on drafting paper: three source nodes feeding one bus, numbered callouts with notes in the margin, a title block in the corner.\nWhy: it explains what is actually happening, which the current card never does.\nTradeoff: the metaphor spends a lot of screen on three text fields, and the cyan grid competes with the platform colour for attention."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

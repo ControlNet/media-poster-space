@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,600&family=Newsreader:ital,wght@0,300;0,400;0,500;1,300&display=swap">
+  <style>
+    body { margin: 0; font-family: "Newsreader", Georgia, "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+    a { color: #ece2d1; text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: #b3a693; }
+    .pcol[data-active="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent) !important; }
+    .pcol[data-active="true"] .pcol-rule { height: 11px !important; }
+    .pcol[data-active="true"] .pcol-mark { opacity: 1 !important; }
+    .pcol[data-active="true"] .pcol-name { color: #f6efe2 !important; }
+    .cbx[data-checked="false"] { background: transparent !important; }
+    .cbx[data-checked="false"] svg { display: none; }
+    .go[data-disabled="true"] { background: transparent !important; color: rgba(236, 226, 209, 0.45) !important; border-color: rgba(236, 226, 209, 0.45) !important; border-style: dotted !important; }
+  </style>
+</helmet>
+<div style="--accent: {{ accent }}; width: 1440px; height: 900px; background: #14100c; color: #ece2d1; padding: 3rem 4rem; display: grid; align-content: start; gap: 1.4rem; overflow: hidden; box-sizing: border-box;">
+
+  <div style="border-top: 1px solid #ece2d1; border-bottom: 3px solid #ece2d1; padding: 0.55rem 0; display: flex; justify-content: space-between; gap: 2rem; font-size: 0.72rem; letter-spacing: 0.28em; text-transform: uppercase; color: #ece2d1;">
+    <span>Media Poster Space</span>
+    <span style="color: rgba(236, 226, 209, 0.55);">No. 01 — Connection</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 3.5rem; align-items: end;">
+    <h1 style="margin: 0; font-family: 'Bodoni Moda', Didot, 'Times New Roman', serif; font-weight: 400; font-size: 3.6rem; line-height: 1.02; letter-spacing: -0.01em; color: #f6efe2;">Connect a media server.</h1>
+    <p style="margin: 0 0 0.4rem 0; font-style: italic; font-weight: 300; font-size: 1.22rem; line-height: 1.55; color: rgba(236, 226, 209, 0.72);">Point the wall at a Jellyfin, Emby or Plex library. It signs in once, then keeps itself current — you should not have to come back here.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.75rem; padding-top: 0.4rem;">
+    <div class="pcol" data-active="{{ jellyfinActive }}" style="display: grid; gap: 0.55rem; padding: 0.9rem; cursor: pointer;">
+      <div class="pcol-rule" style="height: 5px; background: #aa5cc3;"></div>
+      <div style="display: flex; align-items: baseline; gap: 0.6rem;">
+        <span class="pcol-mark" style="display: grid; place-items: center; color: #aa5cc3; opacity: 0.4; flex: none; transform: translateY(2px);"><svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M12 .002C8.826.002-1.398 18.537.16 21.666c1.56 3.129 22.14 3.094 23.682 0C25.384 18.573 15.177 0 12 0zm7.76 18.949c-1.008 2.028-14.493 2.05-15.514 0C3.224 16.9 9.92 4.755 12.003 4.755c2.081 0 8.77 12.166 7.759 14.196zM12 9.198c-1.054 0-4.446 6.15-3.93 7.189.518 1.04 7.348 1.027 7.86 0 .511-1.027-2.874-7.19-3.93-7.19z"></path></svg></span>
+        <span class="pcol-name" style="font-family: 'Bodoni Moda', Didot, serif; font-size: 1.5rem; color: rgba(236, 226, 209, 0.6);">Jellyfin</span>
+      </div>
+      <span style="font-size: 0.68rem; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(236, 226, 209, 0.5);">Ready · open source</span>
+    </div>
+    <div class="pcol" data-active="{{ embyActive }}" style="display: grid; gap: 0.55rem; padding: 0.9rem; cursor: pointer;">
+      <div class="pcol-rule" style="height: 5px; background: #52b54b;"></div>
+      <div style="display: flex; align-items: baseline; gap: 0.6rem;">
+        <span class="pcol-mark" style="display: grid; place-items: center; color: #52b54b; opacity: 0.4; flex: none; transform: translateY(2px);"><svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M11.041 0c-.007 0-1.456 1.43-3.219 3.176L4.615 6.352l.512.513.512.512-2.819 2.791L0 12.961l1.83 1.848c1.006 1.016 2.438 2.46 3.182 3.209l1.351 1.359.508-.496c.28-.273.515-.498.524-.498.008 0 1.266 1.264 2.794 2.808L12.97 24l.187-.182c.23-.225 5.007-4.95 5.717-5.656l.52-.516-.502-.513c-.276-.282-.5-.52-.496-.53.003-.009 1.264-1.26 2.802-2.783 1.538-1.522 2.8-2.776 2.803-2.785.005-.012-3.617-3.684-6.107-6.193L17.65 4.6l-.505.505c-.279.278-.517.501-.53.497-.013-.005-1.27-1.267-2.793-2.805A449.655 449.655 0 0011.041 0zM9.223 7.367c.091.038 7.951 4.608 7.957 4.627.003.013-1.781 1.056-3.965 2.32a999.898 999.898 0 01-3.996 2.307c-.019.006-.026-1.266-.026-4.629 0-3.7.007-4.634.03-4.625Z"></path></svg></span>
+        <span class="pcol-name" style="font-family: 'Bodoni Moda', Didot, serif; font-size: 1.5rem; color: rgba(236, 226, 209, 0.6);">Emby</span>
+      </div>
+      <span style="font-size: 0.68rem; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(236, 226, 209, 0.5);">Ready · self hosted</span>
+    </div>
+    <div class="pcol" data-active="{{ plexActive }}" style="display: grid; gap: 0.55rem; padding: 0.9rem; cursor: pointer;">
+      <div class="pcol-rule" style="height: 5px; background: #e5a00d;"></div>
+      <div style="display: flex; align-items: baseline; gap: 0.6rem;">
+        <span class="pcol-mark" style="display: grid; place-items: center; color: #e5a00d; opacity: 0.4; flex: none; transform: translateY(2px);"><svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M3.987 8.409c-.96 0-1.587.28-2.12.933v-.72H0v8.88s.038.018.127.037c.138.03.821.187 1.331-.249.441-.377.542-.814.542-1.318v-1.283c.533.573 1.147.813 2 .813 1.84 0 3.253-1.493 3.253-3.48 0-2.12-1.36-3.613-3.266-3.613Zm16.748 5.595.406.591c.391.614.894.906 1.492.908.621-.012 1.064-.562 1.226-.755 0 0-.307-.27-.686-.72-.517-.614-1.214-1.755-1.24-1.803l-1.198 1.779Zm-3.205-1.955c0-2.08-1.52-3.64-3.52-3.64s-3.467 1.587-3.467 3.573a3.48 3.48 0 0 0 3.507 3.52c1.413 0 2.626-.84 3.253-2.293h-2.04l-.093.093c-.427.4-.72.533-1.227.533-.787 0-1.373-.506-1.453-1.266h4.986c.04-.214.054-.307.054-.52Zm-7.671-.219c0 .769.11 1.701.868 2.722l.056.069c-.306.526-.742.88-1.248.88-.399 0-.814-.211-1.138-.579a2.177 2.177 0 0 1-.538-1.441V6.409H9.86l-.001 5.421Zm9.283 3.46h-2.39l2.247-3.332-2.247-3.335h2.39l2.248 3.335-2.248 3.332Zm1.593-1.286Zm-17.162-.342c-.933 0-1.68-.773-1.68-1.72s.76-1.666 1.68-1.666c.92 0 1.68.733 1.68 1.68 0 .946-.733 1.706-1.68 1.706Zm18.361-1.974L24 8.622h-2.391l-.87 1.293 1.195 1.773Zm-9.404-.466c.16-.706.72-1.133 1.493-1.133.773 0 1.373.467 1.507 1.133h-3Z"></path></svg></span>
+        <span class="pcol-name" style="font-family: 'Bodoni Moda', Didot, serif; font-size: 1.5rem; color: rgba(236, 226, 209, 0.6);">Plex</span>
+      </div>
+      <span style="font-size: 0.68rem; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(236, 226, 209, 0.5);">Coming soon</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 3.5rem; border-top: 1px solid rgba(236, 226, 209, 0.3); padding-top: 1.5rem;">
+
+    <div style="display: grid; gap: 1.35rem; align-content: start;">
+      <label style="display: grid; gap: 0.4rem;">
+        <span style="font-size: 0.66rem; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(236, 226, 209, 0.55);">Server address</span>
+        <span style="font-size: 1.18rem; padding-bottom: 0.4rem; border-bottom: 1px solid rgba(236, 226, 209, 0.45);">{{ serverValue }}</span>
+      </label>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem;">
+        <label style="display: grid; gap: 0.4rem;">
+          <span style="font-size: 0.66rem; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(236, 226, 209, 0.55);">Username</span>
+          <span style="font-size: 1.18rem; padding-bottom: 0.4rem; border-bottom: 1px solid rgba(236, 226, 209, 0.45);">curator</span>
+        </label>
+        <label style="display: grid; gap: 0.4rem;">
+          <span style="font-size: 0.66rem; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(236, 226, 209, 0.55);">Password</span>
+          <span style="font-size: 1.18rem; letter-spacing: 0.14em; padding-bottom: 0.4rem; border-bottom: 1px solid rgba(236, 226, 209, 0.45);">••••••••••</span>
+        </label>
+      </div>
+      <div class="go" data-disabled="{{ primaryDisabled }}" style="margin-top: 0.4rem; justify-self: start; padding: 0.85rem 2.25rem; background: var(--accent); border: 1px solid #ece2d1; color: #14100c; font-family: 'Bodoni Moda', Didot, serif; font-size: 1rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer;">{{ authLabel }}</div>
+    </div>
+
+    <div style="display: grid; gap: 1.1rem; align-content: start; border-left: 1px solid rgba(236, 226, 209, 0.22); padding-left: 1.75rem;">
+      <div style="display: grid; gap: 0.5rem;">
+        <span style="display: inline-flex; align-items: center; gap: 0.6rem; font-size: 0.62rem; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(236, 226, 209, 0.45);"><span style="display: grid; place-items: center; color: var(--accent);"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="{{ providerIconPath }}"></path></svg></span>Status</span>
+        <div style="display: flex; gap: 0.6rem; align-items: baseline;">
+          <span style="width: 9px; height: 9px; background: var(--accent); display: block; flex: none; transform: translateY(-1px);"></span>
+          <span style="font-style: italic; font-size: 0.98rem; line-height: 1.5; color: rgba(236, 226, 209, 0.78);">{{ statusText }}</span>
+        </div>
+      </div>
+
+      <div style="display: grid; gap: 0.6rem; padding-top: 0.4rem; border-top: 1px solid rgba(236, 226, 209, 0.18);">
+        <label style="display: flex; align-items: center; gap: 0.65rem; cursor: pointer;">
+          <span class="cbx" data-checked="true" style="width: 13px; height: 13px; border: 1px solid #ece2d1; background: #ece2d1; display: grid; place-items: center; flex: none; box-sizing: border-box;">
+            <svg viewBox="0 0 12 12" width="8" height="8" aria-hidden="true"><path d="M2.2 6.2 4.7 8.6 9.8 3.5" fill="none" stroke="#14100c" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </span>
+          <span style="font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(236, 226, 209, 0.7);">Remember connection</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.65rem; cursor: pointer;">
+          <span class="cbx" data-checked="true" style="width: 13px; height: 13px; border: 1px solid #ece2d1; background: #ece2d1; display: grid; place-items: center; flex: none; box-sizing: border-box;">
+            <svg viewBox="0 0 12 12" width="8" height="8" aria-hidden="true"><path d="M2.2 6.2 4.7 8.6 9.8 3.5" fill="none" stroke="#14100c" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </span>
+          <span style="font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(236, 226, 209, 0.7);">Remember username</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.65rem; cursor: pointer;">
+          <span class="cbx" data-checked="false" style="width: 13px; height: 13px; border: 1px solid #ece2d1; background: transparent; display: grid; place-items: center; flex: none; box-sizing: border-box;">
+            <svg viewBox="0 0 12 12" width="8" height="8" aria-hidden="true"><path d="M2.2 6.2 4.7 8.6 9.8 3.5" fill="none" stroke="#14100c" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </span>
+          <span style="font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(236, 226, 209, 0.7);">Remember password</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div style="border-top: 1px solid #ece2d1; padding-top: 0.55rem; display: flex; justify-content: space-between; gap: 2rem; font-size: 0.66rem; letter-spacing: 0.24em; text-transform: uppercase;">
+    <span>01 Connect</span>
+    <span style="color: rgba(236, 226, 209, 0.4);">02 Libraries</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"provider":{"editor":"enum","options":["jellyfin","emby","plex"],"default":"emby"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const jellyfinPath = "M12 .002C8.826.002-1.398 18.537.16 21.666c1.56 3.129 22.14 3.094 23.682 0C25.384 18.573 15.177 0 12 0zm7.76 18.949c-1.008 2.028-14.493 2.05-15.514 0C3.224 16.9 9.92 4.755 12.003 4.755c2.081 0 8.77 12.166 7.759 14.196zM12 9.198c-1.054 0-4.446 6.15-3.93 7.189.518 1.04 7.348 1.027 7.86 0 .511-1.027-2.874-7.19-3.93-7.19z";
+    const embyPath = "M11.041 0c-.007 0-1.456 1.43-3.219 3.176L4.615 6.352l.512.513.512.512-2.819 2.791L0 12.961l1.83 1.848c1.006 1.016 2.438 2.46 3.182 3.209l1.351 1.359.508-.496c.28-.273.515-.498.524-.498.008 0 1.266 1.264 2.794 2.808L12.97 24l.187-.182c.23-.225 5.007-4.95 5.717-5.656l.52-.516-.502-.513c-.276-.282-.5-.52-.496-.53.003-.009 1.264-1.26 2.802-2.783 1.538-1.522 2.8-2.776 2.803-2.785.005-.012-3.617-3.684-6.107-6.193L17.65 4.6l-.505.505c-.279.278-.517.501-.53.497-.013-.005-1.27-1.267-2.793-2.805A449.655 449.655 0 0011.041 0zM9.223 7.367c.091.038 7.951 4.608 7.957 4.627.003.013-1.781 1.056-3.965 2.32a999.898 999.898 0 01-3.996 2.307c-.019.006-.026-1.266-.026-4.629 0-3.7.007-4.634.03-4.625Z";
+    const plexPath = "M3.987 8.409c-.96 0-1.587.28-2.12.933v-.72H0v8.88s.038.018.127.037c.138.03.821.187 1.331-.249.441-.377.542-.814.542-1.318v-1.283c.533.573 1.147.813 2 .813 1.84 0 3.253-1.493 3.253-3.48 0-2.12-1.36-3.613-3.266-3.613Zm16.748 5.595.406.591c.391.614.894.906 1.492.908.621-.012 1.064-.562 1.226-.755 0 0-.307-.27-.686-.72-.517-.614-1.214-1.755-1.24-1.803l-1.198 1.779Zm-3.205-1.955c0-2.08-1.52-3.64-3.52-3.64s-3.467 1.587-3.467 3.573a3.48 3.48 0 0 0 3.507 3.52c1.413 0 2.626-.84 3.253-2.293h-2.04l-.093.093c-.427.4-.72.533-1.227.533-.787 0-1.373-.506-1.453-1.266h4.986c.04-.214.054-.307.054-.52Zm-7.671-.219c0 .769.11 1.701.868 2.722l.056.069c-.306.526-.742.88-1.248.88-.399 0-.814-.211-1.138-.579a2.177 2.177 0 0 1-.538-1.441V6.409H9.86l-.001 5.421Zm9.283 3.46h-2.39l2.247-3.332-2.247-3.335h2.39l2.248 3.335-2.248 3.332Zm1.593-1.286Zm-17.162-.342c-.933 0-1.68-.773-1.68-1.72s.76-1.666 1.68-1.666c.92 0 1.68.733 1.68 1.68 0 .946-.733 1.706-1.68 1.706Zm18.361-1.974L24 8.622h-2.391l-.87 1.293 1.195 1.773Zm-9.404-.466c.16-.706.72-1.133 1.493-1.133.773 0 1.373.467 1.507 1.133h-3Z";
+
+    const providers = {
+      jellyfin: { label: "Jellyfin", accent: "#aa5cc3", server: "https://jellyfin.home.lan", version: "10.9.11", latency: 38, supported: true , iconPath: jellyfinPath },
+      emby: { label: "Emby", accent: "#52b54b", server: "https://emby.home.lan", version: "4.8.10.0", latency: 44, supported: true , iconPath: embyPath },
+      plex: { label: "Plex", accent: "#e5a00d", server: "https://plex.home.lan", version: "1.40.2", latency: 61, supported: false , iconPath: plexPath }
+    };
+
+    const id = providers[this.props.provider] ? this.props.provider : "emby";
+    const p = providers[id];
+
+    return {
+      accent: p.accent,
+      providerIconPath: p.iconPath,
+      serverValue: p.server,
+      statusText: p.supported
+        ? "Reachable. " + p.label + " " + p.version + ", answering in " + p.latency + " milliseconds."
+        : p.label + " support is coming soon — the other two are ready today.",
+      authLabel: p.supported ? "Login" : p.label + " coming soon",
+      primaryDisabled: p.supported ? "false" : "true",
+      jellyfinActive: id === "jellyfin" ? "true" : "false",
+      embyActive: id === "emby" ? "true" : "false",
+      plexActive: id === "plex" ? "true" : "false"
+    };
+  }
+}
+</script>
+</body>
+</html>

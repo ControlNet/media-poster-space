@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: "Chivo", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #f2f4f6; text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: rgba(242, 244, 246, 0.6); }
+    .status[data-tone="idle"] { border-left-color: rgba(242, 244, 246, 0.3) !important; color: rgba(242, 244, 246, 0.58) !important; }
+    .status[data-tone="checking"] { border-left-color: var(--accent) !important; color: #f2f4f6 !important; }
+    .status[data-tone="ok"] { border-left-color: #6dc8a4 !important; color: #6dc8a4 !important; }
+    .status[data-tone="error"] { border-left-color: #d86868 !important; color: #d86868 !important; }
+    .status[data-tone="notice"] { border-left-color: var(--accent) !important; color: rgba(242, 244, 246, 0.78) !important; }
+    .cbx[data-checked="false"] { background: transparent !important; border-color: rgba(242, 244, 246, 0.28) !important; }
+    .cbx[data-checked="false"] svg { display: none; }
+    .go[data-disabled="true"] { background: transparent !important; border: 1px solid rgba(242, 244, 246, 0.2) !important; color: rgba(242, 244, 246, 0.38) !important; cursor: not-allowed !important; }
+  </style>
+</helmet>
+<div style="--accent: {{ accent }}; min-height: 1000px; display: grid; place-items: center; padding: 3rem; background: #0b0d10; color: #f2f4f6; box-sizing: border-box;">
+  <div style="width: min(45rem, 100%); display: grid; gap: 2.25rem;">
+    <header style="display: grid; gap: 0.65rem;"><h1 style="margin: 0; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.02em; color: #f2f4f6;">Connect Media Server</h1><p style="margin: 0; color: rgba(242, 244, 246, 0.52); line-height: 1.6; font-size: 0.98rem; max-width: 48ch;">Four steps, one at a time. Finished steps collapse to a line you can reopen.</p></header>
+    <div style="display: grid;"><div style="display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 1.25rem;"><div style="display: grid; grid-template-rows: 2rem minmax(0, 1fr); justify-items: center;"><div style="width: 2rem; height: 2rem; border-radius: 2px; display: grid; place-items: center; box-sizing: border-box; background: var(--accent); color: #0b0d10;"><svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true"><path d="M3 7.4 5.7 10.1 11 4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><div style="width: 1px; height: 100%; background: rgba(255, 255, 255, 0.1);"></div></div><div style="display: grid; gap: 0.7rem; padding-bottom: 1.8rem;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(242, 244, 246, 0.4);">01 · Platform</span><div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;"><div style="display: flex; align-items: center; gap: 0.75rem;"><span style="display: grid; place-items: center; color: var(--accent); flex: none;"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="{{ providerIconPath }}"></path></svg></span><span style="font-size: 1.02rem; color: #f2f4f6;">{{ providerLabel }}</span></div><div style="padding: 0.5rem 0.85rem; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 2px; background: #0f1216; color: rgba(242, 244, 246, 0.72); font-size: 0.78rem; cursor: pointer; flex: none;">Change</div></div></div></div><div style="display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 1.25rem;"><div style="display: grid; grid-template-rows: 2rem minmax(0, 1fr); justify-items: center;"><div style="width: 2rem; height: 2rem; border-radius: 2px; display: grid; place-items: center; box-sizing: border-box; background: var(--accent); color: #0b0d10;"><svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true"><path d="M3 7.4 5.7 10.1 11 4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><div style="width: 1px; height: 100%; background: rgba(255, 255, 255, 0.1);"></div></div><div style="display: grid; gap: 0.7rem; padding-bottom: 1.8rem;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(242, 244, 246, 0.4);">02 · Server</span><div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;"><div style="display: grid; gap: 0.5rem;"><span style="font-size: 1.02rem; color: #f2f4f6;">{{ serverValue }}</span><p class="status" data-tone="{{ statusTone }}" style="margin: 0; padding: 0.6rem 0.8rem; background: #0f1216; border: 1px solid rgba(255, 255, 255, 0.07); border-left: 3px solid rgba(242, 244, 246, 0.3); border-radius: 2px; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.74rem; line-height: 1.5;">{{ statusText }}</p></div><div style="padding: 0.5rem 0.85rem; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 2px; background: #0f1216; color: rgba(242, 244, 246, 0.72); font-size: 0.78rem; cursor: pointer; flex: none;">Change server</div></div></div></div><div style="display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 1.25rem;"><div style="display: grid; grid-template-rows: 2rem minmax(0, 1fr); justify-items: center;"><div style="width: 2rem; height: 2rem; border-radius: 2px; display: grid; place-items: center; box-sizing: border-box; background: #f2f4f6; color: #0b0d10; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.74rem; font-weight: 500;">03</div><div style="width: 1px; height: 100%; background: rgba(255, 255, 255, 0.1);"></div></div><div style="display: grid; gap: 0.7rem; padding-bottom: 1.8rem;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: #f2f4f6;">03 · Sign in</span><div style="display: grid; gap: 1rem; padding: 1.5rem; border-radius: 2px; border: 1px solid rgba(255, 255, 255, 0.08); background: #111418;"><label style="display: grid; gap: 0.45rem;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(242, 244, 246, 0.45);">Username</span><div style="width: 100%; padding: 0.78rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 2px; background: #0b0d10; color: #f2f4f6; font-size: 0.95rem; box-sizing: border-box;">curator</div></label><label style="display: grid; gap: 0.45rem;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(242, 244, 246, 0.45);">Password</span><div style="width: 100%; padding: 0.78rem 0.9rem; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 2px; background: #0b0d10; color: #f2f4f6; font-size: 0.95rem; box-sizing: border-box;letter-spacing: 0.16em;">••••••••••</div></label><div style="display: flex; flex-wrap: wrap; gap: 0.6rem 1.25rem;"><label style="display: inline-flex; align-items: center; gap: 0.55rem; font-size: 0.78rem; color: rgba(242, 244, 246, 0.6); cursor: pointer;"><span class="cbx" data-checked="true" style="width: 15px; height: 15px; border-radius: 2px; border: 1px solid var(--accent); background: var(--accent); display: grid; place-items: center; flex: none; box-sizing: border-box;"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M2.4 6.2 4.8 8.6 9.6 3.6" fill="none" stroke="#0b0d10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span>Remember username</span></label><label style="display: inline-flex; align-items: center; gap: 0.55rem; font-size: 0.78rem; color: rgba(242, 244, 246, 0.6); cursor: pointer;"><span class="cbx" data-checked="false" style="width: 15px; height: 15px; border-radius: 2px; border: 1px solid var(--accent); background: var(--accent); display: grid; place-items: center; flex: none; box-sizing: border-box;"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M2.4 6.2 4.8 8.6 9.6 3.6" fill="none" stroke="#0b0d10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span>Remember password</span></label></div><div class="go" data-disabled="{{ primaryDisabled }}" style="padding: 0.95rem 1rem; border: 1px solid var(--accent); border-radius: 2px; background: var(--accent); color: #0b0d10; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; text-align: center; cursor: pointer; box-sizing: border-box;">{{ authLabel }}</div></div></div></div><div style="display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 1.25rem;"><div style="display: grid; justify-items: center;"><div style="width: 2rem; height: 2rem; border-radius: 2px; display: grid; place-items: center; box-sizing: border-box; border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(242, 244, 246, 0.3); font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.74rem;">04</div></div><div style="display: grid; gap: 0.7rem; padding-bottom: 0;"><span style="font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(242, 244, 246, 0.3);">04 · Libraries</span><p style="margin: 0; font-size: 0.95rem; color: rgba(242, 244, 246, 0.38);">Sign in first to fetch your libraries.</p></div></div></div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"provider":{"editor":"enum","options":["jellyfin","emby","plex"],"default":"jellyfin"},"$preview":{"width":1080,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const jellyfinPath = "M12 .002C8.826.002-1.398 18.537.16 21.666c1.56 3.129 22.14 3.094 23.682 0C25.384 18.573 15.177 0 12 0zm7.76 18.949c-1.008 2.028-14.493 2.05-15.514 0C3.224 16.9 9.92 4.755 12.003 4.755c2.081 0 8.77 12.166 7.759 14.196zM12 9.198c-1.054 0-4.446 6.15-3.93 7.189.518 1.04 7.348 1.027 7.86 0 .511-1.027-2.874-7.19-3.93-7.19z";
+    const embyPath = "M11.041 0c-.007 0-1.456 1.43-3.219 3.176L4.615 6.352l.512.513.512.512-2.819 2.791L0 12.961l1.83 1.848c1.006 1.016 2.438 2.46 3.182 3.209l1.351 1.359.508-.496c.28-.273.515-.498.524-.498.008 0 1.266 1.264 2.794 2.808L12.97 24l.187-.182c.23-.225 5.007-4.95 5.717-5.656l.52-.516-.502-.513c-.276-.282-.5-.52-.496-.53.003-.009 1.264-1.26 2.802-2.783 1.538-1.522 2.8-2.776 2.803-2.785.005-.012-3.617-3.684-6.107-6.193L17.65 4.6l-.505.505c-.279.278-.517.501-.53.497-.013-.005-1.27-1.267-2.793-2.805A449.655 449.655 0 0011.041 0zM9.223 7.367c.091.038 7.951 4.608 7.957 4.627.003.013-1.781 1.056-3.965 2.32a999.898 999.898 0 01-3.996 2.307c-.019.006-.026-1.266-.026-4.629 0-3.7.007-4.634.03-4.625Z";
+    const plexPath = "M3.987 8.409c-.96 0-1.587.28-2.12.933v-.72H0v8.88s.038.018.127.037c.138.03.821.187 1.331-.249.441-.377.542-.814.542-1.318v-1.283c.533.573 1.147.813 2 .813 1.84 0 3.253-1.493 3.253-3.48 0-2.12-1.36-3.613-3.266-3.613Zm16.748 5.595.406.591c.391.614.894.906 1.492.908.621-.012 1.064-.562 1.226-.755 0 0-.307-.27-.686-.72-.517-.614-1.214-1.755-1.24-1.803l-1.198 1.779Zm-3.205-1.955c0-2.08-1.52-3.64-3.52-3.64s-3.467 1.587-3.467 3.573a3.48 3.48 0 0 0 3.507 3.52c1.413 0 2.626-.84 3.253-2.293h-2.04l-.093.093c-.427.4-.72.533-1.227.533-.787 0-1.373-.506-1.453-1.266h4.986c.04-.214.054-.307.054-.52Zm-7.671-.219c0 .769.11 1.701.868 2.722l.056.069c-.306.526-.742.88-1.248.88-.399 0-.814-.211-1.138-.579a2.177 2.177 0 0 1-.538-1.441V6.409H9.86l-.001 5.421Zm9.283 3.46h-2.39l2.247-3.332-2.247-3.335h2.39l2.248 3.335-2.248 3.332Zm1.593-1.286Zm-17.162-.342c-.933 0-1.68-.773-1.68-1.72s.76-1.666 1.68-1.666c.92 0 1.68.733 1.68 1.68 0 .946-.733 1.706-1.68 1.706Zm18.361-1.974L24 8.622h-2.391l-.87 1.293 1.195 1.773Zm-9.404-.466c.16-.706.72-1.133 1.493-1.133.773 0 1.373.467 1.507 1.133h-3Z";
+
+    const providers = {
+      jellyfin: { key: "jellyfin", label: "Jellyfin", accent: "#aa5cc3", server: "https://jellyfin.home.lan", host: "jellyfin.home.lan:8096", version: "10.9.11", latency: 38, supported: true, iconPath: jellyfinPath },
+      emby: { key: "emby", label: "Emby", accent: "#52b54b", server: "https://emby.home.lan", host: "emby.home.lan:8096", version: "4.8.10.0", latency: 44, supported: true, iconPath: embyPath },
+      plex: { key: "plex", label: "Plex", accent: "#e5a00d", server: "https://plex.home.lan", host: "plex.home.lan:32400", version: "1.40.2", latency: 61, supported: false, iconPath: plexPath }
+    };
+
+    const id = providers[this.props.provider] ? this.props.provider : "jellyfin";
+    const p = providers[id];
+
+    return {
+      accent: p.accent,
+      providerKey: p.key,
+      providerLabel: p.label,
+      providerIconPath: p.iconPath,
+      serverValue: p.server,
+      endpointHost: p.host,
+      version: p.supported ? p.version : "—",
+      latencyLabel: p.supported ? p.latency + "ms" : "—",
+      reachableLabel: p.supported ? "yes" : "n/a",
+      statusTone: p.supported ? "ok" : "notice",
+      statusText: p.supported
+        ? "Server reachable · " + p.label + " " + p.version + " · " + p.latency + "ms"
+        : p.label + " support is coming soon",
+      showSupportBanner: !p.supported,
+      supportBannerText: p.label + " support is coming soon",
+      authLabel: p.supported ? "Login" : p.label + " support coming soon",
+      primaryDisabled: p.supported ? "false" : "true",
+      jellyfinActive: id === "jellyfin" ? "true" : "false",
+      embyActive: id === "emby" ? "true" : "false",
+      plexActive: id === "plex" ? "true" : "false"
+    };
+  }
+}
+</script>
+</body>
+</html>

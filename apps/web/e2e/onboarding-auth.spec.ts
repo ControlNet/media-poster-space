@@ -407,7 +407,8 @@ test("switches provider theming, enables Emby, and keeps Plex blocked", async ({
   await expect(page.getByTestId("server-url-input")).toBeEnabled()
   await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://emby.yourdomain.com")
   await expect(page.getByTestId("login-submit")).toBeEnabled()
-  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Emby")
+  await expect(page.getByTestId("login-submit")).toContainText("Login")
+  await expect(page.getByTestId("onboarding-title")).toContainText("Emby")
 
   await page.getByTestId("provider-option-plex").click()
   await expect(page.getByTestId("provider-support-banner")).toContainText("Plex support is coming soon")
@@ -421,7 +422,8 @@ test("switches provider theming, enables Emby, and keeps Plex blocked", async ({
   await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://jellyfin.yourdomain.com")
   await expect(page.getByTestId("server-status-indicator")).toContainText("Server reachable")
   await expect(page.getByTestId("login-submit")).toBeEnabled()
-  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Jellyfin")
+  await expect(page.getByTestId("login-submit")).toContainText("Login")
+  await expect(page.getByTestId("onboarding-title")).toContainText("Jellyfin")
 })
 
 test("ignores stale Jellyfin login completion after provider changes mid-flight", async ({ page }) => {
@@ -491,7 +493,7 @@ test("ignores stale Jellyfin login completion after provider changes mid-flight"
 
   await page.getByTestId("provider-option-emby").click()
   await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
-  await expect(page.getByTestId("login-submit")).toContainText("Authenticate Emby")
+  await expect(page.getByTestId("onboarding-title")).toContainText("Emby")
 
   authenticationReleased.resolve()
 

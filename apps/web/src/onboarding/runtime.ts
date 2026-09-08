@@ -19,6 +19,7 @@ import {
   applyWallInteractionTransitionState,
   createOnboardingBaseState,
   createOnboardingFormView,
+  measureConnectPanelLayout,
   createOnboardingIngestionController,
   createRuntimePosterQueueRefillFetchAdapter,
   createOnboardingWallRouteCallbacks,
@@ -236,6 +237,7 @@ export function createOnboardingAppRuntime(
   let isRendering = false
   let renderDeferred = false
   let preflightInFlightPromise: Promise<void> | null = null
+  let providerTransitionFrom: OnboardingProviderId | null = null
   let preflightRequestNonce = 0
   let loginRequestNonce = 0
 
@@ -1145,12 +1147,14 @@ export function createOnboardingAppRuntime(
   }
 
   function renderOnboarding(container: HTMLElement): void {
+    // Measure before the teardown: the rebuilt panels resume the resize from
+    // wherever the outgoing ones actually were.
+    const previousLayout = measureConnectPanelLayout(container)
     container.innerHTML = ""
 
     const onboardingView = createOnboardingFormView({
       createElement,
       state,
-      descriptionText: "Choose your media platform, connect the server, then continue through authentication and library selection.",
       rememberPasswordLabel: platform.canPersistPassword
         ? "Remember password"
         : "Remember password (Desktop app only)",
@@ -1158,8 +1162,11 @@ export function createOnboardingAppRuntime(
       showRememberPasswordToggle: platform.canPersistPassword,
       authenticationAvailable: isAvailableOnboardingProvider(state.selectedProviderId),
       providerSelectionMessage: toUnavailableProviderMessage(state.selectedProviderId),
+      providerTransitionFrom,
+      previousLayout,
       toLibraryCheckboxTestId,
       onProviderChange: (providerId) => {
+        const previousProviderId = state.selectedProviderId
         preflightRequestNonce += 1
         loginRequestNonce += 1
         preflightInFlightPromise = null
@@ -1175,7 +1182,9 @@ export function createOnboardingAppRuntime(
         state.loginPending = false
         state.authError = null
         state.password = ""
+        providerTransitionFrom = previousProviderId
         render()
+        providerTransitionFrom = null
 
         if (isAvailableOnboardingProvider(providerId)) {
           void handlePreflight({ force: false })

@@ -471,7 +471,8 @@ describe("desktop onboarding auth runtime", () => {
       expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
       expect(getInput("server-url-input").disabled).toBe(false)
       expect(getInput("server-url-input").placeholder).toBe("https://emby.yourdomain.com")
-      expect(getElement("login-submit").textContent).toContain("Authenticate Emby")
+      expect(getElement("login-submit").textContent).toContain("Login")
+      expect(getElement("onboarding-title").textContent).toContain("Emby")
       expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(false)
     })
 
@@ -491,7 +492,8 @@ describe("desktop onboarding auth runtime", () => {
       expect(getInput("server-url-input").value).toBe(TEST_SERVER)
       expect(getInput("server-url-input").placeholder).toBe("https://jellyfin.yourdomain.com")
       expect(getElement("server-status-indicator").textContent).toContain("Server reachable")
-      expect(getElement("login-submit").textContent).toContain("Authenticate Jellyfin")
+      expect(getElement("login-submit").textContent).toContain("Login")
+      expect(getElement("onboarding-title").textContent).toContain("Jellyfin")
       expect((getElement("login-submit") as HTMLButtonElement).disabled).toBe(false)
     })
   })
@@ -580,7 +582,8 @@ describe("desktop onboarding auth runtime", () => {
 
     await vi.waitFor(() => {
       expect(document.querySelector('[data-testid="provider-support-banner"]')).toBeNull()
-      expect(getElement("login-submit").textContent).toContain("Authenticate Emby")
+      expect(getElement("login-submit").textContent).toContain("Login")
+      expect(getElement("onboarding-title").textContent).toContain("Emby")
     })
 
     authenticationReleased.resolve()
