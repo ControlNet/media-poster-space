@@ -224,3 +224,14 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR
   no saved display → window stays at +400+120; saved `display-0-1920x1080-0,0` → +0+0.
 - Verified 2026-11-04: UI renders under the CSP, IPC works, legacy `credential-fallback.json` is deleted
   at start-up, a stale saved display logs `[mps] Could not restore the selected display` and is replaced.
+
+## Tauri IPC hardening (finding 24)
+
+- `withGlobalTauri: false`; the bridge imports `invoke`/`isTauri` from `@tauri-apps/api/core`
+  (pinned `~2.10.1`: the Tauri CLI refuses to build when the JS API and the Rust crate differ in
+  major/minor).
+- `build.rs` declares the 12 app commands via `AppManifest::commands`, which makes them
+  capability-gated; `src-tauri/capabilities/main-window.json` grants them to window `main`, local
+  origin only (`gen/schemas/capabilities.json` shows `"local": true`).
+- Verified in the real app under Xvfb: with the capability, the stale saved display is rewritten
+  through IPC; with `allow-platform-set-display-selection` removed, the state file stays untouched.

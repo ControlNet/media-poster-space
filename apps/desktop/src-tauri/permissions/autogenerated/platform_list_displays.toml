@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-platform-list-displays"
+description = "Enables the platform_list_displays command without any pre-configured scope."
+commands.allow = ["platform_list_displays"]
+
+[[permission]]
+identifier = "deny-platform-list-displays"
+description = "Denies the platform_list_displays command without any pre-configured scope."
+commands.deny = ["platform_list_displays"]

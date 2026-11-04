@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Platform commands for the bundled UI in the main window only. Remote origins and other windows get nothing.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "allow-platform-get-capabilities",
+    "allow-platform-list-displays",
+    "allow-platform-get-display-selection",
+    "allow-platform-set-display-selection",
+    "allow-platform-get-autostart",
+    "allow-platform-set-autostart",
+    "allow-platform-get-fullscreen",
+    "allow-platform-set-fullscreen",
+    "allow-platform-read-credential",
+    "allow-platform-write-credential",
+    "allow-platform-clear-credential",
+    "allow-platform-clear-all-credentials"
+  ]
+}

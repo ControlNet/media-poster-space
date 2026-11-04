@@ -15,7 +15,8 @@
     "e2e:desktop": "node ../../scripts/run-gates.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json -- vitest run --config vitest.gates.config.ts"
   },
   "dependencies": {
-    "@mps/core": "workspace:*"
+    "@mps/core": "workspace:*",
+    "@tauri-apps/api": "~2.10.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

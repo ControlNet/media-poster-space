@@ -1,3 +1,5 @@
+import { invoke, isTauri } from "@tauri-apps/api/core"
+
 import type {
   DesktopCredentialIdentity,
   DesktopCredentialWriteRequest,
@@ -12,10 +14,6 @@ const AUTOSTART_STORAGE_KEY = "mps.desktop.platform.autostart"
 
 interface TauriCore {
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
-}
-
-interface TauriGlobal {
-  core?: TauriCore
 }
 
 interface TauriCapabilitiesPayload {
@@ -37,9 +35,14 @@ interface TauriCredentialWritePayload {
   warning: string | null
 }
 
+// `withGlobalTauri` is off, so no `window.__TAURI__` is exposed to page scripts; the IPC
+// entry point comes from the official module and only exists inside the Tauri webview.
+const TAURI_CORE: TauriCore = {
+  invoke: <T>(command: string, args?: Record<string, unknown>) => invoke<T>(command, args)
+}
+
 function getTauriCore(): TauriCore | null {
-  const tauri = (globalThis as unknown as Window & { __TAURI__?: TauriGlobal }).__TAURI__
-  return tauri?.core ?? null
+  return isTauri() ? TAURI_CORE : null
 }
 
 function normalizeCapabilities(payload: TauriCapabilitiesPayload): DesktopPlatformCapabilities {

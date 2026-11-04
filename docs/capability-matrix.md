@@ -30,6 +30,7 @@ This matrix describes shipped behavior for V1 and documented platform exceptions
 ## Risk-accepted constraints
 
 - Web runtime stays static and direct to Jellyfin/Emby, with client-held token flow. The access token is kept in `sessionStorage`; it is copied to `localStorage` only when "Remember server" is checked.
+- Desktop platform commands are capability-gated to the bundled UI in the main window (no `window.__TAURI__` global, Content Security Policy enabled).
 - Desktop remembers passwords only in the OS keychain (Secret Service on Linux). Without a keychain the password is not remembered and a warning is shown; there is no local-file fallback. Logout removes remembered passwords from the keychain.
 - The hosted HTTPS web app cannot reach a plain `http://` server (browser mixed-content blocking), except `localhost`. Use an `https://` address (for example behind a reverse proxy) or the desktop app.
 - No BFF runtime dependency in V1.

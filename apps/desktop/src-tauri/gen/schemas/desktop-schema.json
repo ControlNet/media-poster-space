@@ -177,6 +177,150 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the platform_clear_all_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-clear-all-credentials",
+          "markdownDescription": "Enables the platform_clear_all_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_clear_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-clear-credential",
+          "markdownDescription": "Enables the platform_clear_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_get_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-get-autostart",
+          "markdownDescription": "Enables the platform_get_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_get_capabilities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-get-capabilities",
+          "markdownDescription": "Enables the platform_get_capabilities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_get_display_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-get-display-selection",
+          "markdownDescription": "Enables the platform_get_display_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_get_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-get-fullscreen",
+          "markdownDescription": "Enables the platform_get_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_list_displays command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-list-displays",
+          "markdownDescription": "Enables the platform_list_displays command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_read_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-read-credential",
+          "markdownDescription": "Enables the platform_read_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_set_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-set-autostart",
+          "markdownDescription": "Enables the platform_set_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_set_display_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-set-display-selection",
+          "markdownDescription": "Enables the platform_set_display_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_set_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-set-fullscreen",
+          "markdownDescription": "Enables the platform_set_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the platform_write_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-platform-write-credential",
+          "markdownDescription": "Enables the platform_write_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_clear_all_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-clear-all-credentials",
+          "markdownDescription": "Denies the platform_clear_all_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_clear_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-clear-credential",
+          "markdownDescription": "Denies the platform_clear_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_get_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-get-autostart",
+          "markdownDescription": "Denies the platform_get_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_get_capabilities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-get-capabilities",
+          "markdownDescription": "Denies the platform_get_capabilities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_get_display_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-get-display-selection",
+          "markdownDescription": "Denies the platform_get_display_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_get_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-get-fullscreen",
+          "markdownDescription": "Denies the platform_get_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_list_displays command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-list-displays",
+          "markdownDescription": "Denies the platform_list_displays command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_read_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-read-credential",
+          "markdownDescription": "Denies the platform_read_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_set_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-set-autostart",
+          "markdownDescription": "Denies the platform_set_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_set_display_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-set-display-selection",
+          "markdownDescription": "Denies the platform_set_display_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_set_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-set-fullscreen",
+          "markdownDescription": "Denies the platform_set_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the platform_write_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-platform-write-credential",
+          "markdownDescription": "Denies the platform_write_credential command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures if your\napplication can enable or disable auto\nstarting the application on boot.\n\n#### Granted Permissions\n\nIt allows all to check, enable and\ndisable the automatic start on boot.\n\n\n#### This default permission set includes:\n\n- `allow-enable`\n- `allow-disable`\n- `allow-is-enabled`",
           "type": "string",
           "const": "autostart:default",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-platform-set-autostart"
+description = "Enables the platform_set_autostart command without any pre-configured scope."
+commands.allow = ["platform_set_autostart"]
+
+[[permission]]
+identifier = "deny-platform-set-autostart"
+description = "Denies the platform_set_autostart command without any pre-configured scope."
+commands.deny = ["platform_set_autostart"]
