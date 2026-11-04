@@ -11,7 +11,8 @@ import type {
   MediaProvider,
   MediaQuery,
   ProviderPreflightRequest,
-  ProviderPreflightResult
+  ProviderPreflightResult,
+  ProviderRequestOptions
 } from "../../provider/media-provider";
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -19,6 +20,16 @@ const DEFAULT_PAGE_LIMIT = 100;
 const ROOT_LIBRARY_ITEM_TYPES = "Movie,Series,BoxSet,MusicVideo";
 
 const AUTH_FAILURE_STATUS = new Set([400, 401, 403, 415]);
+
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Which server API dialect the provider talks.
+ * - `jellyfin`: session token in `Authorization: MediaBrowser … Token="…"` (Jellyfin 12 ignores legacy
+ *   `X-Emby-Token`), current user via `Users/Me`.
+ * - `emby`: session token in `X-Emby-Token`, current user via `Users/{userId}`.
+ */
+type ApiFlavor = "jellyfin" | "emby";
 
 interface JellyfinProviderOptions {
   fetch?: FetchLike;
@@ -29,65 +40,40 @@ interface JellyfinProviderOptions {
   apiBasePath?: string;
   authorizationScheme?: string;
   minSupportedMajorVersion?: number;
+  apiFlavor?: ApiFlavor;
 }
 
-interface JellyfinPublicSystemInfo {
-  Version?: string;
-  ProductName?: string;
-  ServerName?: string;
+type EmbyProviderOptions = Omit<
+  JellyfinProviderOptions,
+  "providerId" | "displayName" | "apiBasePath" | "authorizationScheme" | "minSupportedMajorVersion" | "apiFlavor"
+>;
+
+interface AuthHeaderFields {
+  appVersion: string;
+  clientName?: string | undefined;
+  deviceId?: string | undefined;
+  token?: string | undefined;
 }
 
-interface JellyfinUser {
-  Id?: string;
-  Name?: string;
+interface RequestOptions {
+  timeoutMs: number;
+  fallbackMessage: string;
+  signal?: AbortSignal | undefined;
 }
 
-interface JellyfinAuthResponse {
-  AccessToken?: string;
-  User?: JellyfinUser;
-}
-
-interface JellyfinLibraryView {
-  Id?: string;
-  Name?: string;
-  CollectionType?: string;
-}
-
-interface JellyfinViewsResponse {
-  Items?: JellyfinLibraryView[];
-}
-
-interface JellyfinPerson {
-  Name?: string;
-}
-
-interface JellyfinBaseItem {
-  Id?: string;
-  Name?: string;
-  Type?: string;
-  SortName?: string;
-  OriginalTitle?: string;
-  Overview?: string;
-  ProductionYear?: number;
-  RunTimeTicks?: number;
-  CommunityRating?: number;
-  CriticRating?: number;
-  Genres?: string[];
-  Tags?: string[];
-  People?: JellyfinPerson[];
-  DateCreated?: string;
-  DateLastMediaAdded?: string;
-  PremiereDate?: string;
-  ImageTags?: Record<string, string | undefined>;
-  BackdropImageTags?: string[];
-}
-
-interface JellyfinItemsResponse {
-  Items?: JellyfinBaseItem[];
-  TotalRecordCount?: number;
-}
+type ServerUrlCheck =
+  | {
+      ok: true;
+      serverUrl: string;
+    }
+  | {
+      ok: false;
+      error: ProviderError;
+    };
 
 type FetchLike = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>;
+
+type JsonRecord = Record<string, unknown>;
 
 function normalizeServerUrl(serverUrl: string): string {
   return serverUrl.trim().replace(/\/+$/, "");
@@ -105,8 +91,91 @@ function normalizeApiBasePath(apiBasePath: string | undefined): string {
 function buildApiUrl(serverUrl: string, endpointPath: string, apiBasePath = ""): string {
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
   const normalizedEndpointPath = endpointPath.replace(/^\/+/, "");
-  const url = new URL(`${normalizeApiBasePath(apiBasePath)}/${normalizedEndpointPath}`, `${normalizedServerUrl}/`);
+  // Relative reference (no leading "/") so a server base path such as "/jellyfin" is kept.
+  const relativePath = `${normalizeApiBasePath(apiBasePath)}/${normalizedEndpointPath}`.replace(/^\/+/, "");
+  const url = new URL(relativePath, `${normalizedServerUrl}/`);
   return url.toString();
+}
+
+function checkServerUrl(rawServerUrl: string, providerName: string, origin?: string): ServerUrlCheck {
+  const serverUrl = normalizeServerUrl(rawServerUrl);
+
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(serverUrl)) {
+    return {
+      ok: false,
+      error: {
+        category: "unknown",
+        message: `${providerName} server address must start with http:// or https:// (for example http://192.168.1.10:8096)`,
+        retriable: false
+      }
+    };
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(serverUrl);
+  } catch (error) {
+    if (!(error instanceof TypeError)) {
+      throw error;
+    }
+
+    return {
+      ok: false,
+      error: {
+        category: "unknown",
+        message: `${providerName} server address is not a valid URL`,
+        retriable: false
+      }
+    };
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return {
+      ok: false,
+      error: {
+        category: "unknown",
+        message: `${providerName} server address must use http:// or https://`,
+        retriable: false
+      }
+    };
+  }
+
+  if (parsedUrl.username.length > 0 || parsedUrl.password.length > 0) {
+    return {
+      ok: false,
+      error: {
+        category: "unknown",
+        message: `${providerName} server address must not include a username or password; sign in with the form instead`,
+        retriable: false
+      }
+    };
+  }
+
+  if (
+    origin?.toLowerCase().startsWith("https:")
+    && parsedUrl.protocol === "http:"
+    && !LOOPBACK_HOSTNAMES.has(parsedUrl.hostname)
+  ) {
+    return {
+      ok: false,
+      error: {
+        category: "network",
+        message: `This page is served over HTTPS, so the browser blocks requests to an http:// ${providerName} server. Use an https:// server address (for example through a reverse proxy) or the desktop app.`,
+        retriable: false
+      }
+    };
+  }
+
+  return { ok: true, serverUrl };
+}
+
+function requireServerUrl(rawServerUrl: string, providerName: string): string {
+  const serverUrlCheck = checkServerUrl(rawServerUrl, providerName);
+  if (!serverUrlCheck.ok) {
+    throw new JellyfinProviderError(serverUrlCheck.error);
+  }
+
+  return serverUrlCheck.serverUrl;
 }
 
 function shouldValidateCors(serverUrl: string, origin: string | undefined): boolean {
@@ -114,11 +183,7 @@ function shouldValidateCors(serverUrl: string, origin: string | undefined): bool
     return false;
   }
 
-  try {
-    return new URL(serverUrl).origin !== origin;
-  } catch {
-    return true;
-  }
+  return new URL(serverUrl).origin !== origin;
 }
 
 function safeMessageFromStatus(status: number, fallback: string, providerName: string): string {
@@ -133,8 +198,23 @@ function safeMessageFromStatus(status: number, fallback: string, providerName: s
   return fallback;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(record: JsonRecord, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readFiniteNumber(record: JsonRecord, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readStringArray(record: JsonRecord, key: string): string[] {
+  const value = record[key];
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function parseMajorVersion(version: string): number | null {
@@ -147,10 +227,8 @@ function parseMajorVersion(version: string): number | null {
   return Number.isNaN(major) ? null : major;
 }
 
-function detectServerProduct(publicInfo: JellyfinPublicSystemInfo): "jellyfin" | "emby" | null {
-  const productName = typeof publicInfo.ProductName === "string"
-    ? publicInfo.ProductName.trim().toLowerCase()
-    : "";
+function detectServerProduct(publicInfo: JsonRecord): "jellyfin" | "emby" | null {
+  const productName = (readString(publicInfo, "ProductName") ?? "").trim().toLowerCase();
 
   if (productName.includes("jellyfin")) {
     return "jellyfin";
@@ -160,7 +238,31 @@ function detectServerProduct(publicInfo: JellyfinPublicSystemInfo): "jellyfin" |
     return "emby";
   }
 
+  // Emby's public system info has no ProductName and Emby versions are 4.x; Jellyfin always
+  // reports ProductName and started at 10.x.
+  const version = readString(publicInfo, "Version");
+  const majorVersion = version ? parseMajorVersion(version) : null;
+  if (productName.length === 0 && majorVersion !== null && majorVersion < 10) {
+    return "emby";
+  }
+
   return null;
+}
+
+function timeoutError(providerName: string): ProviderError {
+  return {
+    category: "timeout",
+    message: `${providerName} request timed out`,
+    retriable: true
+  };
+}
+
+function cancelledError(providerName: string): ProviderError {
+  return {
+    category: "network",
+    message: `${providerName} request was cancelled`,
+    retriable: true
+  };
 }
 
 function toProviderError(error: unknown, fallbackMessage: string, providerName: string): ProviderError {
@@ -168,12 +270,8 @@ function toProviderError(error: unknown, fallbackMessage: string, providerName: 
     return error.providerError;
   }
 
-  if (error instanceof DOMException && error.name === "AbortError") {
-    return {
-      category: "network",
-      message: `${providerName} request timed out`,
-      retriable: true
-    };
+  if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) {
+    return timeoutError(providerName);
   }
 
   if (error instanceof TypeError) {
@@ -189,6 +287,15 @@ function toProviderError(error: unknown, fallbackMessage: string, providerName: 
     message: fallbackMessage,
     retriable: false
   };
+}
+
+function unexpectedResponseError(providerName: string, statusCode: number, detail: string): JellyfinProviderError {
+  return new JellyfinProviderError({
+    category: "unknown",
+    message: `${providerName} returned ${detail}`,
+    statusCode,
+    retriable: true
+  });
 }
 
 function toMediaKind(value: string | undefined): MediaKind {
@@ -223,16 +330,29 @@ function toLibraryKind(collectionType: string | undefined): MediaLibrary["kind"]
   }
 }
 
-function makeAuthHeader(
-  clientName: string,
-  deviceId: string,
-  appVersion: string,
-  authorizationScheme: string
-): string {
-  const escapedClientName = clientName.replaceAll('"', "\\\"");
-  const escapedDeviceId = deviceId.replaceAll('"', "\\\"");
+function escapeAuthHeaderValue(value: string): string {
+  return value.replaceAll('"', "\\\"");
+}
 
-  return `${authorizationScheme} Client="${escapedClientName}", Device="${escapedClientName}", DeviceId="${escapedDeviceId}", Version="${appVersion}"`;
+function makeAuthHeader(authorizationScheme: string, fields: AuthHeaderFields): string {
+  const parts: string[] = [];
+
+  if (fields.clientName) {
+    const escapedClientName = escapeAuthHeaderValue(fields.clientName);
+    parts.push(`Client="${escapedClientName}"`, `Device="${escapedClientName}"`);
+  }
+
+  if (fields.deviceId) {
+    parts.push(`DeviceId="${escapeAuthHeaderValue(fields.deviceId)}"`);
+  }
+
+  parts.push(`Version="${escapeAuthHeaderValue(fields.appVersion)}"`);
+
+  if (fields.token) {
+    parts.push(`Token="${escapeAuthHeaderValue(fields.token)}"`);
+  }
+
+  return `${authorizationScheme} ${parts.join(", ")}`;
 }
 
 function buildImageUrl(
@@ -252,10 +372,6 @@ function buildImageUrl(
 
   url.searchParams.set("quality", "90");
   return url.toString();
-}
-
-function readJsonValue<T>(value: unknown, fallback: T): T {
-  return isRecord(value) ? (value as T) : fallback;
 }
 
 function toRuntimeMs(runTimeTicks: number | undefined): number | undefined {
@@ -302,6 +418,8 @@ export class JellyfinMediaProvider implements MediaProvider {
 
   private readonly minSupportedMajorVersion: number;
 
+  private readonly apiFlavor: ApiFlavor;
+
   constructor(options: JellyfinProviderOptions = {}) {
     if (!options.fetch && typeof globalThis.fetch !== "function") {
       throw new Error(`${options.displayName ?? "Media"} provider requires a fetch implementation`);
@@ -317,47 +435,64 @@ export class JellyfinMediaProvider implements MediaProvider {
     this.apiBasePath = normalizeApiBasePath(options.apiBasePath);
     this.authorizationScheme = options.authorizationScheme ?? "MediaBrowser";
     this.minSupportedMajorVersion = options.minSupportedMajorVersion ?? 10;
+    this.apiFlavor = options.apiFlavor ?? "jellyfin";
   }
 
   async preflight(request: ProviderPreflightRequest): Promise<ProviderPreflightResult> {
     const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const serverUrl = normalizeServerUrl(request.serverUrl);
+    const serverUrlCheck = checkServerUrl(request.serverUrl, this.displayName, request.origin);
+    if (!serverUrlCheck.ok) {
+      return { ok: false, error: serverUrlCheck.error };
+    }
+
+    const serverUrl = serverUrlCheck.serverUrl;
     const enforceCorsValidation = shouldValidateCors(serverUrl, request.origin);
     const startedAt = Date.now();
+    const requestOptions: RequestOptions = {
+      timeoutMs,
+      fallbackMessage: `${this.displayName} preflight failed`,
+      signal: request.signal
+    };
 
     try {
-      const publicInfoResponse = await this.fetchWithTimeout(
+      const publicInfoOutcome = await this.request<{ error: ProviderError } | { publicInfo: JsonRecord }>(
         buildApiUrl(serverUrl, "System/Info/Public", this.apiBasePath),
         {
           method: "GET",
           headers: this.makeJsonHeaders(request.origin)
         },
-        timeoutMs
+        requestOptions,
+        async (response) => {
+          if (!response.ok) {
+            return {
+              error: {
+                category: response.status >= 500 ? "network" : "unknown",
+                message: safeMessageFromStatus(
+                  response.status,
+                  `${this.displayName} preflight failed while checking server info`,
+                  this.displayName
+                ),
+                statusCode: response.status,
+                retriable: response.status >= 500
+              }
+            };
+          }
+
+          const corsError = enforceCorsValidation ? this.validateCors(response, request.origin) : null;
+          if (corsError) {
+            return { error: corsError };
+          }
+
+          return { publicInfo: await this.readJsonObject(response) };
+        }
       );
 
-      if (!publicInfoResponse.ok) {
-        return {
-          ok: false,
-          error: {
-            category: publicInfoResponse.status >= 500 ? "network" : "unknown",
-            message: safeMessageFromStatus(
-              publicInfoResponse.status,
-              `${this.displayName} preflight failed while checking server info`,
-              this.displayName
-            ),
-            statusCode: publicInfoResponse.status,
-            retriable: publicInfoResponse.status >= 500
-          }
-        };
+      if ("error" in publicInfoOutcome) {
+        return { ok: false, error: publicInfoOutcome.error };
       }
 
-      const corsError = enforceCorsValidation ? this.validateCors(publicInfoResponse, request.origin) : null;
-      if (corsError) {
-        return { ok: false, error: corsError };
-      }
-
-      const publicInfo = readJsonValue<JellyfinPublicSystemInfo>(await this.readJsonSafely(publicInfoResponse), {});
-      const version = typeof publicInfo.Version === "string" ? publicInfo.Version : undefined;
+      const publicInfo = publicInfoOutcome.publicInfo;
+      const version = readString(publicInfo, "Version");
       const detectedProduct = detectServerProduct(publicInfo);
 
       if (detectedProduct && detectedProduct !== this.id) {
@@ -397,14 +532,15 @@ export class JellyfinMediaProvider implements MediaProvider {
         };
       }
 
-      const authCheckResponse = await this.fetchWithTimeout(
+      const authCheckResponse = await this.request(
         buildApiUrl(serverUrl, "Users/AuthenticateByName", this.apiBasePath),
         {
           method: "POST",
           headers: this.makeJsonHeaders(request.origin),
           body: JSON.stringify({ Username: "", Pw: "" })
         },
-        timeoutMs
+        requestOptions,
+        async (response) => response
       );
 
       const authCorsError = enforceCorsValidation ? this.validateCors(authCheckResponse, request.origin) : null;
@@ -454,62 +590,58 @@ export class JellyfinMediaProvider implements MediaProvider {
   }
 
   async authenticate(credentials: AuthCredentials): Promise<ProviderSession> {
-    const serverUrl = normalizeServerUrl(credentials.serverUrl);
+    const serverUrl = requireServerUrl(credentials.serverUrl, this.displayName);
 
-    let response: Response;
-
-    try {
-      response = await this.fetchWithTimeout(
-        buildApiUrl(serverUrl, "Users/AuthenticateByName", this.apiBasePath),
-        {
-          method: "POST",
-          headers: {
-            ...this.makeJsonHeaders(),
-            Authorization: makeAuthHeader(
-              credentials.clientName,
-              credentials.deviceId,
-              this.appVersion,
-              this.authorizationScheme
-            )
-          },
-          body: JSON.stringify({
-            Username: credentials.username,
-            Pw: credentials.password
+    const payload = await this.request(
+      buildApiUrl(serverUrl, "Users/AuthenticateByName", this.apiBasePath),
+      {
+        method: "POST",
+        headers: {
+          ...this.makeJsonHeaders(),
+          Authorization: makeAuthHeader(this.authorizationScheme, {
+            clientName: credentials.clientName,
+            deviceId: credentials.deviceId,
+            appVersion: this.appVersion
           })
         },
-        DEFAULT_TIMEOUT_MS
-      );
-    } catch (error) {
-      throw new JellyfinProviderError(
-        toProviderError(error, `${this.displayName} authentication request failed`, this.displayName)
-      );
-    }
+        body: JSON.stringify({
+          Username: credentials.username,
+          Pw: credentials.password
+        })
+      },
+      {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        fallbackMessage: `${this.displayName} authentication request failed`
+      },
+      async (response) => {
+        if (response.status === 401 || response.status === 403) {
+          throw new JellyfinProviderError({
+            category: "auth",
+            message: `Invalid ${this.displayName} username or password`,
+            statusCode: response.status,
+            retriable: false
+          });
+        }
 
-    if (response.status === 401 || response.status === 403) {
-      throw new JellyfinProviderError({
-        category: "auth",
-        message: `Invalid ${this.displayName} username or password`,
-        statusCode: response.status,
-        retriable: false
-      });
-    }
+        if (!response.ok) {
+          throw new JellyfinProviderError({
+            category: response.status >= 500 ? "network" : "unknown",
+            message: safeMessageFromStatus(
+              response.status,
+              `${this.displayName} authentication failed`,
+              this.displayName
+            ),
+            statusCode: response.status,
+            retriable: response.status >= 500
+          });
+        }
 
-    if (!response.ok) {
-      throw new JellyfinProviderError({
-        category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(
-          response.status,
-          `${this.displayName} authentication failed`,
-          this.displayName
-        ),
-        statusCode: response.status,
-        retriable: response.status >= 500
-      });
-    }
+        return this.readJsonObject(response);
+      }
+    );
 
-    const payload = readJsonValue<JellyfinAuthResponse>(await this.readJsonSafely(response), {});
-    const accessToken = typeof payload.AccessToken === "string" ? payload.AccessToken : undefined;
-    const userId = typeof payload.User?.Id === "string" ? payload.User.Id : undefined;
+    const accessToken = readString(payload, "AccessToken");
+    const userId = isRecord(payload.User) ? readString(payload.User, "Id") : undefined;
 
     if (!accessToken || !userId) {
       throw new JellyfinProviderError({
@@ -525,7 +657,9 @@ export class JellyfinMediaProvider implements MediaProvider {
       userId,
       username: credentials.username,
       accessToken,
-      createdAt: this.now().toISOString()
+      createdAt: this.now().toISOString(),
+      clientName: credentials.clientName,
+      deviceId: credentials.deviceId
     };
   }
 
@@ -534,49 +668,52 @@ export class JellyfinMediaProvider implements MediaProvider {
       return null;
     }
 
-    const serverUrl = normalizeServerUrl(snapshot.serverUrl);
+    const serverUrl = requireServerUrl(snapshot.serverUrl, this.displayName);
+    const currentUserPath = this.apiFlavor === "emby"
+      ? `Users/${encodeURIComponent(snapshot.userId)}`
+      : "Users/Me";
 
-    let response: Response;
+    const payload = await this.request(
+      buildApiUrl(serverUrl, currentUserPath, this.apiBasePath),
+      {
+        method: "GET",
+        headers: this.makeSessionHeaders(snapshot)
+      },
+      {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        fallbackMessage: `${this.displayName} session restore failed`
+      },
+      async (response) => {
+        if (response.status === 401 || response.status === 403) {
+          return null;
+        }
 
-    try {
-      response = await this.fetchWithTimeout(
-        buildApiUrl(serverUrl, "Users/Me", this.apiBasePath),
-        {
-          method: "GET",
-          headers: this.makeSessionHeaders(snapshot.accessToken)
-        },
-        DEFAULT_TIMEOUT_MS
-      );
-    } catch (error) {
-      throw new JellyfinProviderError(
-        toProviderError(error, `${this.displayName} session restore failed`, this.displayName)
-      );
-    }
+        if (!response.ok) {
+          throw new JellyfinProviderError({
+            category: response.status >= 500 ? "network" : "unknown",
+            message: safeMessageFromStatus(
+              response.status,
+              `${this.displayName} session restore failed`,
+              this.displayName
+            ),
+            statusCode: response.status,
+            retriable: response.status >= 500
+          });
+        }
 
-    if (response.status === 401 || response.status === 403) {
+        return this.readJsonObject(response);
+      }
+    );
+
+    if (!payload) {
       return null;
     }
-
-    if (!response.ok) {
-      throw new JellyfinProviderError({
-        category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(
-          response.status,
-          `${this.displayName} session restore failed`,
-          this.displayName
-        ),
-        statusCode: response.status,
-        retriable: response.status >= 500
-      });
-    }
-
-    const payload = readJsonValue<JellyfinUser>(await this.readJsonSafely(response), {});
 
     return {
       ...snapshot,
       serverUrl,
-      userId: typeof payload.Id === "string" ? payload.Id : snapshot.userId,
-      username: typeof payload.Name === "string" ? payload.Name : snapshot.username
+      userId: readString(payload, "Id") ?? snapshot.userId,
+      username: readString(payload, "Name") ?? snapshot.username
     };
   }
 
@@ -585,89 +722,103 @@ export class JellyfinMediaProvider implements MediaProvider {
       return;
     }
 
-    const serverUrl = normalizeServerUrl(session.serverUrl);
+    const serverUrl = requireServerUrl(session.serverUrl, this.displayName);
 
-    let response: Response;
-    try {
-      response = await this.fetchWithTimeout(
-        buildApiUrl(serverUrl, "Sessions/Logout", this.apiBasePath),
-        {
-          method: "POST",
-          headers: this.makeSessionHeaders(session.accessToken)
-        },
-        DEFAULT_TIMEOUT_MS
-      );
-    } catch (error) {
-      throw new JellyfinProviderError(
-        toProviderError(error, `${this.displayName} session invalidation failed`, this.displayName)
-      );
-    }
+    await this.request(
+      buildApiUrl(serverUrl, "Sessions/Logout", this.apiBasePath),
+      {
+        method: "POST",
+        headers: this.makeSessionHeaders(session)
+      },
+      {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        fallbackMessage: `${this.displayName} session invalidation failed`
+      },
+      async (response) => {
+        // Logout answers 204 with an empty body; 401/403 means the token is already invalid.
+        if (response.status === 401 || response.status === 403 || response.ok) {
+          return;
+        }
 
-    if (response.status === 401 || response.status === 403 || response.ok) {
-      return;
-    }
-
-    throw new JellyfinProviderError({
-      category: response.status >= 500 ? "network" : "unknown",
-      message: safeMessageFromStatus(
-        response.status,
-        `${this.displayName} session invalidation failed`,
-        this.displayName
-      ),
-      statusCode: response.status,
-      retriable: response.status >= 500
-    });
+        throw new JellyfinProviderError({
+          category: response.status >= 500 ? "network" : "unknown",
+          message: safeMessageFromStatus(
+            response.status,
+            `${this.displayName} session invalidation failed`,
+            this.displayName
+          ),
+          statusCode: response.status,
+          retriable: response.status >= 500
+        });
+      }
+    );
   }
 
-  async listLibraries(session: ProviderSession): Promise<MediaLibrary[]> {
-    const serverUrl = normalizeServerUrl(session.serverUrl);
+  async listLibraries(session: ProviderSession, options: ProviderRequestOptions = {}): Promise<MediaLibrary[]> {
+    const serverUrl = requireServerUrl(session.serverUrl, this.displayName);
 
-    const response = await this.fetchWithTimeout(
+    const { response, payload } = await this.request(
       buildApiUrl(serverUrl, `Users/${encodeURIComponent(session.userId)}/Views`, this.apiBasePath),
       {
         method: "GET",
-        headers: this.makeSessionHeaders(session.accessToken)
+        headers: this.makeSessionHeaders(session)
       },
-      DEFAULT_TIMEOUT_MS
+      {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        fallbackMessage: `Failed to list ${this.displayName} libraries`,
+        signal: options.signal
+      },
+      async (response) => {
+        if (response.status === 401 || response.status === 403) {
+          throw new JellyfinProviderError({
+            category: "auth",
+            message: `${this.displayName} session is not authorized to list libraries`,
+            statusCode: response.status,
+            retriable: false
+          });
+        }
+
+        if (!response.ok) {
+          throw new JellyfinProviderError({
+            category: response.status >= 500 ? "network" : "unknown",
+            message: safeMessageFromStatus(
+              response.status,
+              `Failed to list ${this.displayName} libraries`,
+              this.displayName
+            ),
+            statusCode: response.status,
+            retriable: response.status >= 500
+          });
+        }
+
+        return { response, payload: await this.readJsonObject(response) };
+      }
     );
 
-    if (response.status === 401 || response.status === 403) {
-      throw new JellyfinProviderError({
-        category: "auth",
-        message: `${this.displayName} session is not authorized to list libraries`,
-        statusCode: response.status,
-        retriable: false
-      });
+    const libraries: MediaLibrary[] = [];
+
+    for (const library of this.readItems(payload, response.status)) {
+      if (!isRecord(library)) {
+        continue;
+      }
+
+      const id = readString(library, "Id");
+      const name = readString(library, "Name");
+
+      if (id !== undefined && name !== undefined) {
+        libraries.push({
+          id,
+          name,
+          kind: toLibraryKind(readString(library, "CollectionType"))
+        });
+      }
     }
 
-    if (!response.ok) {
-      throw new JellyfinProviderError({
-        category: response.status >= 500 ? "network" : "unknown",
-        message: safeMessageFromStatus(
-          response.status,
-          `Failed to list ${this.displayName} libraries`,
-          this.displayName
-        ),
-        statusCode: response.status,
-        retriable: response.status >= 500
-      });
-    }
-
-    const payload = readJsonValue<JellyfinViewsResponse>(await this.readJsonSafely(response), {});
-
-    return (payload.Items ?? [])
-      .filter((library): library is Required<Pick<JellyfinLibraryView, "Id" | "Name">> & JellyfinLibraryView => {
-        return typeof library.Id === "string" && typeof library.Name === "string";
-      })
-      .map((library) => ({
-        id: library.Id,
-        name: library.Name,
-        kind: toLibraryKind(library.CollectionType)
-      }));
+    return libraries;
   }
 
   async listMedia(session: ProviderSession, query: MediaQuery): Promise<MediaPage> {
-    const serverUrl = normalizeServerUrl(session.serverUrl);
+    const serverUrl = requireServerUrl(session.serverUrl, this.displayName);
     const startIndex = this.parseCursor(query.cursor);
     const limit = query.limit && query.limit > 0 ? query.limit : DEFAULT_PAGE_LIMIT;
     const items: MediaItem[] = [];
@@ -694,39 +845,45 @@ export class JellyfinMediaProvider implements MediaProvider {
         url.searchParams.set("MinDateLastSavedForUser", query.updatedSince);
       }
 
-      const response = await this.fetchWithTimeout(
+      const { response, payload } = await this.request(
         url.toString(),
         {
           method: "GET",
-          headers: this.makeSessionHeaders(session.accessToken)
+          headers: this.makeSessionHeaders(session)
         },
-        DEFAULT_TIMEOUT_MS
+        {
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+          fallbackMessage: `Failed to list ${this.displayName} media`,
+          signal: query.signal
+        },
+        async (response) => {
+          if (response.status === 401 || response.status === 403) {
+            throw new JellyfinProviderError({
+              category: "auth",
+              message: `${this.displayName} session is not authorized to list media`,
+              statusCode: response.status,
+              retriable: false
+            });
+          }
+
+          if (!response.ok) {
+            throw new JellyfinProviderError({
+              category: response.status >= 500 ? "network" : "unknown",
+              message: safeMessageFromStatus(
+                response.status,
+                `Failed to list ${this.displayName} media`,
+                this.displayName
+              ),
+              statusCode: response.status,
+              retriable: response.status >= 500
+            });
+          }
+
+          return { response, payload: await this.readJsonObject(response) };
+        }
       );
 
-      if (response.status === 401 || response.status === 403) {
-        throw new JellyfinProviderError({
-          category: "auth",
-          message: `${this.displayName} session is not authorized to list media`,
-          statusCode: response.status,
-          retriable: false
-        });
-      }
-
-      if (!response.ok) {
-        throw new JellyfinProviderError({
-          category: response.status >= 500 ? "network" : "unknown",
-          message: safeMessageFromStatus(
-            response.status,
-            `Failed to list ${this.displayName} media`,
-            this.displayName
-          ),
-          statusCode: response.status,
-          retriable: response.status >= 500
-        });
-      }
-
-      const payload = readJsonValue<JellyfinItemsResponse>(await this.readJsonSafely(response), {});
-      const sourceItems = payload.Items ?? [];
+      const sourceItems = this.readItems(payload, response.status);
 
       for (const sourceItem of sourceItems) {
         const mapped = this.mapItem(sourceItem, serverUrl, libraryId);
@@ -735,10 +892,8 @@ export class JellyfinMediaProvider implements MediaProvider {
         }
       }
 
-      if (
-        typeof payload.TotalRecordCount === "number" &&
-        payload.TotalRecordCount > startIndex + sourceItems.length
-      ) {
+      const totalRecordCount = readFiniteNumber(payload, "TotalRecordCount");
+      if (totalRecordCount !== undefined && totalRecordCount > startIndex + sourceItems.length) {
         hasMore = true;
       }
     }
@@ -780,93 +935,122 @@ export class JellyfinMediaProvider implements MediaProvider {
     });
   }
 
-  private mapItem(item: JellyfinBaseItem, serverUrl: string, libraryId: string): MediaItem | null {
-    if (!item.Id || !item.Name) {
+  /**
+   * Returns the raw `Items` entries. A missing or non-array `Items` is a malformed response (typed
+   * error); individual malformed entries are kept in the count (for pagination) but are not records,
+   * so callers skip them.
+   */
+  private readItems(payload: JsonRecord, statusCode: number): unknown[] {
+    const items = payload.Items;
+    if (!Array.isArray(items)) {
+      throw unexpectedResponseError(this.displayName, statusCode, "a response without an Items list");
+    }
+
+    return items;
+  }
+
+  private mapItem(item: unknown, serverUrl: string, libraryId: string): MediaItem | null {
+    if (!isRecord(item)) {
       return null;
     }
 
-    if (item.Type === "Season" || item.Type === "Episode") {
+    const id = readString(item, "Id");
+    const name = readString(item, "Name");
+    if (!id || !name) {
       return null;
     }
 
-    const imageTags = item.ImageTags ?? {};
-    const primaryTag = imageTags.Primary;
+    const type = readString(item, "Type");
+    if (type === "Season" || type === "Episode") {
+      return null;
+    }
+
+    const imageTags = isRecord(item.ImageTags) ? item.ImageTags : {};
+    const primaryTag = readString(imageTags, "Primary");
     if (!primaryTag) {
       return null;
     }
 
     const poster: ArtworkImage = {
-      url: buildImageUrl(serverUrl, item.Id, "Primary", primaryTag, this.apiBasePath)
+      url: buildImageUrl(serverUrl, id, "Primary", primaryTag, this.apiBasePath)
     };
 
-    const backdropTag = item.BackdropImageTags?.[0];
-    const logoTag = imageTags.Logo;
+    const backdropTag = readStringArray(item, "BackdropImageTags")[0];
+    const logoTag = readString(imageTags, "Logo");
+    const people = Array.isArray(item.People) ? item.People : [];
 
     const mediaItem: MediaItem = {
-      id: item.Id,
+      id,
       providerId: this.id,
       libraryId,
-      kind: toMediaKind(item.Type),
-      title: item.Name,
-      genres: Array.isArray(item.Genres) ? item.Genres : [],
-      tags: Array.isArray(item.Tags) ? item.Tags : [],
-      people: Array.isArray(item.People)
-        ? item.People
-            .map((person) => person.Name)
-            .filter((name): name is string => typeof name === "string")
-        : [],
+      kind: toMediaKind(type),
+      title: name,
+      genres: readStringArray(item, "Genres"),
+      tags: readStringArray(item, "Tags"),
+      people: people
+        .map((person) => (isRecord(person) ? readString(person, "Name") : undefined))
+        .filter((personName): personName is string => typeof personName === "string"),
       poster
     };
 
-    if (item.SortName) {
-      mediaItem.sortTitle = item.SortName;
+    const sortName = readString(item, "SortName");
+    if (sortName) {
+      mediaItem.sortTitle = sortName;
     }
 
-    if (item.OriginalTitle) {
-      mediaItem.originalTitle = item.OriginalTitle;
+    const originalTitle = readString(item, "OriginalTitle");
+    if (originalTitle) {
+      mediaItem.originalTitle = originalTitle;
     }
 
-    if (item.Overview) {
-      mediaItem.overview = item.Overview;
+    const overview = readString(item, "Overview");
+    if (overview) {
+      mediaItem.overview = overview;
     }
 
-    if (typeof item.ProductionYear === "number") {
-      mediaItem.year = item.ProductionYear;
+    const productionYear = readFiniteNumber(item, "ProductionYear");
+    if (typeof productionYear === "number") {
+      mediaItem.year = productionYear;
     }
 
-    const runtimeMs = toRuntimeMs(item.RunTimeTicks);
+    const runtimeMs = toRuntimeMs(readFiniteNumber(item, "RunTimeTicks"));
     if (typeof runtimeMs === "number") {
       mediaItem.runtimeMs = runtimeMs;
     }
 
-    if (typeof item.CommunityRating === "number") {
-      mediaItem.communityRating = item.CommunityRating;
+    const communityRating = readFiniteNumber(item, "CommunityRating");
+    if (typeof communityRating === "number") {
+      mediaItem.communityRating = communityRating;
     }
 
-    if (typeof item.CriticRating === "number") {
-      mediaItem.criticRating = item.CriticRating;
+    const criticRating = readFiniteNumber(item, "CriticRating");
+    if (typeof criticRating === "number") {
+      mediaItem.criticRating = criticRating;
     }
 
     if (backdropTag) {
       mediaItem.backdrop = {
-        url: buildImageUrl(serverUrl, item.Id, "Backdrop", backdropTag, this.apiBasePath)
+        url: buildImageUrl(serverUrl, id, "Backdrop", backdropTag, this.apiBasePath)
       };
     }
 
     if (logoTag) {
-      mediaItem.logo = { url: buildImageUrl(serverUrl, item.Id, "Logo", logoTag, this.apiBasePath) };
+      mediaItem.logo = { url: buildImageUrl(serverUrl, id, "Logo", logoTag, this.apiBasePath) };
     }
 
-    if (item.DateCreated) {
-      mediaItem.dateAdded = item.DateCreated;
+    const dateCreated = readString(item, "DateCreated");
+    if (dateCreated) {
+      mediaItem.dateAdded = dateCreated;
     }
 
-    if (item.DateLastMediaAdded) {
-      mediaItem.dateUpdated = item.DateLastMediaAdded;
+    const dateLastMediaAdded = readString(item, "DateLastMediaAdded");
+    if (dateLastMediaAdded) {
+      mediaItem.dateUpdated = dateLastMediaAdded;
     }
 
-    if (item.PremiereDate) {
-      mediaItem.premiereDate = item.PremiereDate;
+    const premiereDate = readString(item, "PremiereDate");
+    if (premiereDate) {
+      mediaItem.premiereDate = premiereDate;
     }
 
     return mediaItem;
@@ -880,38 +1064,112 @@ export class JellyfinMediaProvider implements MediaProvider {
     };
   }
 
-  private makeSessionHeaders(accessToken: string): HeadersInit {
+  private makeSessionHeaders(session: SessionSnapshot): HeadersInit {
+    if (this.apiFlavor === "emby") {
+      return {
+        Accept: "application/json",
+        "X-Emby-Token": session.accessToken
+      };
+    }
+
     return {
       Accept: "application/json",
-      "X-Emby-Token": accessToken
+      Authorization: makeAuthHeader(this.authorizationScheme, {
+        clientName: session.clientName,
+        deviceId: session.deviceId,
+        appVersion: this.appVersion,
+        token: session.accessToken
+      })
     };
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  /**
+   * Runs one request; the timeout and the caller's abort signal cover the fetch *and* everything
+   * `handle` does with the response (status checks, reading and parsing the body). Every failure
+   * leaves as a `JellyfinProviderError`.
+   */
+  private async request<T>(
+    url: string,
+    init: RequestInit,
+    options: RequestOptions,
+    handle: (response: Response) => Promise<T>
+  ): Promise<T> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const callerSignal = options.signal;
+    let timedOut = false;
+
+    const onCallerAbort = (): void => {
+      controller.abort();
+    };
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeoutMs);
+
+    if (callerSignal?.aborted) {
+      controller.abort();
+    } else {
+      callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    }
 
     try {
-      return await this.fetchImpl(url, {
+      if (controller.signal.aborted) {
+        throw new JellyfinProviderError(cancelledError(this.displayName));
+      }
+
+      const response = await this.fetchImpl(url, {
         ...init,
         signal: controller.signal
       });
+
+      return await handle(response);
+    } catch (error) {
+      if (timedOut) {
+        throw new JellyfinProviderError(timeoutError(this.displayName));
+      }
+
+      if (callerSignal?.aborted) {
+        throw new JellyfinProviderError(cancelledError(this.displayName));
+      }
+
+      if (error instanceof JellyfinProviderError) {
+        throw error;
+      }
+
+      throw new JellyfinProviderError(toProviderError(error, options.fallbackMessage, this.displayName));
     } finally {
       clearTimeout(timeoutId);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
     }
   }
 
-  private async readJsonSafely(response: Response): Promise<unknown> {
+  /**
+   * Reads a 2xx JSON object body. Non-JSON content, unparsable JSON and non-object JSON are typed,
+   * retriable errors instead of an empty result. Messages never include the body.
+   */
+  private async readJsonObject(response: Response): Promise<JsonRecord> {
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.toLowerCase().includes("application/json")) {
-      return {};
+      throw unexpectedResponseError(this.displayName, response.status, "a non-JSON response");
     }
 
+    let payload: unknown;
     try {
-      return await response.json();
-    } catch {
-      return {};
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw unexpectedResponseError(this.displayName, response.status, "an invalid JSON response");
+      }
+
+      throw error;
     }
+
+    if (!isRecord(payload)) {
+      throw unexpectedResponseError(this.displayName, response.status, "an unexpected JSON response");
+    }
+
+    return payload;
   }
 
   private parseCursor(cursor: string | undefined): number {
@@ -955,20 +1213,19 @@ export function createJellyfinMediaProvider(options?: JellyfinProviderOptions): 
 }
 
 export class EmbyMediaProvider extends JellyfinMediaProvider {
-  constructor(options: Omit<JellyfinProviderOptions, "providerId" | "displayName" | "apiBasePath" | "authorizationScheme" | "minSupportedMajorVersion"> = {}) {
+  constructor(options: EmbyProviderOptions = {}) {
     super({
       ...options,
       providerId: "emby",
       displayName: "Emby",
       apiBasePath: "/emby",
       authorizationScheme: "Emby",
-      minSupportedMajorVersion: 4
+      minSupportedMajorVersion: 4,
+      apiFlavor: "emby"
     });
   }
 }
 
-export function createEmbyMediaProvider(
-  options?: Omit<JellyfinProviderOptions, "providerId" | "displayName" | "apiBasePath" | "authorizationScheme" | "minSupportedMajorVersion">
-): EmbyMediaProvider {
+export function createEmbyMediaProvider(options?: EmbyProviderOptions): EmbyMediaProvider {
   return new EmbyMediaProvider(options);
 }
