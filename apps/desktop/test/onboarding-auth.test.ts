@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   createDesktopOnboardingAppRuntime,
-  DESKTOP_PASSWORD_STORE_STORAGE_KEY
+  LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY
 } from "../src/onboarding/runtime"
 import type {
   DesktopDisplayOption,
@@ -398,10 +398,18 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
       return credentialStore.get(`${serverUrl}::${username}`) ?? null
     },
     writeCredential: async ({ serverUrl, username, password }) => {
+      // Mirrors the Rust command: without a keychain nothing is stored anywhere.
+      if (options.linuxFallbackWarning) {
+        return {
+          storageKind: "not-stored",
+          warning: options.linuxFallbackWarning
+        }
+      }
+
       credentialStore.set(`${serverUrl}::${username}`, password)
       return {
-        storageKind: options.linuxFallbackWarning ? "linux-weak-fallback" : "secure-service",
-        warning: options.linuxFallbackWarning ?? null
+        storageKind: "secure-service",
+        warning: null
       }
     },
     clearCredential: async ({ serverUrl, username }) => {
@@ -677,7 +685,7 @@ describe("desktop onboarding auth runtime", () => {
     expect(window.sessionStorage.getItem("mps.auth.session")).toContain("token-abc")
     expect(window.sessionStorage.getItem("mps.wall.handoff")).toContain("movies-main")
 
-    const encryptedSecret = window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)
+    const encryptedSecret = window.localStorage.getItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY)
     expect(encryptedSecret).toBeNull()
     await expect(platformHarness.bridge.readCredential({
       serverUrl: TEST_SERVER,
@@ -1649,11 +1657,11 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
-  it("shows non-crashing warning when linux secret-service is unavailable and fallback encryption is used", async () => {
+  it("shows non-crashing warning and does not remember the password when linux secret-service is unavailable", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true })
     const platformHarness = createPlatformHarness({
       linuxFallbackWarning:
-        "Linux secret-service unavailable. Using weak encrypted fallback in local app data."
+        "No system keychain (Secret Service) is available, so the password was not remembered."
     })
     const warningLogger = { warn: vi.fn() }
 
@@ -1673,19 +1681,19 @@ describe("desktop onboarding auth runtime", () => {
     await vi.waitFor(() => {
       expect(document.querySelector('[data-testid="library-checkbox-movies-main"]')).toBeTruthy()
       expect(document.querySelector('[data-testid="platform-warning-banner"]')?.textContent).toContain(
-        "Linux secret-service unavailable"
+        "No system keychain (Secret Service) is available"
       )
     })
 
     expect(warningLogger.warn).toHaveBeenCalledWith(
-      "Linux secret-service unavailable. Using weak encrypted fallback in local app data."
+      "No system keychain (Secret Service) is available, so the password was not remembered."
     )
 
     await expect(platformHarness.bridge.readCredential({
       serverUrl: TEST_SERVER,
       username: "demo-user"
-    })).resolves.toBe("super-secret")
-    expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
+    })).resolves.toBeNull()
+    expect(window.localStorage.getItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
 
     expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeNull()
     runtime.dispose()
@@ -1741,7 +1749,7 @@ describe("desktop onboarding auth runtime", () => {
 
     expect(window.sessionStorage.getItem("mps.auth.session")).toBeNull()
     expect(window.sessionStorage.getItem("mps.wall.handoff")).toBeNull()
-    expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
 
     runtime.dispose()
   })
@@ -1821,9 +1829,15 @@ describe("desktop onboarding auth runtime", () => {
       allowLogin: true,
       logoutDelayMs: 1_500
     })
+    const platformHarness = createPlatformHarness()
+    // Left behind by an older build that kept an AES copy of the password in localStorage.
+    window.localStorage.setItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY, "{\"version\":1,\"entries\":{}}")
 
-    const runtime = createDesktopOnboardingAppRuntime(document.body)
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
     runtime.start()
+    expect(window.localStorage.getItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
 
     setInputValue("server-url-input", TEST_SERVER)
     setChecked("remember-server-checkbox", true)
@@ -1842,7 +1856,10 @@ describe("desktop onboarding auth runtime", () => {
     clickByTestId("onboarding-finish")
 
     expect(window.sessionStorage.getItem("mps.auth.session")).toContain("token-abc")
-    expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeTruthy()
+    await expect(platformHarness.bridge.readCredential({
+      serverUrl: TEST_SERVER,
+      username: "demo-user"
+    })).resolves.toBe("super-secret")
 
     const logoutStartedAt = Date.now()
     clickByTestId("logout-button")
@@ -1851,8 +1868,13 @@ describe("desktop onboarding auth runtime", () => {
       expect(window.location.pathname).toBe("/")
       expect(window.sessionStorage.getItem("mps.auth.session")).toBeNull()
       expect(window.sessionStorage.getItem("mps.wall.handoff")).toBeNull()
-      expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
     })
+    // Logout must also forget the password in the OS keychain, otherwise the next
+    // login form is silently refilled with it.
+    await expect(platformHarness.bridge.readCredential({
+      serverUrl: TEST_SERVER,
+      username: "demo-user"
+    })).resolves.toBeNull()
 
     const elapsedMs = Date.now() - logoutStartedAt
     expect(elapsedMs).toBeLessThanOrEqual(1_000)

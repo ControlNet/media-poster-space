@@ -80,14 +80,14 @@ function inferRepositoryTruth(repositorySignals) {
           && repositorySignals.coreOnboardingForm.includes('testId: "remember-password-checkbox"')
         )
       )
-        ? "Yes (encrypted storage)"
+        ? "Yes (OS keychain only)"
         : "No",
       web: repositorySignals.webRuntime.includes("canPersistPassword: false") ? "No" : "Yes"
     },
     "Display selection": {
       desktop: repositorySignals.desktopRuntime.includes('testId: "display-selection-select"')
         && repositorySignals.desktopBridge.includes("platform_set_display_selection")
-        ? "Yes"
+        ? "Yes (moves the window to the chosen monitor)"
         : "No",
       web: "No"
     },
@@ -99,7 +99,10 @@ function inferRepositoryTruth(repositorySignals) {
       web: "No"
     },
     "Fullscreen control": {
-      desktop: "No (managed by windowing system)",
+      desktop: repositorySignals.desktopRuntime.includes("onToggleFullscreen: handleFullscreenToggle")
+        && repositorySignals.desktopBridge.includes("platform_set_fullscreen")
+        ? "Yes (Tauri window fullscreen)"
+        : "No",
       web: repositorySignals.webRuntime.includes('testId: "wall-fullscreen-button"')
         || repositorySignals.webControlsSection.includes('testId: "wall-fullscreen-button"')
         ? "Yes (browser Fullscreen API)"

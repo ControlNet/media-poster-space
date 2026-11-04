@@ -2347,13 +2347,10 @@ name = "mps-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "dirs 5.0.1",
  "keyring",
- "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

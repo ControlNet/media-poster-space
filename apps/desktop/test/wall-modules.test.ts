@@ -3,10 +3,8 @@ import { webcrypto } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
-  createEncryptedLocalPasswordVault,
   createPlatformBackedPasswordVault,
-  DESKTOP_PASSWORD_STORE_STORAGE_KEY,
-  type DesktopPasswordVault
+  LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY
 } from "../src/features/platform/password-vault-adapter"
 import {
   initializeDesktopWallPlatform,
@@ -227,25 +225,23 @@ describe("desktop wall platform adapter", () => {
       enabled: true
     })
 
-    expect(displayWarning).toBe("Unable to persist display selection.")
-    expect(autostartWarning).toBe("Unable to persist autostart preference.")
+    expect(displayWarning).toBe("Unable to apply display selection: display-write-failed")
+    expect(autostartWarning).toBe("Unable to change autostart: autostart-write-failed")
   })
 })
 
 describe("desktop password vault adapter", () => {
-  it("warns and encrypts locally when secure bridge write is unavailable", async () => {
+  it("does not remember the password anywhere when the keychain write fails", async () => {
     const bridge = createPlatformBridgeMock({
       writeCredential: async () => {
         throw new Error("bridge-unavailable")
       },
       readCredential: async () => null
     })
-    const fallbackVault = createEncryptedLocalPasswordVault(window.localStorage, "device-test")
     const warnings: string[] = []
 
     const vault = createPlatformBackedPasswordVault({
       platformBridge: bridge,
-      fallbackVault,
       onWarning: (warning) => {
         warnings.push(warning)
       }
@@ -257,45 +253,30 @@ describe("desktop password vault adapter", () => {
       password: "super-secret"
     })
 
-    expect(writeResult.storageKind).toBe("local-encrypted-fallback")
-    expect(writeResult.warning).toBe("Secure desktop credential storage unavailable. Using local encrypted fallback.")
-    expect(warnings).toEqual([
-      "Secure desktop credential storage unavailable. Using local encrypted fallback."
-    ])
+    const expectedWarning = "Secure credential storage is unavailable (bridge-unavailable), so the password was not remembered."
+    expect(writeResult).toEqual({ storageKind: "not-stored", warning: expectedWarning })
+    expect(warnings).toEqual([expectedWarning])
+    expect(window.localStorage.getItem(LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain("super-secret")
 
-    const storedPayload = window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)
-    expect(storedPayload).toBeTruthy()
-    expect(storedPayload).not.toContain("super-secret")
-
-    const readBack = await vault.read({
+    await expect(vault.read({
       serverUrl: "https://jellyfin.test",
       username: "demo-user"
-    })
-    expect(readBack).toBe("super-secret")
+    })).resolves.toBeNull()
   })
 
-  it("propagates linux secret-service warning from platform write without hiding it", async () => {
-    const fallbackVault: DesktopPasswordVault = {
-      read: async () => null,
-      write: async () => ({
-        warning: null,
-        storageKind: "local-encrypted-fallback"
-      }),
-      clearForIdentity: async () => undefined,
-      clearAll: async () => undefined
-    }
-
+  it("propagates the keychain-unavailable warning from the platform write", async () => {
+    const warning = "No system keychain (Secret Service) is available, so the password was not remembered."
     const bridge = createPlatformBridgeMock({
       writeCredential: async () => ({
-        storageKind: "linux-weak-fallback",
-        warning: "Linux secret-service unavailable. Using weak encrypted fallback in local app data."
+        storageKind: "not-stored",
+        warning
       })
     })
     const onWarning = vi.fn()
 
     const vault = createPlatformBackedPasswordVault({
       platformBridge: bridge,
-      fallbackVault,
       onWarning
     })
 
@@ -305,12 +286,40 @@ describe("desktop password vault adapter", () => {
       password: "super-secret"
     })
 
-    expect(result).toEqual({
-      storageKind: "linux-weak-fallback",
-      warning: "Linux secret-service unavailable. Using weak encrypted fallback in local app data."
+    expect(result).toEqual({ storageKind: "not-stored", warning })
+    expect(onWarning).toHaveBeenCalledWith(warning)
+  })
+
+  it("reports keychain read failures instead of hiding them", async () => {
+    const onWarning = vi.fn()
+    const vault = createPlatformBackedPasswordVault({
+      platformBridge: createPlatformBridgeMock({
+        readCredential: async () => {
+          throw new Error("keychain locked")
+        }
+      }),
+      onWarning
     })
-    expect(onWarning).toHaveBeenCalledWith(
-      "Linux secret-service unavailable. Using weak encrypted fallback in local app data."
-    )
+
+    await expect(vault.read({ serverUrl: "https://jellyfin.test", username: "demo-user" })).resolves.toBeNull()
+    expect(onWarning).toHaveBeenCalledWith("Could not read the remembered password: keychain locked")
+  })
+
+  it("propagates clear failures so the caller can warn that a password may remain", async () => {
+    const vault = createPlatformBackedPasswordVault({
+      platformBridge: createPlatformBridgeMock({
+        clearCredential: async () => {
+          throw new Error("delete denied")
+        },
+        clearAllCredentials: async () => {
+          throw new Error("delete denied")
+        }
+      }),
+      onWarning: vi.fn()
+    })
+
+    await expect(vault.clearForIdentity({ serverUrl: "https://jellyfin.test", username: "demo-user" }))
+      .rejects.toThrow("delete denied")
+    await expect(vault.clearAll()).rejects.toThrow("delete denied")
   })
 })

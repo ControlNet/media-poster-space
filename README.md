@@ -15,6 +15,12 @@ Media Poster Space is an open source poster-wall project on **Web** and **Deskto
 
 ![screenshot](assets/screenshot.webp)
 
+### Known limitations
+
+- The hosted web app is served over HTTPS, so browsers block requests to a plain `http://` media server (mixed content), except `localhost`. Use an `https://` server address (for example behind a reverse proxy) or the desktop app for LAN servers such as `http://192.168.1.10:8096`.
+- Server addresses must include the scheme (`http://` or `https://`).
+- The desktop app remembers passwords only in the OS keychain (Secret Service on Linux). Without one, the password is not remembered.
+
 ## Run locally
 
 ### Setup

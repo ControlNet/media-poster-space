@@ -21,10 +21,10 @@ export interface DesktopCredentialWriteRequest extends DesktopCredentialIdentity
   password: string
 }
 
+// "not-stored": no OS keychain was available (or it failed), so nothing was remembered.
 export type DesktopCredentialStorageKind =
   | "secure-service"
-  | "linux-weak-fallback"
-  | "local-encrypted-fallback"
+  | "not-stored"
 
 export interface DesktopCredentialWriteResult {
   storageKind: DesktopCredentialStorageKind

@@ -79,7 +79,12 @@ export function createProbeWebGLContextGetter(
       const context = probeCanvas.getContext("webgl") ?? probeCanvas.getContext("experimental-webgl");
 
       return context as WebGLRenderingContext | null;
-    } catch {
+    } catch (error) {
+      // Treated as "no WebGL": the scene uses its fallback mode. Log why.
+      console.warn(
+        "[wall-scene] WebGL probe failed; using the fallback renderer.",
+        error instanceof Error ? error.message : String(error)
+      );
       return null;
     }
   };

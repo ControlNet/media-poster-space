@@ -75,33 +75,27 @@ function defaultDisplayOptions(): DesktopDisplayOption[] {
   ]
 }
 
+// Browser-preview fallbacks only (no Tauri runtime). Storage errors (quota, disabled
+// storage) are reported to the caller, which shows its own "unable to persist" warning.
 function getLocalStorageValue(storage: Storage | null, key: string): string | null {
-  try {
-    return storage?.getItem(key) ?? null
-  } catch {
-    return null
-  }
+  return storage?.getItem(key) ?? null
 }
 
 function setLocalStorageValue(storage: Storage | null, key: string, value: string | null): void {
-  try {
-    if (!storage) {
-      return
-    }
-
-    if (value === null) {
-      storage.removeItem(key)
-      return
-    }
-
-    storage.setItem(key, value)
-  } catch {
+  if (!storage) {
+    return
   }
+
+  if (value === null) {
+    storage.removeItem(key)
+    return
+  }
+
+  storage.setItem(key, value)
 }
 
-function unsupportedBridgeError(): Error {
-  return new Error("Tauri desktop bridge is unavailable")
-}
+const BROWSER_PREVIEW_CREDENTIAL_WARNING =
+  "Passwords can only be remembered in the desktop app (system keychain)."
 
 export function createDesktopPlatformBridge(localStorageRef: Storage | null): DesktopPlatformBridge {
   return {
@@ -192,7 +186,8 @@ export function createDesktopPlatformBridge(localStorageRef: Storage | null): De
     readCredential: async (identity) => {
       const tauriCore = getTauriCore()
       if (!tauriCore) {
-        throw unsupportedBridgeError()
+        // Nothing can have been stored without a keychain.
+        return null
       }
 
       const invoke = tauriCore.invoke
@@ -204,7 +199,10 @@ export function createDesktopPlatformBridge(localStorageRef: Storage | null): De
     writeCredential: async (request) => {
       const tauriCore = getTauriCore()
       if (!tauriCore) {
-        throw unsupportedBridgeError()
+        return {
+          storageKind: "not-stored",
+          warning: BROWSER_PREVIEW_CREDENTIAL_WARNING
+        }
       }
 
       const invoke = tauriCore.invoke

@@ -10,7 +10,6 @@ import {
   clearOnboardingSessionArtifacts,
   clearPersistedPosterCaches,
   clearOnboardingWallHandoff,
-  isOnboardingWallRouteActive,
   persistRememberedString,
   readOnboardingActiveSession,
   readRememberedLibrarySelection,
@@ -449,7 +448,8 @@ export function createOnboardingAppRuntime(
   }
 
   function isWallRouteActive(): boolean {
-    return isOnboardingWallRouteActive(window.location.href, WALL_PATHNAME)
+    // Must match the router in render(), which also accepts "/wall/".
+    return isAppPath(window.location.pathname, ONBOARDING_WALL_PATHNAME)
   }
 
   function setWallDiagnosticsText(testId: string, textContent: string): void {
@@ -1180,6 +1180,22 @@ export function createOnboardingAppRuntime(
       toLibraryCheckboxTestId,
       onProviderChange: (providerId) => {
         const previousProviderId = state.selectedProviderId
+        // Switching provider abandons a signed-in session: drop it from storage too, or
+        // the next render restores it (and its provider) and the switch is undone.
+        const abandonedSession = state.session
+        if (abandonedSession) {
+          clearSessionArtifacts()
+          void resolveProviderForSession(abandonedSession).invalidateSession(abandonedSession).catch((error: unknown) => {
+            appendDiagnosticsLog({
+              timestamp: new Date().toISOString(),
+              level: "warn",
+              event: "auth.provider-switch.invalidate-session-failed",
+              details: {
+                message: error instanceof Error ? error.message : "Unknown provider-switch invalidation failure"
+              }
+            })
+          })
+        }
         preflightRequestNonce += 1
         loginRequestNonce += 1
         preflightInFlightPromise = null

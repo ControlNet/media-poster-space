@@ -62,6 +62,13 @@ export function restorePendingPagesRedirect(): void {
   }
 
   sessionStorageRef?.removeItem(PAGES_REDIRECT_STORAGE_KEY);
+  // Only same-origin absolute paths are valid. "//host/..." (or "/\host") would resolve
+  // to another origin, and replaceState throws a SecurityError for it at boot.
+  if (!redirectTarget.startsWith("/") || redirectTarget.startsWith("//") || redirectTarget.startsWith("/\\")) {
+    console.warn("[routing] Ignoring a redirect target that is not a same-origin path");
+    return;
+  }
+
   const currentTarget = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (redirectTarget === currentTarget) {
     return;

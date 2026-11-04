@@ -1,46 +1,27 @@
-use std::collections::HashMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use base64::Engine;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager, Window};
+use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, Position, Window};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 const APP_SERVICE_NAME: &str = "media-poster-space";
 const PLATFORM_STATE_FILE_NAME: &str = "platform-state.json";
-const FALLBACK_CREDENTIAL_FILE_NAME: &str = "credential-fallback.json";
+// Written by earlier versions: passwords obfuscated with a key derived from data stored
+// next to them. It is no longer read, and is deleted whenever we get the chance.
+const LEGACY_FALLBACK_CREDENTIAL_FILE_NAME: &str = "credential-fallback.json";
+const CREDENTIAL_NOT_STORED_KIND: &str = "not-stored";
+const SECURE_SERVICE_KIND: &str = "secure-service";
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 struct PlatformStateFile {
     display_selection: Option<String>,
     autostart_enabled: bool,
-}
-
-impl Default for PlatformStateFile {
-    fn default() -> Self {
-        Self {
-            display_selection: None,
-            autostart_enabled: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FallbackCredentialEntry {
-    nonce: String,
-    cipher_text: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct FallbackCredentialStore {
-    entries: HashMap<String, FallbackCredentialEntry>,
+    // Keychain account names (`server::username`) this app has written. The keychain
+    // cannot be enumerated portably, so "forget all" needs this index. It holds no secret.
+    credential_identities: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,21 +42,6 @@ struct DisplayOption {
     is_primary: bool,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CredentialIdentityInput {
-    server_url: String,
-    username: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CredentialWriteInput {
-    server_url: String,
-    username: String,
-    password: String,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CredentialWriteResult {
@@ -89,6 +55,14 @@ fn ensure_parent_dir(path: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Writes through a temporary file and a rename so a crash never leaves a truncated file.
+fn write_file_atomically(path: &Path, payload: &str) -> Result<(), String> {
+    ensure_parent_dir(path)?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, payload).map_err(|error| error.to_string())?;
+    fs::rename(&temp_path, path).map_err(|error| error.to_string())
 }
 
 fn resolve_portable_dir() -> Option<PathBuf> {
@@ -127,43 +101,50 @@ fn platform_state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root.join(PLATFORM_STATE_FILE_NAME))
 }
 
-fn fallback_credential_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn legacy_fallback_credential_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     let (root, _) = resolve_data_root(app)?;
-    Ok(root.join(FALLBACK_CREDENTIAL_FILE_NAME))
+    Ok(root.join(LEGACY_FALLBACK_CREDENTIAL_FILE_NAME))
+}
+
+fn remove_legacy_fallback_credential_file(app: &AppHandle) -> Result<(), String> {
+    let path = legacy_fallback_credential_file_path(app)?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Could not delete the legacy credential file: {error}"
+        )),
+    }
 }
 
 fn read_platform_state(app: &AppHandle) -> Result<PlatformStateFile, String> {
     let path = platform_state_file_path(app)?;
-    let raw = match fs::read_to_string(path) {
+    let raw = match fs::read_to_string(&path) {
         Ok(raw) => raw,
-        Err(_) => return Ok(PlatformStateFile::default()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Ok(PlatformStateFile::default())
+        }
+        Err(error) => return Err(format!("Could not read platform state: {error}")),
     };
 
-    serde_json::from_str(&raw).map_err(|error| error.to_string())
+    match serde_json::from_str(&raw) {
+        Ok(state) => Ok(state),
+        Err(error) => {
+            // A corrupted file must not disable every platform command forever. Start
+            // over with defaults (the next write replaces the file) and say so.
+            eprintln!(
+                "[mps] Ignoring unreadable platform state at {}: {error}",
+                path.display()
+            );
+            Ok(PlatformStateFile::default())
+        }
+    }
 }
 
 fn write_platform_state(app: &AppHandle, state: &PlatformStateFile) -> Result<(), String> {
     let path = platform_state_file_path(app)?;
-    ensure_parent_dir(&path)?;
     let payload = serde_json::to_string_pretty(state).map_err(|error| error.to_string())?;
-    fs::write(path, payload).map_err(|error| error.to_string())
-}
-
-fn read_fallback_store(app: &AppHandle) -> Result<FallbackCredentialStore, String> {
-    let path = fallback_credential_file_path(app)?;
-    let raw = match fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(_) => return Ok(FallbackCredentialStore::default()),
-    };
-
-    serde_json::from_str(&raw).map_err(|error| error.to_string())
-}
-
-fn write_fallback_store(app: &AppHandle, store: &FallbackCredentialStore) -> Result<(), String> {
-    let path = fallback_credential_file_path(app)?;
-    ensure_parent_dir(&path)?;
-    let payload = serde_json::to_string_pretty(store).map_err(|error| error.to_string())?;
-    fs::write(path, payload).map_err(|error| error.to_string())
+    write_file_atomically(&path, &payload)
 }
 
 fn to_identity_key(server_url: &str, username: &str) -> String {
@@ -172,52 +153,6 @@ fn to_identity_key(server_url: &str, username: &str) -> String {
         server_url.trim().to_lowercase(),
         username.trim().to_lowercase()
     )
-}
-
-fn weak_fallback_key(identity_key: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(APP_SERVICE_NAME.as_bytes());
-    hasher.update(identity_key.as_bytes());
-    let digest = hasher.finalize();
-    let mut key = [0_u8; 32];
-    key.copy_from_slice(&digest[..32]);
-    key
-}
-
-fn weak_encrypt(identity_key: &str, plain_text: &str) -> FallbackCredentialEntry {
-    let key = weak_fallback_key(identity_key);
-    let mut nonce = [0_u8; 16];
-    rand::thread_rng().fill_bytes(&mut nonce);
-    let plain_bytes = plain_text.as_bytes();
-
-    let cipher_bytes: Vec<u8> = plain_bytes
-        .iter()
-        .enumerate()
-        .map(|(index, byte)| byte ^ key[index % key.len()] ^ nonce[index % nonce.len()])
-        .collect();
-
-    FallbackCredentialEntry {
-        nonce: BASE64_STANDARD.encode(nonce),
-        cipher_text: BASE64_STANDARD.encode(cipher_bytes),
-    }
-}
-
-fn weak_decrypt(identity_key: &str, entry: &FallbackCredentialEntry) -> Option<String> {
-    let key = weak_fallback_key(identity_key);
-    let nonce = BASE64_STANDARD.decode(&entry.nonce).ok()?;
-    let cipher_bytes = BASE64_STANDARD.decode(&entry.cipher_text).ok()?;
-
-    if nonce.is_empty() {
-        return None;
-    }
-
-    let plain_bytes: Vec<u8> = cipher_bytes
-        .iter()
-        .enumerate()
-        .map(|(index, byte)| byte ^ key[index % key.len()] ^ nonce[index % nonce.len()])
-        .collect();
-
-    String::from_utf8(plain_bytes).ok()
 }
 
 fn linux_secret_service_available() -> bool {
@@ -230,67 +165,101 @@ fn linux_secret_service_available() -> bool {
         .unwrap_or(true)
 }
 
-fn secure_store_write(server_url: &str, username: &str, password: &str) -> Result<(), String> {
-    let identity_key = to_identity_key(server_url, username);
-    let entry =
-        keyring::Entry::new(APP_SERVICE_NAME, &identity_key).map_err(|error| error.to_string())?;
-    entry
+fn keyring_entry(identity_key: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(APP_SERVICE_NAME, identity_key).map_err(|error| error.to_string())
+}
+
+fn secure_store_write(identity_key: &str, password: &str) -> Result<(), String> {
+    keyring_entry(identity_key)?
         .set_password(password)
         .map_err(|error| error.to_string())
 }
 
-fn secure_store_read(server_url: &str, username: &str) -> Result<Option<String>, String> {
-    let identity_key = to_identity_key(server_url, username);
-    let entry =
-        keyring::Entry::new(APP_SERVICE_NAME, &identity_key).map_err(|error| error.to_string())?;
-    match entry.get_password() {
+fn secure_store_read(identity_key: &str) -> Result<Option<String>, String> {
+    match keyring_entry(identity_key)?.get_password() {
         Ok(password) => Ok(Some(password)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(error) => Err(error.to_string()),
     }
 }
 
-fn secure_store_delete(server_url: &str, username: &str) -> Result<(), String> {
-    let identity_key = to_identity_key(server_url, username);
-    let entry =
-        keyring::Entry::new(APP_SERVICE_NAME, &identity_key).map_err(|error| error.to_string())?;
-    match entry.delete_password() {
+fn secure_store_delete(identity_key: &str) -> Result<(), String> {
+    match keyring_entry(identity_key)?.delete_password() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(error.to_string()),
     }
 }
 
-fn fallback_store_write(app: &AppHandle, input: &CredentialWriteInput) -> Result<(), String> {
-    let identity_key = to_identity_key(&input.server_url, &input.username);
-    let mut store = read_fallback_store(app)?;
-    let encrypted = weak_encrypt(&identity_key, &input.password);
-    store.entries.insert(identity_key, encrypted);
-    write_fallback_store(app, &store)
+fn remember_credential_identity(app: &AppHandle, identity_key: &str) -> Result<(), String> {
+    let mut state = read_platform_state(app)?;
+    if state
+        .credential_identities
+        .iter()
+        .any(|known| known == identity_key)
+    {
+        return Ok(());
+    }
+
+    state.credential_identities.push(identity_key.to_string());
+    write_platform_state(app, &state)
 }
 
-fn fallback_store_read(
-    app: &AppHandle,
-    identity: &CredentialIdentityInput,
-) -> Result<Option<String>, String> {
-    let identity_key = to_identity_key(&identity.server_url, &identity.username);
-    let store = read_fallback_store(app)?;
-    let entry = match store.entries.get(&identity_key) {
-        Some(entry) => entry,
-        None => return Ok(None),
-    };
+fn forget_credential_identity(app: &AppHandle, identity_key: &str) -> Result<(), String> {
+    let mut state = read_platform_state(app)?;
+    let known_count = state.credential_identities.len();
+    state
+        .credential_identities
+        .retain(|known| known != identity_key);
+    if state.credential_identities.len() == known_count {
+        return Ok(());
+    }
 
-    Ok(weak_decrypt(&identity_key, entry))
+    write_platform_state(app, &state)
 }
 
-fn fallback_store_delete(
-    app: &AppHandle,
-    identity: &CredentialIdentityInput,
-) -> Result<(), String> {
-    let identity_key = to_identity_key(&identity.server_url, &identity.username);
-    let mut store = read_fallback_store(app)?;
-    store.entries.remove(&identity_key);
-    write_fallback_store(app, &store)
+fn monitor_id(index: usize, monitor: &Monitor) -> String {
+    let size = monitor.size();
+    let position = monitor.position();
+    format!(
+        "display-{}-{}x{}-{},{}",
+        index, size.width, size.height, position.x, position.y
+    )
+}
+
+/// Moves the window onto the selected monitor (re-entering fullscreen there if needed).
+fn apply_display_selection(window: &Window, display_id: &str) -> Result<(), String> {
+    let monitors = window
+        .available_monitors()
+        .map_err(|error| error.to_string())?;
+    let target = monitors
+        .iter()
+        .enumerate()
+        .find(|(index, monitor)| monitor_id(*index, monitor) == display_id)
+        .map(|(_, monitor)| monitor)
+        .ok_or_else(|| format!("Display \"{display_id}\" is not connected."))?;
+
+    let was_fullscreen = window.is_fullscreen().map_err(|error| error.to_string())?;
+    if was_fullscreen {
+        window
+            .set_fullscreen(false)
+            .map_err(|error| error.to_string())?;
+    }
+
+    let position = target.position();
+    window
+        .set_position(Position::Physical(PhysicalPosition::new(
+            position.x, position.y,
+        )))
+        .map_err(|error| error.to_string())?;
+
+    if was_fullscreen {
+        window
+            .set_fullscreen(true)
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -327,15 +296,6 @@ fn platform_list_displays(window: Window) -> Result<Vec<DisplayOption>, String> 
             let monitor_size = monitor.size();
             let monitor_position = monitor.position();
 
-            let monitor_id = format!(
-                "display-{}-{}x{}-{},{}",
-                index,
-                monitor_size.width,
-                monitor_size.height,
-                monitor_position.x,
-                monitor_position.y
-            );
-
             let is_primary = primary
                 .as_ref()
                 .map(|primary_monitor| {
@@ -345,7 +305,7 @@ fn platform_list_displays(window: Window) -> Result<Vec<DisplayOption>, String> 
                 .unwrap_or(index == 0);
 
             DisplayOption {
-                id: monitor_id,
+                id: monitor_id(index, monitor),
                 label: monitor_name,
                 is_primary,
             }
@@ -364,8 +324,13 @@ fn platform_get_display_selection(app: AppHandle) -> Result<Option<String>, Stri
 #[tauri::command]
 fn platform_set_display_selection(
     app: AppHandle,
+    window: Window,
     display_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(display_id) = display_id.as_deref() {
+        apply_display_selection(&window, display_id)?;
+    }
+
     let mut state = read_platform_state(&app)?;
     state.display_selection = display_id;
     write_platform_state(&app, &state)
@@ -373,22 +338,20 @@ fn platform_set_display_selection(
 
 #[tauri::command]
 fn platform_get_autostart(app: AppHandle) -> Result<bool, String> {
-    let fallback = read_platform_state(&app)?.autostart_enabled;
-    let manager = app.autolaunch();
-    match manager.is_enabled() {
-        Ok(enabled) => Ok(enabled),
-        Err(_) => Ok(fallback),
-    }
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|error| format!("Could not read the autostart setting: {error}"))
 }
 
 #[tauri::command]
 fn platform_set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     let manager = app.autolaunch();
-    let _ = if enabled {
+    let result = if enabled {
         manager.enable()
     } else {
         manager.disable()
     };
+    result.map_err(|error| format!("Could not change the autostart setting: {error}"))?;
 
     let mut state = read_platform_state(&app)?;
     state.autostart_enabled = enabled;
@@ -408,24 +371,13 @@ fn platform_set_fullscreen(window: Window, enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn platform_read_credential(
-    app: AppHandle,
-    server_url: String,
-    username: String,
-) -> Result<Option<String>, String> {
-    let identity = CredentialIdentityInput {
-        server_url,
-        username,
-    };
-
-    if linux_secret_service_available() {
-        match secure_store_read(&identity.server_url, &identity.username) {
-            Ok(value) => return Ok(value),
-            Err(_) => {}
-        }
+fn platform_read_credential(server_url: String, username: String) -> Result<Option<String>, String> {
+    if !linux_secret_service_available() {
+        return Ok(None);
     }
 
-    fallback_store_read(&app, &identity)
+    secure_store_read(&to_identity_key(&server_url, &username))
+        .map_err(|error| format!("Could not read the remembered password: {error}"))
 }
 
 #[tauri::command]
@@ -435,50 +387,35 @@ fn platform_write_credential(
     username: String,
     password: String,
 ) -> Result<CredentialWriteResult, String> {
-    let input = CredentialWriteInput {
-        server_url,
-        username,
-        password,
-    };
-
-    if cfg!(target_os = "linux") && !linux_secret_service_available() {
-        fallback_store_write(&app, &input)?;
+    // There is deliberately no local-file fallback: without an OS keychain any "encrypted"
+    // copy would sit next to its own key. The password is simply not remembered.
+    if !linux_secret_service_available() {
         return Ok(CredentialWriteResult {
-      storage_kind: "linux-weak-fallback".to_string(),
-      warning: Some(
-        "Linux secret-service unavailable. Using weak encrypted fallback in local app data.".to_string(),
-      ),
-    });
+            storage_kind: CREDENTIAL_NOT_STORED_KIND.to_string(),
+            warning: Some(
+                "No system keychain (Secret Service) is available, so the password was not remembered."
+                    .to_string(),
+            ),
+        });
     }
 
-    match secure_store_write(&input.server_url, &input.username, &input.password) {
-        Ok(()) => Ok(CredentialWriteResult {
-            storage_kind: "secure-service".to_string(),
-            warning: None,
-        }),
-        Err(error_message) => {
-            fallback_store_write(&app, &input)?;
-
-            let warning = if cfg!(target_os = "linux") {
-                Some(format!(
-          "Secret-service write failed ({error_message}). Falling back to weak encrypted local storage."
-        ))
-            } else {
-                Some(format!(
-          "Secure credential write failed ({error_message}). Falling back to encrypted local storage."
-        ))
-            };
-
-            Ok(CredentialWriteResult {
-                storage_kind: if cfg!(target_os = "linux") {
-                    "linux-weak-fallback".to_string()
-                } else {
-                    "local-encrypted-fallback".to_string()
-                },
-                warning,
-            })
-        }
+    let identity_key = to_identity_key(&server_url, &username);
+    if let Err(error_message) = secure_store_write(&identity_key, &password) {
+        return Ok(CredentialWriteResult {
+            storage_kind: CREDENTIAL_NOT_STORED_KIND.to_string(),
+            warning: Some(format!(
+                "Saving to the system keychain failed ({error_message}), so the password was not remembered."
+            )),
+        });
     }
+
+    remember_credential_identity(&app, &identity_key)?;
+    remove_legacy_fallback_credential_file(&app)?;
+
+    Ok(CredentialWriteResult {
+        storage_kind: SECURE_SERVICE_KIND.to_string(),
+        warning: None,
+    })
 }
 
 #[tauri::command]
@@ -487,18 +424,59 @@ fn platform_clear_credential(
     server_url: String,
     username: String,
 ) -> Result<(), String> {
-    let identity = CredentialIdentityInput {
-        server_url,
-        username,
-    };
-    let _ = secure_store_delete(&identity.server_url, &identity.username);
-    fallback_store_delete(&app, &identity)
+    let identity_key = to_identity_key(&server_url, &username);
+    remove_legacy_fallback_credential_file(&app)?;
+    if linux_secret_service_available() {
+        secure_store_delete(&identity_key)
+            .map_err(|error| format!("Could not remove the remembered password: {error}"))?;
+    }
+
+    forget_credential_identity(&app, &identity_key)
 }
 
 #[tauri::command]
 fn platform_clear_all_credentials(app: AppHandle) -> Result<(), String> {
-    let empty_store = FallbackCredentialStore::default();
-    write_fallback_store(&app, &empty_store)
+    remove_legacy_fallback_credential_file(&app)?;
+
+    let mut state = read_platform_state(&app)?;
+    if !linux_secret_service_available() {
+        return Ok(());
+    }
+
+    let mut failures = Vec::new();
+    let mut remaining = Vec::new();
+    for identity_key in &state.credential_identities {
+        if let Err(error) = secure_store_delete(identity_key) {
+            failures.push(error);
+            remaining.push(identity_key.clone());
+        }
+    }
+
+    state.credential_identities = remaining;
+    write_platform_state(&app, &state)?;
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Could not remove {} remembered password(s) from the system keychain: {}",
+            failures.len(),
+            failures.join("; ")
+        ))
+    }
+}
+
+fn restore_window_placement(app: &AppHandle) -> Result<(), String> {
+    let display_selection = read_platform_state(app)?.display_selection;
+    let Some(display_id) = display_selection else {
+        return Ok(());
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("Main window is not available.".to_string());
+    };
+
+    apply_display_selection(&window.as_ref().window(), &display_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -508,6 +486,18 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Option::<Vec<&str>>::None,
         ))
+        .setup(|app| {
+            let handle = app.handle();
+            if let Err(error) = remove_legacy_fallback_credential_file(handle) {
+                eprintln!("[mps] {error}");
+            }
+            // A display that was unplugged since the last run is not fatal: the window
+            // simply opens where the OS puts it.
+            if let Err(error) = restore_window_placement(handle) {
+                eprintln!("[mps] Could not restore the selected display: {error}");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             platform_get_capabilities,
             platform_list_displays,

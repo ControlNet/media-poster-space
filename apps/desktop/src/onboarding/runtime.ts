@@ -79,8 +79,8 @@ import {
   type DesktopDisplayOption
 } from "../features/platform/tauri-bridge"
 import {
-  createEncryptedLocalPasswordVault,
   createPlatformBackedPasswordVault,
+  removeLegacyLocalPasswordStore,
   type DesktopPasswordVault
 } from "../features/platform/password-vault-adapter"
 import {
@@ -102,8 +102,7 @@ import {
 } from "../features/crash-export/crash-export"
 
 export {
-  DESKTOP_PASSWORD_STORE_STORAGE_KEY,
-  createEncryptedLocalPasswordVault,
+  LEGACY_DESKTOP_PASSWORD_STORE_STORAGE_KEY,
   createPlatformBackedPasswordVault
 } from "../features/platform/password-vault-adapter"
 export type { DesktopPasswordVault } from "../features/platform/password-vault-adapter"
@@ -119,6 +118,16 @@ const RECONNECT_MAX_BACKOFF_MS = ONBOARDING_RECONNECT_MAX_BACKOFF_MS
 const RECONNECT_GUIDE_THRESHOLD_MS = ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS
 const DESKTOP_APP_VERSION = "0.1.0"
 const WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS
+const WALL_CLOCK_TICK_MS = 1_000
+
+// Same format as the heading built by the shared wall presentation section.
+function formatWallClockHeading(now: Date = new Date()): string {
+  return now.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit"
+  })
+}
 
 const UNAVAILABLE_WALL_POSTER_GRID_STREAM_APPLY_RESULT: WallPosterGridStreamApplyResult = {
   status: "unavailable",
@@ -144,6 +153,7 @@ interface OnboardingState extends OnboardingBaseState<
   selectedDisplayId: string | null
   autostartEnabled: boolean
   fullscreenEnabled: boolean
+  fullscreenWarning: string | null
   platformWarning: string | null
 }
 
@@ -170,6 +180,7 @@ function createOnboardingState(localStorageRef: Storage | null): OnboardingState
     selectedDisplayId: null,
     autostartEnabled: false,
     fullscreenEnabled: false,
+    fullscreenWarning: null,
     platformWarning: null
   }
 }
@@ -229,15 +240,26 @@ export function createDesktopOnboardingAppRuntime(
   const deviceId = getOrCreateDeviceId(localStorageRef)
   const platformBridge = options.platformBridge ?? createDesktopPlatformBridge(localStorageRef)
   const warningLogger = options.warningLogger ?? console
-  const fallbackPasswordVault = createEncryptedLocalPasswordVault(localStorageRef, deviceId)
+  removeLegacyLocalPasswordStore(localStorageRef)
+  function reportPlatformWarning(warning: string): void {
+    state.platformWarning = warning
+    warningLogger.warn(warning)
+  }
+  // Forgetting a password must not block login/logout, but the user has to know when a
+  // copy may still be in the keychain.
+  async function clearRememberedPassword(clear: () => Promise<void>): Promise<void> {
+    try {
+      await clear()
+    } catch (error) {
+      reportPlatformWarning(
+        `Could not remove the remembered password from the system keychain: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
   const passwordVault = options.passwordVault
     ?? createPlatformBackedPasswordVault({
       platformBridge,
-      fallbackVault: fallbackPasswordVault,
-      onWarning: (warning) => {
-        state.platformWarning = warning
-        warningLogger.warn(warning)
-      }
+      onWarning: reportPlatformWarning
     })
   const posterCache = createPosterCache<MediaItem>({
     maxTotalSizeBytes: ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES
@@ -254,6 +276,9 @@ export function createDesktopOnboardingAppRuntime(
   let wallPatchFallbackRequested = false
   let wallPatchFallbackIncidentActive = false
   let wallStreamIntervalId: ReturnType<typeof setInterval> | null = null
+  let wallClockIntervalId: ReturnType<typeof setInterval> | null = null
+  let isRendering = false
+  let renderDeferred = false
   let wallStreamTickInFlight = false
   let isWallRendering = false
   let wallPatchDeferredDuringRender = false
@@ -451,12 +476,17 @@ export function createDesktopOnboardingAppRuntime(
   async function initializePlatformExtensions(): Promise<void> {
     const initNonce = ++platformInitNonce
 
+    // A failing fullscreen query must not abort the rest of platform start-up.
+    let fullscreenQueryError: string | null = null
     const [platformState, fullscreenEnabled] = await Promise.all([
       initializeDesktopWallPlatform({
         platformBridge,
         existingWarning: state.platformWarning
       }),
-      platformBridge.getFullscreenEnabled()
+      platformBridge.getFullscreenEnabled().catch((error: unknown) => {
+        fullscreenQueryError = `Could not read the fullscreen state: ${error instanceof Error ? error.message : String(error)}`
+        return false
+      })
     ])
 
     if (isDisposed || platformInitNonce !== initNonce) {
@@ -469,7 +499,7 @@ export function createDesktopOnboardingAppRuntime(
     state.selectedDisplayId = platformState.selectedDisplayId
     state.autostartEnabled = platformState.autostartEnabled
     state.fullscreenEnabled = fullscreenEnabled
-    state.platformWarning = platformState.platformWarning
+    state.platformWarning = platformState.platformWarning ?? fullscreenQueryError
 
     requestRender()
   }
@@ -678,6 +708,42 @@ export function createDesktopOnboardingAppRuntime(
     wallStreamIntervalId = setInterval(() => {
       void handleWallStreamTick()
     }, WALL_STREAM_INTERVAL_MS)
+  }
+
+  function syncWallClockHeadingInPlace(): void {
+    const wallClock = target.querySelector<HTMLElement>('[data-testid="wall-clock-heading"]')
+    if (!wallClock) {
+      return
+    }
+
+    const nextClockText = formatWallClockHeading()
+    if (wallClock.textContent !== nextClockText) {
+      wallClock.textContent = nextClockText
+    }
+  }
+
+  function startWallClockLoop(): void {
+    if (wallClockIntervalId !== null) {
+      return
+    }
+
+    syncWallClockHeadingInPlace()
+    wallClockIntervalId = setInterval(() => {
+      if (!isWallRouteActive()) {
+        return
+      }
+
+      syncWallClockHeadingInPlace()
+    }, WALL_CLOCK_TICK_MS)
+  }
+
+  function stopWallClockLoop(): void {
+    if (wallClockIntervalId === null) {
+      return
+    }
+
+    clearInterval(wallClockIntervalId)
+    wallClockIntervalId = null
   }
 
   function stopWallStreamLoop(): void {
@@ -1117,10 +1183,10 @@ export function createDesktopOnboardingAppRuntime(
           return
         }
 
-        await passwordVault.clearForIdentity({
+        await clearRememberedPassword(() => passwordVault.clearForIdentity({
           serverUrl,
           username
-        })
+        }))
       },
       onRenderRequest: requestRender
     })
@@ -1134,7 +1200,7 @@ export function createDesktopOnboardingAppRuntime(
       disposeIngestionRuntime,
       clearSessionArtifacts,
       onBeforeStateReset: async () => {
-        await passwordVault.clearAll()
+        await clearRememberedPassword(() => passwordVault.clearAll())
       },
       onAfterCommonStateReset: () => {
         clearPersistedPosterCaches(localStorageRef)
@@ -1204,17 +1270,37 @@ export function createDesktopOnboardingAppRuntime(
       }
 
       state.fullscreenEnabled = nextFullscreenEnabled
+      state.fullscreenWarning = null
       requestRender()
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       if (isDisposed) {
         return
       }
 
-      state.platformWarning = error instanceof Error
-        ? error.message
-        : "Desktop fullscreen request failed."
+      // Shown on the wall itself; the onboarding platform banner is not visible there.
+      state.fullscreenWarning = error instanceof Error && error.message.length > 0
+        ? `Fullscreen request failed: ${error.message}`
+        : "Fullscreen request failed. Continue in windowed mode and retry anytime."
       requestRender()
     })
+  }
+
+  function createFullscreenWarningElement(message: string): HTMLParagraphElement {
+    const fullscreenWarning = createElement("p", { textContent: message, testId: "wall-fullscreen-warning" }) as HTMLParagraphElement
+    fullscreenWarning.style.margin = "0"
+    fullscreenWarning.style.padding = "0.62rem 0.8rem"
+    fullscreenWarning.style.borderRadius = "0.64rem"
+    fullscreenWarning.style.border = "1px solid rgba(255, 194, 130, 0.54)"
+    fullscreenWarning.style.background = [
+      "linear-gradient(145deg, rgba(89, 54, 24, 0.58) 0%, rgba(63, 38, 18, 0.57) 100%)",
+      "radial-gradient(circle at 100% 0%, rgba(255, 210, 151, 0.16) 0%, transparent 48%)"
+    ].join(",")
+    fullscreenWarning.style.color = "#ffe5cc"
+    fullscreenWarning.style.fontFamily = "var(--mps-font-mono)"
+    fullscreenWarning.style.fontSize = "0.69rem"
+    fullscreenWarning.style.letterSpacing = "0.02em"
+    fullscreenWarning.style.boxShadow = "0 8px 18px rgba(33, 18, 8, 0.3), inset 0 0 0 1px rgba(255, 219, 174, 0.18)"
+    return fullscreenWarning
   }
 
   function renderOnboarding(container: HTMLElement): void {
@@ -1234,6 +1320,22 @@ export function createDesktopOnboardingAppRuntime(
       toLibraryCheckboxTestId,
       onProviderChange: (providerId) => {
         const previousProviderId = state.selectedProviderId
+        // Switching provider abandons a signed-in session: drop it from storage too, or
+        // the next render restores it (and its provider) and the switch is undone.
+        const abandonedSession = state.session
+        if (abandonedSession) {
+          clearSessionArtifacts()
+          void resolveProviderForSession(abandonedSession).invalidateSession(abandonedSession).catch((error: unknown) => {
+            appendDiagnosticsLog({
+              timestamp: new Date().toISOString(),
+              level: "warn",
+              event: "auth.provider-switch.invalidate-session-failed",
+              details: {
+                message: error instanceof Error ? error.message : "Unknown provider-switch invalidation failure"
+              }
+            })
+          })
+        }
         resetAutomaticWallEntryAttempt()
         preflightRequestNonce += 1
         loginRequestNonce += 1
@@ -1308,7 +1410,8 @@ export function createDesktopOnboardingAppRuntime(
         const username = state.username.trim()
 
         if (serverUrl && username) {
-          void passwordVault.clearForIdentity({ serverUrl, username })
+          void clearRememberedPassword(() => passwordVault.clearForIdentity({ serverUrl, username }))
+            .then(requestRender)
         }
 
         requestRender()
@@ -1353,13 +1456,12 @@ export function createDesktopOnboardingAppRuntime(
         displaySelect.style.background = "var(--mps-color-canvas)"
         displaySelect.style.color = "var(--mps-color-foreground)"
         displaySelect.disabled = !state.platformReady || state.platformDisplays.length === 0
-        displaySelect.innerHTML = state.platformDisplays
-          .map((display) => {
-            const primaryLabel = display.isPrimary ? " (primary)" : ""
-            const selectedAttribute = display.id === state.selectedDisplayId ? " selected" : ""
-            return `<option value="${display.id}"${selectedAttribute}>${display.label}${primaryLabel}</option>`
-          })
-          .join("")
+        // Monitor names come from the OS; build options as text, never as markup.
+        for (const display of state.platformDisplays) {
+          const primaryLabel = display.isPrimary ? " (primary)" : ""
+          const isSelected = display.id === state.selectedDisplayId
+          displaySelect.append(new Option(`${display.label}${primaryLabel}`, display.id, isSelected, isSelected))
+        }
         displaySelect.addEventListener("change", () => {
           state.selectedDisplayId = displaySelect.value || null
           void persistDesktopDisplaySelection({
@@ -1524,13 +1626,17 @@ export function createDesktopOnboardingAppRuntime(
         controls: {
           showFullscreenControl: true,
           fullscreenActive: state.fullscreenEnabled,
-          onToggleFullscreen: handleFullscreenToggle
+          onToggleFullscreen: handleFullscreenToggle,
+          fullscreenWarning: state.fullscreenWarning
+            ? createFullscreenWarningElement(state.fullscreenWarning)
+            : null
         }
       })
 
       container.append(wallView)
       syncWallIngestionTelemetry()
       startWallStreamLoop()
+      startWallClockLoop()
     } finally {
       isWallRendering = false
       if (wallPatchDeferredDuringRender) {
@@ -1540,16 +1646,13 @@ export function createDesktopOnboardingAppRuntime(
     }
   }
 
-  function render(): void {
-    if (isDisposed) {
-      return
-    }
-
-    const url = new URL(window.location.href)
-
-    if (url.pathname !== WALL_PATHNAME) {
+  function renderOnce(): void {
+    if (new URL(window.location.href).pathname !== WALL_PATHNAME) {
       void tryAutomaticWallEntry()
     }
+
+    // Read the route after the automatic wall entry: it can switch to /wall synchronously.
+    const url = new URL(window.location.href)
 
     if (url.pathname === WALL_PATHNAME) {
       startDiagnosticsSampling()
@@ -1559,12 +1662,38 @@ export function createDesktopOnboardingAppRuntime(
 
     stopDiagnosticsSampling()
     stopWallStreamLoop()
+    stopWallClockLoop()
     wallInteractionController.detach()
     state.activePosterIndex = null
     state.wallControlsHidden = false
+    state.fullscreenWarning = null
     clearWallPatchFallbackState()
     disposeIngestionRuntime()
     renderOnboarding(target)
+  }
+
+  // Render requests made while rendering (e.g. by the automatic wall entry, or a
+  // handler that navigates) are coalesced into one more pass instead of re-entering and
+  // letting the outer, stale pass overwrite the newer view.
+  function render(): void {
+    if (isDisposed) {
+      return
+    }
+
+    if (isRendering) {
+      renderDeferred = true
+      return
+    }
+
+    isRendering = true
+    try {
+      do {
+        renderDeferred = false
+        renderOnce()
+      } while (renderDeferred && !isDisposed)
+    } finally {
+      isRendering = false
+    }
   }
 
   function onPopState(): void {
@@ -1588,6 +1717,7 @@ export function createDesktopOnboardingAppRuntime(
       passwordHydrationNonce += 1
       stopDiagnosticsSampling()
       stopWallStreamLoop()
+      stopWallClockLoop()
       wallInteractionController.detach()
       disposeIngestionRuntime()
       window.removeEventListener("popstate", onPopState)

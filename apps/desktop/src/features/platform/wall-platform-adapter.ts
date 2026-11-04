@@ -28,14 +28,19 @@ function selectDefaultDisplayId(displays: readonly DesktopDisplayOption[]): stri
   return displays.find((display) => display.isPrimary)?.id ?? displays[0]?.id ?? null
 }
 
-function toFallbackPlatformState(existingWarning: string | null): DesktopWallPlatformState {
+function toErrorDetail(error: unknown): string {
+  return error instanceof Error && error.message.length > 0 ? error.message : String(error)
+}
+
+function toFallbackPlatformState(existingWarning: string | null, error: unknown): DesktopWallPlatformState {
   return {
     platformReady: true,
     platformPortable: false,
     platformDisplays: [...DEFAULT_DISPLAY_OPTIONS],
     selectedDisplayId: DEFAULT_DISPLAY_OPTIONS[0]?.id ?? null,
     autostartEnabled: false,
-    platformWarning: existingWarning ?? "Desktop platform bridge is unavailable. Using local defaults."
+    platformWarning: existingWarning
+      ?? `Desktop platform bridge is unavailable (${toErrorDetail(error)}). Using local defaults.`
   }
 }
 
@@ -60,7 +65,9 @@ export async function initializeDesktopWallPlatform(options: {
       ? storedDisplayId
       : defaultDisplayId
 
-    if (selectedDisplayId !== storedDisplayId) {
+    // Selecting a display moves the window there, so only rewrite a stored choice whose
+    // display is gone; a first launch keeps the window where the OS opened it.
+    if (storedDisplayId !== null && displays.length > 0 && selectedDisplayId !== storedDisplayId) {
       await platformBridge.setDisplaySelection(selectedDisplayId)
     }
 
@@ -76,8 +83,8 @@ export async function initializeDesktopWallPlatform(options: {
       autostartEnabled: capabilities.isPortable ? false : autostartEnabled,
       platformWarning: existingWarning
     }
-  } catch {
-    return toFallbackPlatformState(existingWarning)
+  } catch (error) {
+    return toFallbackPlatformState(existingWarning, error)
   }
 }
 
@@ -88,8 +95,8 @@ export async function persistDesktopDisplaySelection(options: {
   try {
     await options.platformBridge.setDisplaySelection(options.displayId)
     return null
-  } catch {
-    return "Unable to persist display selection."
+  } catch (error) {
+    return `Unable to apply display selection: ${toErrorDetail(error)}`
   }
 }
 
@@ -100,7 +107,7 @@ export async function persistDesktopAutostartEnabled(options: {
   try {
     await options.platformBridge.setAutostartEnabled(options.enabled)
     return null
-  } catch {
-    return "Unable to persist autostart preference."
+  } catch (error) {
+    return `Unable to change autostart: ${toErrorDetail(error)}`
   }
 }

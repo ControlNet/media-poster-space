@@ -7,16 +7,20 @@ It complements `docs/capability-matrix.md` and `docs/poster-wall-design-principl
 
 - The project ships one shared TypeScript core runtime (`packages/core`) consumed by Web and Desktop onboarding runtimes.
 - Core wall behavior (ingestion, queueing, stream patching, diagnostics sampling, reconnect behavior) is shared.
-- Platform-specific differences remain limited to documented exceptions (for example fullscreen on Web, encrypted password persistence on Desktop).
+- Platform-specific differences remain limited to documented exceptions (for example browser Fullscreen API on Web, OS-keychain password persistence and display selection on Desktop).
 
 ## Wall ingestion and stream pipeline
 
 - Diagnostics sampling interval is 1 second (`DIAGNOSTICS_SAMPLING_INTERVAL_MS = 1000`).
-- Wall stream tick on Web follows the same 1-second cadence (`WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS`).
+- Wall stream tick on Web and Desktop follows the same 1-second cadence (`WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS`).
 - Runtime poster queue policy is:
   - low watermark: `10`
   - refill target: `40`
-  - single-flight refill guard (only one refill request in flight)
+  - single-flight refill guard (only one refill request in flight); a refill result is added to the queue as it is when the refill completes
+  - failed refills back off exponentially (2 s up to 60 s)
+  - after a full pass over the selected libraries the next refill starts a new full pass (no changes-only queries), so a static library keeps rotating
+- The poster cache is persisted to `localStorage` (capped at 1.5 MB) after each ingestion and at most every 30 s during streaming, and is cleared on logout.
+- The diagnostics log keeps one in every 60 samples and is bounded by age, size and entry count.
 - Stream patching updates poster tiles incrementally instead of forcing full view remounts.
 
 ## Poster wall presentation behavior
@@ -29,7 +33,8 @@ It complements `docs/capability-matrix.md` and `docs/poster-wall-design-principl
 
 - Poster tile click-to-open-detail behavior has been removed in Web and Desktop runtimes.
 - Detail card remains part of the wall composition but is not opened via poster tile click in the current flow.
-- Controls and diagnostics UI continue to be accessible from the wall controls panel.
+- Controls are accessible from the wall controls panel. The diagnostics panel and crash export are not currently reachable from the wall UI.
+- "Return to onboarding" clears the wall handoff (the session stays) so the user stays on the onboarding screen instead of being sent back to the wall.
 
 ## Hover-hit stability hardening
 
