@@ -1,55 +1,80 @@
 {
-  "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "scripts/**"
+  ],
+  "tasks": {
     "lint": {
+      "dependsOn": [
+        "^lint"
+      ],
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": ["lint"],
+      "dependsOn": [
+        "lint",
+        "^typecheck"
+      ],
       "outputs": []
     },
     "test": {
-      "dependsOn": ["typecheck"],
+      "dependsOn": [
+        "typecheck",
+        "^test"
+      ],
       "outputs": []
     },
     "build": {
-      "dependsOn": ["test"],
-      "outputs": []
+      "dependsOn": [
+        "test",
+        "^build"
+      ],
+      "env": [
+        "MPS_WEB_BASE_PATH"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
     },
     "build:release": {
-      "dependsOn": ["build"],
+      "dependsOn": [
+        "build"
+      ],
       "cache": false,
-      "outputs": [
-        "release/**",
-        "CHANGELOG.md"
-      ]
+      "outputs": []
     },
     "e2e": {
-      "dependsOn": ["build"],
-      "env": [
-        "MPS_GATE_FORCE_FAIL"
+      "dependsOn": [
+        "build"
       ],
-      "outputs": [
-        ".omo/evidence/playwright/**"
-      ]
+      "env": [
+        "CI",
+        "PLAYWRIGHT_BROWSERS_PATH"
+      ],
+      "cache": false
     },
     "e2e:web": {
-      "dependsOn": ["build"],
-      "env": [
-        "MPS_GATE_FORCE_FAIL"
+      "dependsOn": [
+        "build",
+        "e2e"
       ],
-      "outputs": [
-        ".omo/evidence/**"
-      ]
+      "env": [
+        "CI",
+        "MPS_GATE_FORCE_FAIL",
+        "PLAYWRIGHT_BROWSERS_PATH"
+      ],
+      "cache": false
     },
     "e2e:desktop": {
-      "dependsOn": ["build"],
-      "env": [
-        "MPS_GATE_FORCE_FAIL"
+      "dependsOn": [
+        "build"
       ],
-      "outputs": [
-        ".omo/evidence/**"
-      ]
+      "env": [
+        "CI",
+        "MPS_GATE_FORCE_FAIL",
+        "PLAYWRIGHT_BROWSERS_PATH"
+      ],
+      "cache": false
     }
   }
 }
