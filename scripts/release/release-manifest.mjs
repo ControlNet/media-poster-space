@@ -37,54 +37,12 @@ export function getVersionChangelogPath(version) {
   return path.join(getReleaseVersionDirectory(version), "CHANGELOG.md")
 }
 
-export function getRootChangelogPath() {
-  return path.join(repositoryRoot, "CHANGELOG.md")
-}
-
+// Artifacts produced locally by `pnpm -w build:release`. Native desktop binaries are built per OS by
+// the `desktop-native-artifacts` CI matrix (Tauri) and are not part of this local release output.
 export function getArtifactDefinitions(version) {
   const releasePrefix = path.posix.join("release", RELEASE_CHANNEL, `v${version}`)
 
   return [
-    {
-      id: "desktop-windows-portable",
-      platform: "windows",
-      kind: "portable",
-      relativePath: path.posix.join(
-        releasePrefix,
-        "desktop",
-        `mps-desktop-v${version}-windows-x64-portable.tar`
-      )
-    },
-    {
-      id: "desktop-macos-portable",
-      platform: "macos",
-      kind: "portable",
-      relativePath: path.posix.join(
-        releasePrefix,
-        "desktop",
-        `mps-desktop-v${version}-macos-universal-portable.tar`
-      )
-    },
-    {
-      id: "desktop-linux-portable",
-      platform: "linux",
-      kind: "portable",
-      relativePath: path.posix.join(
-        releasePrefix,
-        "desktop",
-        `mps-desktop-v${version}-linux-x64-portable.tar`
-      )
-    },
-    {
-      id: "desktop-linux-appimage",
-      platform: "linux",
-      kind: "appimage",
-      relativePath: path.posix.join(
-        releasePrefix,
-        "desktop",
-        `mps-desktop-v${version}-linux-x64.AppImage`
-      )
-    },
     {
       id: "web-static-distribution",
       platform: "web",
@@ -104,7 +62,6 @@ export function resolveFromRepository(relativePath) {
 
 export async function ensureReleaseDirectories(version) {
   await mkdir(path.join(repositoryRoot, "release", RELEASE_CHANNEL), { recursive: true })
-  await mkdir(path.join(getReleaseVersionDirectory(version), "desktop"), { recursive: true })
   await mkdir(path.join(getReleaseVersionDirectory(version), "web"), { recursive: true })
 }
 
@@ -149,14 +106,16 @@ export function createDeterministicTar(sourceDirectory, outputPath) {
   )
 }
 
-export function readGitOutput(args, fallbackValue) {
+export function readGitOutput(args) {
   try {
     return execFileSync("git", args, {
       cwd: repositoryRoot,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "pipe"]
     }).trim()
-  } catch {
-    return fallbackValue
+  } catch (error) {
+    const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr).trim() : ""
+    const reason = stderr || (error instanceof Error ? error.message : String(error))
+    throw new Error(`git ${args.join(" ")} failed: ${reason}`)
   }
 }

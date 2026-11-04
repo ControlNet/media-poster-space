@@ -17,13 +17,11 @@
   "scripts": {
     "lint": "echo \"@mps/core lint placeholder\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
-    "build": "echo \"@mps/core build placeholder\"",
-    "e2e": "echo \"@mps/core e2e placeholder\""
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.10.10",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.12"
   }
 }

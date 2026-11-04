@@ -15,11 +15,23 @@
     "build": "turbo run build",
     "build:release": "turbo run build:release && node scripts/release/write-stable-release-docs.mjs",
     "verify:release-artifacts": "node scripts/release/verify-release-artifacts.mjs",
+    "verify:versions": "node scripts/release/verify-versions.mjs",
     "verify:docs-parity": "node scripts/verify-docs-parity.mjs",
     "e2e": "turbo run e2e",
-    "e2e:web": "turbo run e2e --filter=@mps/web"
+    "e2e:web": "turbo run e2e e2e:web --filter=@mps/web"
   },
   "devDependencies": {
-    "turbo": "^1.11.4"
+    "turbo": "^2.9.14"
+  },
+  "pnpm": {
+    "overrides": {
+      "nanoid@<3.3.18": "^3.3.18",
+      "picomatch@<2.3.2": "^2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "^4.0.4",
+      "postcss@<8.5.23": "^8.5.23",
+      "postcss-selector-parser@<6.1.5": "^6.1.5",
+      "source-map-js@<1.2.2": "^1.2.2",
+      "ws@>=8.0.0 <8.21.0": "^8.21.0"
+    }
   }
 }

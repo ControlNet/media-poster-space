@@ -225,7 +225,7 @@ async function main() {
   assertIncludes(qualityGates, "v1-fixed-seed", "docs/quality-gates.md")
   assertIncludes(qualityGates, ".omo/evidence/task-16-web-gates.metrics.json", "docs/quality-gates.md")
   assertIncludes(qualityGates, ".omo/evidence/task-16-desktop-gates.metrics.json", "docs/quality-gates.md")
-  assertIncludes(evidenceProtocol, "v1-mandatory-gates-r1-web-1080p60-30s.webm", "docs/evidence-protocol.md")
+  assertIncludes(evidenceProtocol, "v1-mandatory-gates-r1-web-session.webm", "docs/evidence-protocol.md")
 
   assertNotIncludes(capabilityMatrix, "PWA install | No | Yes", "docs/capability-matrix.md")
   assertNotIncludes(capabilityMatrix, "Playback controls | Yes", "docs/capability-matrix.md")

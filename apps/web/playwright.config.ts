@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const artifactRoot = "../../.omo/evidence/playwright";
+// scripts/run-gates.mjs sets MPS_GATE_RUN_STARTED_AT; keep gate reports apart from the functional
+// suite so a gate run does not overwrite the suite's report when both run in one CI job.
+const reportSet = process.env.MPS_GATE_RUN_STARTED_AT ? "gates" : "suite";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -9,10 +12,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ["list"],
-    ["html", { outputFolder: `${artifactRoot}/html-report`, open: "never" }],
-    ["junit", { outputFile: `${artifactRoot}/junit/results.xml` }]
+    ["html", { outputFolder: `${artifactRoot}/html-report-${reportSet}`, open: "never" }],
+    ["junit", { outputFile: `${artifactRoot}/junit/results-${reportSet}.xml` }]
   ],
-  outputDir: `${artifactRoot}/test-results`,
   use: {
     baseURL: "http://127.0.0.1:4173",
     trace: "retain-on-failure",
@@ -28,6 +30,18 @@ export default defineConfig({
   projects: [
     {
       name: "web-chromium",
+      testIgnore: "**/gates/**",
+      outputDir: `${artifactRoot}/test-results/web-chromium`,
+      use: {
+        ...devices["Desktop Chrome"]
+      }
+    },
+    {
+      // Threshold gates: a retry would turn a budget miss into a pass, so they never retry.
+      name: "web-gates",
+      testMatch: "gates/**/*.spec.ts",
+      retries: 0,
+      outputDir: `${artifactRoot}/test-results/web-gates`,
       use: {
         ...devices["Desktop Chrome"]
       }

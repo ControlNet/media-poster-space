@@ -1,9 +1,9 @@
-import { createHash, webcrypto } from "node:crypto"
+import { webcrypto } from "node:crypto"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { chromium, type Page } from "@playwright/test"
+import { chromium } from "@playwright/test"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createDesktopOnboardingAppRuntime } from "../../src/onboarding/runtime"
@@ -12,7 +12,6 @@ const TEST_SERVER = "https://jellyfin.test"
 const MILESTONE = "v1"
 const SCENE = "mandatory-gates"
 const VERSION = "r1"
-const FIXED_SEED = "v1-fixed-seed"
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const EVIDENCE_ROOT = path.resolve(CURRENT_DIR, "../../../../.omo/evidence")
 
@@ -29,24 +28,8 @@ interface GateMetrics {
     milestone: string
     scene: string
     version: string
-    seed: string
-    width: number
-    height: number
-    frameRate: number
-    clipDurationMs: number
-    clipPath: string
     screenshots: string[]
-    seedProof: GateSeedProof
   }
-}
-
-interface GateSeedProof {
-  renderInput: string
-  fixedSeed: string
-  fixedSeedFrameHash: string
-  fixedSeedReplayFrameHash: string
-  variantSeed: string
-  variantSeedFrameHash: string
 }
 
 interface DesktopVisualSegment {
@@ -207,15 +190,6 @@ function sanitizeAppMarkup(markup: string): string {
     .replaceAll("token-abc", "[redacted-token]")
 }
 
-function hashSeedPartToUnit(seed: string, label: string): number {
-  const digest = createHash("sha256").update(`${seed}:${label}`).digest()
-  return digest.readUInt32BE(0) / 0xffffffff
-}
-
-function hashFrame(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex")
-}
-
 function collectRootCssVariableDeclarations(): string {
   const rootStyle = document.documentElement?.style
   if (!rootStyle) {
@@ -244,18 +218,11 @@ function collectRootCssVariableDeclarations(): string {
   return `${declarations.join(";\n")};`
 }
 
-function buildEvidenceFrameMarkup(segment: DesktopVisualSegment, rootCssVariables: string, seed: string): string {
+function buildEvidenceFrameMarkup(segment: DesktopVisualSegment, rootCssVariables: string): string {
   const normalizedRootCss = rootCssVariables
     ? rootCssVariables.trim().replace(/\n/g, "\n        ")
     : ""
   const rootVariablesBlock = normalizedRootCss ? `\n        ${normalizedRootCss}` : ""
-  const spotlightX = Math.round(16 + hashSeedPartToUnit(seed, "spotlight-x") * 68)
-  const spotlightY = Math.round(12 + hashSeedPartToUnit(seed, "spotlight-y") * 72)
-  const accentHue = Math.round(hashSeedPartToUnit(seed, "accent-hue") * 360)
-  const accentAlpha = (0.2 + hashSeedPartToUnit(seed, "accent-alpha") * 0.35).toFixed(3)
-  const stripeAngle = Math.round(hashSeedPartToUnit(seed, "stripe-angle") * 360)
-  const shellHue = Math.round(hashSeedPartToUnit(seed, "shell-hue") * 360)
-  const shellAlpha = (0.22 + hashSeedPartToUnit(seed, "shell-alpha") * 0.3).toFixed(3)
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -275,9 +242,7 @@ function buildEvidenceFrameMarkup(segment: DesktopVisualSegment, rootCssVariable
       body {
         margin: 0;
         min-height: 100vh;
-        background:
-          radial-gradient(circle at ${spotlightX}% ${spotlightY}%, hsla(${accentHue}, 78%, 62%, ${accentAlpha}) 0%, transparent 46%),
-          linear-gradient(${stripeAngle}deg, #1f2937 0%, #020617 65%);
+        background: linear-gradient(180deg, #1f2937 0%, #020617 65%);
         color: #e2e8f0;
         display: grid;
         grid-template-rows: auto 1fr;
@@ -308,8 +273,8 @@ function buildEvidenceFrameMarkup(segment: DesktopVisualSegment, rootCssVariable
 
       .snapshot-shell {
         min-height: 860px;
-        border: 1px solid hsla(${shellHue}, 60%, 72%, ${shellAlpha});
-        background: linear-gradient(160deg, rgba(15, 23, 42, 0.76) 0%, hsla(${shellHue}, 66%, 22%, 0.45) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.76) 0%, rgba(30, 41, 59, 0.45) 100%);
         border-radius: 20px;
         overflow: hidden;
         box-shadow: 0 18px 42px rgba(15, 23, 42, 0.45);
@@ -338,84 +303,37 @@ function buildEvidenceFrameMarkup(segment: DesktopVisualSegment, rootCssVariable
 </html>`
 }
 
-async function captureSeedProbeFrameHash(
-  page: Page,
-  segment: DesktopVisualSegment,
-  rootCssVariables: string,
-  seed: string
-): Promise<string> {
-  await page.setContent(buildEvidenceFrameMarkup(segment, rootCssVariables, seed), {
-    waitUntil: "domcontentloaded"
-  })
-  await page.waitForTimeout(120)
-  const frame = await page.screenshot({ fullPage: true })
-  return hashFrame(frame)
-}
-
-async function writeDesktopVisualEvidenceArtifacts(
-  clipPath: string,
+// The desktop runtime runs in jsdom, which has no layout or paint. To leave reviewable evidence, each
+// segment's DOM snapshot is rendered in headless Chromium and screenshotted at a 1920x1080 viewport.
+// The verifier measures the PNG dimensions; nothing here claims frame rate, clip length or seeded output.
+async function writeDesktopSegmentScreenshots(
   screenshotPaths: [string, string, string],
-  segments: [DesktopVisualSegment, DesktopVisualSegment, DesktopVisualSegment],
-  elapsedForClipMs: number,
-  seed: string
-): Promise<GateSeedProof> {
+  segments: [DesktopVisualSegment, DesktopVisualSegment, DesktopVisualSegment]
+): Promise<void> {
   const browser = await chromium.launch({ headless: true })
-  const rootCssVariables = collectRootCssVariableDeclarations()
-  const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    recordVideo: {
-      dir: EVIDENCE_ROOT,
-      size: { width: 1920, height: 1080 }
-    }
-  })
-  const page = await context.newPage()
-  const video = page.video()
-
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index]
-    const screenshotPath = screenshotPaths[index]
-    if (!segment || !screenshotPath) {
-      throw new Error(`Missing deterministic desktop segment data at index ${index}`)
-    }
-
-    await page.setContent(buildEvidenceFrameMarkup(segment, rootCssVariables, seed), {
-      waitUntil: "domcontentloaded"
+  try {
+    const rootCssVariables = collectRootCssVariableDeclarations()
+    const context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 }
     })
-    await page.waitForTimeout(900)
-    await page.screenshot({ path: screenshotPath, fullPage: true })
-  }
+    const page = await context.newPage()
 
-  const seedProbeSegment: DesktopVisualSegment = {
-    title: "Desktop Seed Causality Probe",
-    subtitle: "Deterministic frame proof generated from seeded evidence rendering.",
-    appMarkup: sanitizeAppMarkup(segments[0].appMarkup)
-  }
-  const fixedSeedFrameHash = await captureSeedProbeFrameHash(page, seedProbeSegment, rootCssVariables, seed)
-  const fixedSeedReplayFrameHash = await captureSeedProbeFrameHash(page, seedProbeSegment, rootCssVariables, seed)
-  const variantSeed = `${seed}-variant`
-  const variantSeedFrameHash = await captureSeedProbeFrameHash(page, seedProbeSegment, rootCssVariables, variantSeed)
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index]
+      const screenshotPath = screenshotPaths[index]
+      if (!segment || !screenshotPath) {
+        throw new Error(`Missing desktop segment data at index ${index}`)
+      }
 
-  const remainingClipMs = Math.max(0, 30_000 - elapsedForClipMs)
-  if (remainingClipMs > 0) {
-    await page.waitForTimeout(remainingClipMs)
-  }
+      await page.setContent(buildEvidenceFrameMarkup(segment, rootCssVariables), {
+        waitUntil: "load"
+      })
+      await page.screenshot({ path: screenshotPath, fullPage: true })
+    }
 
-  await context.close()
-
-  if (!video) {
-    throw new Error("Missing desktop gate video artifact for mandatory baseline verification")
-  }
-
-  await video.saveAs(clipPath)
-  await browser.close()
-
-  return {
-    renderInput: `desktop-seeded-evidence-frame?seed=${encodeURIComponent(seed)}`,
-    fixedSeed: seed,
-    fixedSeedFrameHash,
-    fixedSeedReplayFrameHash,
-    variantSeed,
-    variantSeedFrameHash
+    await context.close()
+  } finally {
+    await browser.close()
   }
 }
 
@@ -434,7 +352,7 @@ beforeEach(() => {
 })
 
 describe("desktop mandatory v1 gate suite", () => {
-  it("enforces thresholds and writes deterministic desktop evidence", async () => {
+  it("enforces thresholds and writes desktop evidence", async () => {
     await mkdir(EVIDENCE_ROOT, { recursive: true })
 
     let mode: FetchMode = "online"
@@ -463,7 +381,6 @@ describe("desktop mandatory v1 gate suite", () => {
     const loginFlowMs = Date.now() - loginStart
 
     const namingPrefix = `${MILESTONE}-${SCENE}-${VERSION}`
-    const clipPath = path.join(EVIDENCE_ROOT, `${namingPrefix}-desktop-1080p60-30s.webm`)
     const screenshotPaths: [string, string, string] = [
       path.join(EVIDENCE_ROOT, `${namingPrefix}-desktop-segment-1.png`),
       path.join(EVIDENCE_ROOT, `${namingPrefix}-desktop-segment-2.png`),
@@ -514,17 +431,7 @@ describe("desktop mandatory v1 gate suite", () => {
     })
     const logoutCleanupMs = Date.now() - logoutStart
 
-    const elapsedForClip = Date.now() - loginStart
-    const seedProof = await writeDesktopVisualEvidenceArtifacts(
-      clipPath,
-      screenshotPaths,
-      [segmentOne, segmentTwo, segmentThree],
-      elapsedForClip,
-      FIXED_SEED
-    )
-
-    expect(seedProof.fixedSeedFrameHash).toBe(seedProof.fixedSeedReplayFrameHash)
-    expect(seedProof.fixedSeedFrameHash).not.toBe(seedProof.variantSeedFrameHash)
+    await writeDesktopSegmentScreenshots(screenshotPaths, [segmentOne, segmentTwo, segmentThree])
 
     const metrics: GateMetrics = {
       platform: "desktop",
@@ -539,14 +446,7 @@ describe("desktop mandatory v1 gate suite", () => {
         milestone: MILESTONE,
         scene: SCENE,
         version: VERSION,
-        seed: FIXED_SEED,
-        width: 1920,
-        height: 1080,
-        frameRate: 60,
-        clipDurationMs: 30_000,
-        clipPath,
-        screenshots: screenshotPaths,
-        seedProof
+        screenshots: screenshotPaths
       }
     }
 
