@@ -235,3 +235,13 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR
   origin only (`gen/schemas/capabilities.json` shows `"local": true`).
 - Verified in the real app under Xvfb: with the capability, the stale saved display is rewritten
   through IPC; with `allow-platform-set-display-selection` removed, the state file stays untouched.
+
+## Release job rehearsal (no tag push)
+
+- `gh run download <run> --pattern 'desktop-*-native'` / `--name release-web-static` reproduces the
+  `download-artifact` layout, so the `github-release` steps can be replayed locally up to (not
+  including) `gh release create`.
+- `upload-artifact` keeps paths below the last fixed directory before a wildcard: the web tar lands at
+  `web-artifacts/v<ver>/web/mps-web-v<ver>-static.tar`, not at the artifact root (bug found this way).
+- An AppImage built on ubuntu-24.04 needs glibc 2.38 and fails on 22.04 (`GLIBC_2.38 not found` in the
+  bundled libs); the Linux native job builds on ubuntu-22.04.

@@ -114,7 +114,8 @@ jobs:
       matrix:
         include:
           - id: linux-x64
-            runs_on: ubuntu-24.04
+            # The AppImage links against the build host's glibc; build on the oldest supported LTS.
+            runs_on: ubuntu-22.04
             build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --bundles appimage
             artifact_name: desktop-linux-x64-native
             artifact_path: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
@@ -333,7 +334,8 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           mkdir -p release-assets
-          cp "web-artifacts/mps-web-v${version}-static.tar" "release-assets/mps-web-v${version}-static.tar"
+          # upload-artifact keeps paths below the last fixed directory (release/stable/).
+          cp "web-artifacts/v${version}/web/mps-web-v${version}-static.tar" "release-assets/mps-web-v${version}-static.tar"
           cp desktop-artifacts/desktop-windows-x64-native/mps-desktop.exe release-assets/mps-desktop-windows-x64.exe
           cp desktop-artifacts/desktop-linux-x64-native/*.AppImage release-assets/mps-desktop-linux-x64.AppImage
           chmod +x release-assets/mps-desktop-linux-x64.AppImage
