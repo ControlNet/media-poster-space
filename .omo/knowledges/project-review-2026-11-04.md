@@ -3,7 +3,23 @@
 Whole-repo review at commit `3d759fc`. Every finding below was re-checked against the source
 (file:line read directly); evidence type is noted per item:
 **repro** = failing/passing throwaway test or script, **source** = upstream primary source,
-**read** = code reading only. Repro scripts lived in the session scratchpad and are not kept.
+**read** = code reading only. Repros are kept in `.omo/review-repros/2026-11-04/` (see its README for
+how to run them and which ones assert correct vs buggy behaviour).
+
+Quick checks:
+- Server version (finding 1 applies to 12.x; upgrading from 10.x flips it via migration):
+  `curl -s https://<server>/System/Info/Public | jq -r .Version`
+- Turbo blind spot (finding 8), expect `0`:
+  `pnpm -s -w turbo run typecheck --dry=json | grep -c 'packages/core/src'`
+- Stream freeze on a live server (finding 2): once the wall stops changing, the network tab shows an
+  `Items?…MinDateLastSavedForUser=…` request about every second returning `TotalRecordCount: 0`.
+
+Why existing tests miss finding 2: `packages/core/test/runtime/poster-queue-refill-adapter.test.ts:145-170`
+asserts the switch to `updatedSince` as intended behaviour, and no test drives the queue past one full
+pass over a static library with the adapter wired (both apps wire it).
+
+Finding 18 is a product limitation as much as a bug: the HTTPS-hosted web app cannot reach a plain
+`http://` LAN server at all (mixed content), and neither README nor docs say so.
 
 ## External fact: Jellyfin 12 disables legacy auth
 
