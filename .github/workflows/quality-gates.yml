@@ -27,7 +27,7 @@ permissions:
 jobs:
   quality:
     name: lint-typecheck-test-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -58,7 +58,7 @@ jobs:
 
   release-build-artifacts:
     name: release-build-artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - quality
 
@@ -108,7 +108,7 @@ jobs:
       matrix:
         include:
           - id: linux-x64
-            runs_on: ubuntu-latest
+            runs_on: ubuntu-24.04
             build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --bundles appimage
             artifact_name: desktop-linux-x64-native
             artifact_path: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
@@ -165,7 +165,7 @@ jobs:
       - quality
       - web-e2e-smoke
     if: github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
@@ -234,7 +234,7 @@ jobs:
     needs:
       - github-pages-build
     if: github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
@@ -253,7 +253,7 @@ jobs:
 
   web-e2e-smoke:
     name: web-e2e-smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -295,7 +295,7 @@ jobs:
       - web-e2e-smoke
       - desktop-native-artifacts
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
 
