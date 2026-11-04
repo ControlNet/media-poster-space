@@ -18,7 +18,7 @@ This matrix describes shipped behavior for V1 and documented platform exceptions
 | Capability | Desktop | Web | Source of truth |
 | --- | --- | --- | --- |
 | Password persistence | Yes (OS keychain only) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/web/src/onboarding/runtime.ts` |
-| Display selection | Yes (moves the window to the chosen monitor) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
+| Display selection | Yes (moves the window to the chosen monitor; checked under Xvfb by window offset, not yet on a physical multi-monitor setup) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
 | Autostart | Yes (disabled in portable mode) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
 | Fullscreen control | Yes (Tauri window fullscreen) | Yes (browser Fullscreen API) | `apps/web/src/onboarding/runtime.ts` |
 | Poster tile click opens detail card | No | No | `packages/core/src/runtime/onboarding-wall-callbacks.ts`, `packages/core/src/wall/ui/presentation-sections.ts` |
