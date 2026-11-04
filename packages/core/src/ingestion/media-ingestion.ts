@@ -46,6 +46,7 @@ export interface IngestSelectedMediaOptions {
   cursor?: string;
   limit?: number;
   updatedSince?: string;
+  signal?: AbortSignal;
 }
 
 export interface CreateMediaIngestionRuntimeOptions {
@@ -146,7 +147,8 @@ export async function ingestSelectedMedia(options: IngestSelectedMediaOptions): 
     libraryIds: selectedLibraryIds,
     ...(options.cursor ? { cursor: options.cursor } : {}),
     ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
-    ...(options.updatedSince ? { updatedSince: options.updatedSince } : {})
+    ...(options.updatedSince ? { updatedSince: options.updatedSince } : {}),
+    ...(options.signal ? { signal: options.signal } : {})
   };
 
   const page = await options.provider.listMedia(options.session, query);
@@ -173,6 +175,7 @@ export function createMediaIngestionRuntime(
   let disposed = false;
   let running = false;
   let refreshPromise: Promise<MediaIngestionState> | null = null;
+  let refreshAbortController: AbortController | null = null;
   let refreshIntervalId: ReturnType<typeof setInterval> | null = null;
 
   let state: MediaIngestionState = {
@@ -203,6 +206,9 @@ export function createMediaIngestionRuntime(
     };
     publishState();
 
+    const abortController = new AbortController();
+    refreshAbortController = abortController;
+
     try {
       const page =
         selectedLibraryIds.length === 0
@@ -211,8 +217,14 @@ export function createMediaIngestionRuntime(
               provider: options.provider,
               session: options.session,
               selectedLibraryIds,
-              ...(cursor ? { cursor } : {})
+              ...(cursor ? { cursor } : {}),
+              signal: abortController.signal
             });
+
+      // dispose() ran while the request was in flight: drop the late result.
+      if (disposed) {
+        return cloneState(state);
+      }
 
       state = {
         status: "ready",
@@ -226,6 +238,11 @@ export function createMediaIngestionRuntime(
 
       return cloneState(state);
     } catch (error) {
+      // dispose() aborted the request; the cancellation is not a refresh failure to report.
+      if (disposed) {
+        return cloneState(state);
+      }
+
       state = {
         ...state,
         status: "error",
@@ -235,6 +252,10 @@ export function createMediaIngestionRuntime(
       publishState();
 
       return cloneState(state);
+    } finally {
+      if (refreshAbortController === abortController) {
+        refreshAbortController = null;
+      }
     }
   }
 
@@ -306,6 +327,9 @@ export function createMediaIngestionRuntime(
         clearInterval(refreshIntervalId);
         refreshIntervalId = null;
       }
+
+      refreshAbortController?.abort();
+      refreshAbortController = null;
     }
   };
 }

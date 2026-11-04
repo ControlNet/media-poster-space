@@ -6,6 +6,7 @@ import {
   ingestSelectedMedia,
   type MediaIngestionState
 } from "../../src/ingestion";
+import type { MediaPage, MediaQuery } from "../../src/provider";
 import type { ProviderSession } from "../../src/types";
 
 const TEST_SESSION: ProviderSession = {
@@ -158,7 +159,8 @@ describe("media ingestion", () => {
         expect(listMedia).toHaveBeenCalledTimes(1);
       });
       expect(listMedia).toHaveBeenNthCalledWith(1, TEST_SESSION, {
-        libraryIds: ["movies"]
+        libraryIds: ["movies"],
+        signal: expect.any(AbortSignal)
       });
 
       expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), MEDIA_INGESTION_REFRESH_INTERVAL_MS);
@@ -170,13 +172,15 @@ describe("media ingestion", () => {
       });
       expect(listMedia).toHaveBeenNthCalledWith(2, TEST_SESSION, {
         libraryIds: ["movies"],
-        cursor: "cursor-001"
+        cursor: "cursor-001",
+        signal: expect.any(AbortSignal)
       });
 
       const manualRefreshState = await runtime.refreshNow();
       expect(listMedia).toHaveBeenCalledTimes(3);
       expect(listMedia).toHaveBeenNthCalledWith(3, TEST_SESSION, {
-        libraryIds: ["movies"]
+        libraryIds: ["movies"],
+        signal: expect.any(AbortSignal)
       });
       expect(manualRefreshState.trigger).toBe("manual");
       expect(manualRefreshState.nextCursor).toBe("cursor-001");
@@ -193,7 +197,8 @@ describe("media ingestion", () => {
       });
       expect(listMedia).toHaveBeenNthCalledWith(4, TEST_SESSION, {
         libraryIds: ["movies"],
-        cursor: "cursor-001"
+        cursor: "cursor-001",
+        signal: expect.any(AbortSignal)
       });
       expect(runtime.status).toBe("ready");
 
@@ -213,5 +218,108 @@ describe("media ingestion", () => {
       intervalSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  it("forwards an optional abort signal from ingestSelectedMedia to the provider", async () => {
+    const controller = new AbortController();
+    const listMedia = vi.fn(async () => ({
+      items: [],
+      fetchedAt: "2026-02-24T12:00:00.000Z"
+    }));
+
+    await ingestSelectedMedia({
+      provider: { listMedia },
+      session: TEST_SESSION,
+      selectedLibraryIds: ["movies"],
+      signal: controller.signal
+    });
+
+    expect(listMedia).toHaveBeenCalledWith(TEST_SESSION, {
+      libraryIds: ["movies"],
+      signal: controller.signal
+    });
+  });
+
+  it("aborts the in-flight refresh on dispose and never publishes its late result", async () => {
+    const states: MediaIngestionState[] = [];
+    let requestSignal: AbortSignal | undefined;
+    let resolvePage: ((page: MediaPage) => void) | null = null;
+    const listMedia = vi.fn(async (_session: ProviderSession, query: MediaQuery) => {
+      requestSignal = query.signal;
+      return new Promise<MediaPage>((resolve) => {
+        resolvePage = resolve;
+      });
+    });
+
+    const runtime = createMediaIngestionRuntime({
+      provider: { listMedia },
+      session: TEST_SESSION,
+      selectedLibraryIds: ["movies"],
+      onStateChange: (state) => {
+        states.push(state);
+      }
+    });
+
+    const refreshPromise = runtime.refreshNow();
+    await vi.waitFor(() => {
+      expect(listMedia).toHaveBeenCalledTimes(1);
+    });
+    expect(states.map((state) => state.status)).toEqual(["refreshing"]);
+
+    runtime.dispose();
+    expect(requestSignal?.aborted).toBe(true);
+
+    const settle = resolvePage as ((page: MediaPage) => void) | null;
+    settle?.({
+      items: [
+        {
+          id: "movie-late",
+          providerId: "jellyfin",
+          libraryId: "movies",
+          kind: "movie",
+          title: "Late",
+          genres: [],
+          tags: [],
+          people: [],
+          poster: { url: "https://image.local/late.jpg" }
+        }
+      ],
+      fetchedAt: "2026-02-24T12:00:00.000Z"
+    });
+    const finalState = await refreshPromise;
+
+    expect(states.map((state) => state.status)).toEqual(["refreshing"]);
+    expect(finalState.items).toEqual([]);
+    expect(runtime.getState().status).not.toBe("ready");
+  });
+
+  it("does not publish an error state when a refresh fails after dispose", async () => {
+    const states: MediaIngestionState[] = [];
+    const listMedia = vi.fn(async (_session: ProviderSession, query: MediaQuery) => {
+      return new Promise<MediaPage>((_resolve, reject) => {
+        query.signal?.addEventListener("abort", () => {
+          reject(new Error("request was cancelled"));
+        });
+      });
+    });
+
+    const runtime = createMediaIngestionRuntime({
+      provider: { listMedia },
+      session: TEST_SESSION,
+      selectedLibraryIds: ["movies"],
+      onStateChange: (state) => {
+        states.push(state);
+      }
+    });
+
+    const refreshPromise = runtime.refreshNow();
+    await vi.waitFor(() => {
+      expect(listMedia).toHaveBeenCalledTimes(1);
+    });
+    runtime.dispose();
+    await refreshPromise;
+
+    expect(states.map((state) => state.status)).toEqual(["refreshing"]);
+    expect(runtime.getState().error).toBeNull();
   });
 });
