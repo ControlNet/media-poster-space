@@ -6,8 +6,8 @@ This matrix describes shipped behavior for V1 and documented platform exceptions
 
 - Provider coverage is Jellyfin and Emby in V1, while Plex remains out of scope.
 - Core onboarding flow is server preflight, sign-in, then library selection.
-- Manual refresh and reconnect guidance are present on both Desktop and Web.
-- Diagnostics are sampled and retained in memory (bounded), but the wall currently has no control that opens the diagnostics panel or crash export; they are not reachable from the UI in V1.
+- Manual refresh, reconnect guidance, the diagnostics panel (wall navbar toggle) and crash export are present on both Desktop and Web.
+- Diagnostics are sampled every second; the retained log keeps one in every 60 samples and is bounded by age, size and entry count.
 - Offline cached startup support exists on both platforms.
 - Redesign parity target is behavior and token parity across Desktop and Web, with documented platform exceptions.
 - Wall stream policy is shared across platforms (1s cadence, queue low-watermark `10`, refill target `40`).

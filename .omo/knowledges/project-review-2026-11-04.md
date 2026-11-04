@@ -164,7 +164,8 @@ Fixed on `master` (commits `d3beca9`, `af0f5d1`, provider merge, plus the CI/bui
   Regression tests: `packages/core/test/runtime/onboarding-ingestion-stream-regressions.test.ts`.
 - 13, 14: diagnostics log keeps 1/60 samples and caps entries (20 000, head-index ring);
   poster cache persisted at most every 30 s on ticks, 1.5 MB cap, `QuotaExceededError` logged,
-  cleared on logout. The diagnostics panel stays unreachable by design — docs now say so.
+  cleared on logout. The diagnostics toggle (`diagnostics-open`) is back in the wall navbar, so the
+  panel and crash export are reachable again (tests: desktop jsdom + web e2e with a real download).
 - 3, 4, 19, 20, 24 (desktop): keychain only, no local fallback (decision: no keychain ⇒ password not
   remembered + warning); Rust keeps `credentialIdentities` in `platform-state.json` so clear-all can
   delete keychain entries; legacy `credential-fallback.json` and `mps.desktop.password-vault` are

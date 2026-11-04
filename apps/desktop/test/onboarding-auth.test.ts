@@ -1889,6 +1889,55 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
+  it("opens the diagnostics panel from the wall controls and exports a crash package", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+    // Test doubles: jsdom has no object-URL download support.
+    const createObjectURL = vi.fn(() => "blob:mps-test")
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, "createObjectURL", { value: createObjectURL, configurable: true })
+    Object.defineProperty(URL, "revokeObjectURL", { value: revokeObjectURL, configurable: true })
+    window.sessionStorage.setItem("mps.auth.session", JSON.stringify({
+      providerId: "jellyfin",
+      serverUrl: TEST_SERVER,
+      userId: "user-1",
+      username: "demo-user",
+      accessToken: "token-abc",
+      createdAt: "2026-11-04T00:00:00.000Z"
+    }))
+    window.sessionStorage.setItem("mps.wall.handoff", JSON.stringify({
+      selectedLibraryIds: ["movies-main"],
+      preferences: { rememberServer: false, rememberUsername: false, rememberPasswordRequested: false }
+    }))
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: createPlatformHarness().bridge
+    })
+    runtime.start()
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="diagnostics-open"]')).toBeTruthy()
+    })
+    expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeNull()
+
+    clickByTestId("diagnostics-open")
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeTruthy()
+    })
+
+    clickByTestId("diagnostics-export-crash-report")
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="diagnostics-export-status"]')?.textContent).toContain("Crash export complete")
+    })
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+
+    clickByTestId("diagnostics-open")
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="wall-diagnostics-panel"]')).toBeNull()
+    })
+
+    runtime.dispose()
+  })
+
   it("logout forgets a keychain password written by an older build (not in the identity index)", async () => {
     globalThis.fetch = createFetchHarness({ allowLogin: true })
     const platformHarness = createPlatformHarness({

@@ -33,12 +33,12 @@ const order = (fullscreen: boolean) => {
 describe("wall navbar", () => {
   it("puts leaving the wall on the left and acting on it on the right", () => {
     expect(order(true)).toEqual([
-      "github-repo-link", "logout-button", "separator", "manual-refresh-button", "wall-fullscreen-button"
+      "github-repo-link", "logout-button", "separator", "manual-refresh-button", "diagnostics-open", "wall-fullscreen-button"
     ])
   })
   it("keeps the grouping when there is no fullscreen control", () => {
     expect(order(false)).toEqual([
-      "github-repo-link", "logout-button", "separator", "manual-refresh-button"
+      "github-repo-link", "logout-button", "separator", "manual-refresh-button", "diagnostics-open"
     ])
   })
 })

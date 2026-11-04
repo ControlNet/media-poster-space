@@ -33,7 +33,7 @@ It complements `docs/capability-matrix.md` and `docs/poster-wall-design-principl
 
 - Poster tile click-to-open-detail behavior has been removed in Web and Desktop runtimes.
 - Detail card remains part of the wall composition but is not opened via poster tile click in the current flow.
-- Controls are accessible from the wall controls panel. The diagnostics panel and crash export are not currently reachable from the wall UI.
+- Controls are accessible from the wall controls panel, including the diagnostics toggle (`diagnostics-open`), which opens the diagnostics panel with crash export.
 - "Return to onboarding" clears the wall handoff (the session stays) so the user stays on the onboarding screen instead of being sent back to the wall.
 
 ## Hover-hit stability hardening

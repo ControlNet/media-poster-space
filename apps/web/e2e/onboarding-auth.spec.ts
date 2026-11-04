@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises"
 import { expect, test, type Page } from "@playwright/test"
 
 import { FIXTURE_SERVER_ORIGIN, routeUnstubbedFixtureServerTraffic } from "./support/fixture-server-routes"
@@ -938,6 +939,56 @@ test("keeps the access token tab-scoped unless remember server is checked", asyn
 
   expect(sessionState.tabSession).toContain("token-abc")
   expect(sessionState.persistedSession).toBeNull()
+})
+
+test("opens diagnostics from the wall controls and downloads a crash package", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ Items: [{ Id: "movies-main", Name: "Movies", CollectionType: "movies" }] })
+    })
+  })
+  await page.route("**/Users/user-1/Items**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        Items: [{ Id: "movie-1", Name: "Poster Ready", Type: "Movie", ImageTags: { Primary: "poster-tag" } }],
+        TotalRecordCount: 1
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await triggerServerStatusCheck(page)
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeChecked()
+  await page.getByTestId("onboarding-finish").click()
+  await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
+
+  await expect(page.getByTestId("wall-diagnostics-panel")).toHaveCount(0)
+  await page.getByTestId("diagnostics-open").click()
+  await expect(page.getByTestId("wall-diagnostics-panel")).toBeVisible()
+
+  const download = page.waitForEvent("download")
+  await page.getByTestId("diagnostics-export-crash-report").click()
+  const crashPackage = await download
+  expect(crashPackage.suggestedFilename()).toMatch(/crash-report/)
+  await expect(page.getByTestId("diagnostics-export-status")).toContainText("Crash export complete")
+  const crashPackagePath = await crashPackage.path()
+  expect(crashPackagePath).not.toBeNull()
+  const crashPackageText = await readFile(crashPackagePath, "utf8")
+  expect(crashPackageText).not.toContain("token-abc")
+  expect(crashPackageText).not.toContain("secret-pass")
+
+  await page.getByTestId("diagnostics-open").click()
+  await expect(page.getByTestId("wall-diagnostics-panel")).toHaveCount(0)
 })
 
 test("reopens root route into the wall when a saved session and handoff exist", async ({ page }) => {
