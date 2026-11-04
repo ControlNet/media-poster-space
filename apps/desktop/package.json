@@ -10,7 +10,6 @@
     "test": "vitest run",
     "build:ui": "vite build --base ./",
     "build": "pnpm run build:ui",
-    "build:release": "node ../../scripts/release/package-desktop-release.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "e2e:desktop": "node ../../scripts/run-gates.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json -- vitest run --config vitest.gates.config.ts"

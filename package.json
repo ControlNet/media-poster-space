@@ -15,6 +15,7 @@
     "build": "turbo run build",
     "build:release": "turbo run build:release && node scripts/release/write-stable-release-docs.mjs",
     "verify:release-artifacts": "node scripts/release/verify-release-artifacts.mjs",
+    "verify:versions": "node scripts/release/verify-versions.mjs",
     "verify:docs-parity": "node scripts/verify-docs-parity.mjs",
     "e2e": "turbo run e2e",
     "e2e:web": "turbo run e2e e2e:web --filter=@mps/web"

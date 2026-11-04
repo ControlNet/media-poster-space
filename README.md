@@ -53,13 +53,15 @@ pnpm -w typecheck
 pnpm -w test
 pnpm -w build
 pnpm -w e2e
+pnpm -w e2e:web
 pnpm -w build:release
 pnpm -w verify:release-artifacts
+pnpm -w verify:versions
 pnpm -w verify:docs-parity
 pnpm -w verify:docs-parity --strict
 ```
 
-All root commands run through the Turbo pipelines defined in `turbo.json`.
+Lint, typecheck, test, build, e2e and `build:release` run through the Turbo pipelines defined in `turbo.json`; the `verify:*` commands are plain Node scripts. `pnpm -w e2e` runs the full web Playwright suite, `pnpm -w e2e:web` runs that suite followed by the web V1 gates, `pnpm -w build:release` writes the web static archive, changelog and metadata under the gitignored `release/` directory, and `pnpm -w verify:versions` checks that every `package.json`, `tauri.conf.json` and `Cargo.toml` declares the same version.
 
 ### Package-level commands
 
@@ -71,12 +73,16 @@ pnpm --filter @mps/web typecheck
 pnpm --filter @mps/web test
 pnpm --filter @mps/web build
 pnpm --filter @mps/web e2e
+pnpm --filter @mps/web e2e:web
 
 pnpm --filter @mps/desktop typecheck
 pnpm --filter @mps/desktop test
 pnpm --filter @mps/desktop build
+pnpm --filter @mps/desktop e2e:desktop
 pnpm --filter @mps/desktop tauri:build
 ```
+
+`@mps/web e2e` runs every Playwright spec except `e2e/gates/`; `@mps/web e2e:web` and `@mps/desktop e2e:desktop` run the mandatory V1 gates and verify their metrics.
 
 ## Quality gates
 
