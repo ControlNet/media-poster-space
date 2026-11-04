@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test"
 
-const TEST_SERVER = "https://jellyfin.test"
+import { FIXTURE_SERVER_ORIGIN, routeUnstubbedFixtureServerTraffic } from "./support/fixture-server-routes"
+
+const TEST_SERVER = FIXTURE_SERVER_ORIGIN
 
 function createDeferred(): {
   promise: Promise<void>
@@ -17,6 +19,50 @@ function createDeferred(): {
     promise,
     resolve
   }
+}
+
+// Lets the page drain the work queued by an event we already observed (promise continuations,
+// one rendering opportunity and one task turn) without waiting for an arbitrary wall-clock delay.
+async function settlePageTasks(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0)
+    })
+  }))
+}
+
+// Matches WALL_IDLE_HIDE_MS in packages/core/src/wall/constants.ts. Provider requests use the same
+// 8 s timeout (DEFAULT_TIMEOUT_MS in the Jellyfin client), which is why idle jumps below only start
+// once no request is in flight.
+const WALL_IDLE_HIDE_MS = 8_000
+
+interface InFlightFetchWindow {
+  __mpsInFlightFetches?: number
+}
+
+// Counts page fetches that have not settled yet. Must run before navigation (init script).
+async function trackInFlightFetches(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const trackedWindow = window as Window & InFlightFetchWindow
+    trackedWindow.__mpsInFlightFetches = 0
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = (...args: Parameters<typeof fetch>): Promise<Response> => {
+      trackedWindow.__mpsInFlightFetches = (trackedWindow.__mpsInFlightFetches ?? 0) + 1
+      return originalFetch(...args).finally(() => {
+        trackedWindow.__mpsInFlightFetches = (trackedWindow.__mpsInFlightFetches ?? 1) - 1
+      })
+    }
+  })
+}
+
+/**
+ * Advances the paused page clock by the wall idle-hide delay. Waiting for zero in-flight fetches first
+ * guarantees that no request timeout can fall inside the jump: every request started during the jump
+ * has its 8 s deadline after the jump ends. Requires `trackInFlightFetches` and a paused page clock.
+ */
+async function runPausedClockThroughIdleHide(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => (window as Window & InFlightFetchWindow).__mpsInFlightFetches)).toBe(0)
+  await page.clock.runFor(WALL_IDLE_HIDE_MS)
 }
 
 async function wireSuccessfulPreflight(page: Page): Promise<void> {
@@ -358,6 +404,7 @@ async function setTask6WallReadinessBlocked(page: Page, blocked: boolean): Promi
 }
 
 test.beforeEach(async ({ page }) => {
+  await routeUnstubbedFixtureServerTraffic(page)
   await page.goto("/")
   await page.evaluate(() => {
     window.localStorage.clear()
@@ -488,9 +535,14 @@ test("ignores stale Jellyfin login completion after provider changes mid-flight"
   await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
   await expect(page.getByTestId("onboarding-title")).toContainText("Emby")
 
+  const staleAuthenticationResponse = page.waitForResponse("**/Users/AuthenticateByName")
   authenticationReleased.resolve()
 
-  await page.waitForTimeout(250)
+  // The stale completion has been delivered and processed once its response body finished loading
+  // and the page drained the resulting tasks; only then are the negative assertions meaningful.
+  const staleResponseFailure = await (await staleAuthenticationResponse).finished()
+  expect(staleResponseFailure).toBeNull()
+  await settlePageTasks(page)
   await expect(page.getByTestId("provider-support-banner")).toHaveCount(0)
   await expect(page.getByTestId("server-url-input")).toHaveAttribute("placeholder", "https://emby.yourdomain.com")
   await expect(page.getByTestId("library-checkbox-movies-main")).toHaveCount(0)
@@ -923,6 +975,12 @@ test("reopens root route into the wall when a saved session and handoff exist", 
 })
 
 test("keeps footer controls mounted through idle-hide transitions", async ({ page }) => {
+  // Every page timer runs on the Playwright clock (flowing naturally until paused below), so the idle
+  // periods are simulated instead of slept through in real time.
+  await trackInFlightFetches(page)
+  await page.clock.install()
+  await page.goto("/")
+
   await wireSuccessfulPreflight(page)
   await wireAuthentication(page, { allowLogin: true })
 
@@ -986,8 +1044,10 @@ test("keeps footer controls mounted through idle-hide transitions", async ({ pag
   await expect.poll(() => mediaRequestCount).toBeGreaterThanOrEqual(2)
   const afterManualRefresh = await captureWallIdentityProbeSnapshot(page, "after-manual-refresh")
 
-  await page.waitForTimeout(8_100)
-  const idleRefreshVisibility = await page.evaluate(() => {
+  // From here on page time only moves when the test advances it.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1_000)
+  await runPausedClockThroughIdleHide(page)
+  const readRefreshVisibility = (): Promise<string | null> => page.evaluate(() => {
     const refreshButton = document.querySelector<HTMLElement>('[data-testid="manual-refresh-button"]')
     if (!(refreshButton instanceof HTMLElement)) {
       return null
@@ -995,10 +1055,14 @@ test("keeps footer controls mounted through idle-hide transitions", async ({ pag
 
     return getComputedStyle(refreshButton).visibility
   })
+  // The controls fade out with a CSS transition (real time, not page timers), so poll for the
+  // settled state. Idle-hide hides the footer controls, matching the desktop runtime.
+  await expect.poll(readRefreshVisibility).toBe("hidden")
+  const idleRefreshVisibility = await readRefreshVisibility()
 
   await page.mouse.move(24, 24)
   await expect(page.getByTestId("manual-refresh-button").first()).toBeVisible()
-  await page.waitForTimeout(8_100)
+  await runPausedClockThroughIdleHide(page)
   const afterIdle = await captureWallIdentityProbeSnapshot(page, "after-idle")
 
   await page.mouse.move(32, 32)
@@ -1019,7 +1083,7 @@ test("keeps footer controls mounted through idle-hide transitions", async ({ pag
   expect(afterIdle.sameWallGridAsBaseline).toBe(true)
   expect(afterReveal.sameWallRootAsBaseline).toBe(true)
   expect(afterReveal.sameWallGridAsBaseline).toBe(true)
-  expect(idleRefreshVisibility).toBe("visible")
+  expect(idleRefreshVisibility).toBe("hidden")
   expect(revealRefreshVisibility).toBe("visible")
 
   const evidence = {
@@ -1931,7 +1995,12 @@ test("logout clears session artifacts while preserving remembered server and use
 
   await expect(page.getByTestId("poster-wall-root").first()).toBeVisible()
 
-  const logoutStart = Date.now()
+  // Freeze page time before logging out. Cleanup must finish while no page timer can fire, which is
+  // the deterministic form of the 1 s logout budget (the wall-clock budget itself is the
+  // logout-cleanup gate in e2e/gates). The 1 s pause margin only absorbs the pauseAt round trip.
+  await page.clock.install()
+  const frozenPageTime = await page.evaluate(() => Date.now()) + 1_000
+  await page.clock.pauseAt(frozenPageTime)
   await page.getByTestId("logout-button").first().click()
 
   await expect(page.getByTestId("server-url-input")).toHaveValue(TEST_SERVER)
@@ -1948,5 +2017,5 @@ test("logout clears session artifacts while preserving remembered server and use
   expect(cleanupState.wallHandoff).toBeNull()
   expect(cleanupState.server).toBe(TEST_SERVER)
   expect(cleanupState.username).toBe("demo-user")
-  expect(Date.now() - logoutStart).toBeLessThanOrEqual(1_000)
+  expect(await page.evaluate(() => Date.now())).toBe(frozenPageTime)
 })

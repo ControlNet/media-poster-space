@@ -13,9 +13,45 @@ import type {
 
 const TEST_SERVER = "https://jellyfin.test"
 
+// Timer functions faked by the fake-time budget checks. setImmediate/nextTick/microtasks stay real so
+// promise chains, WebCrypto and Response body reads keep settling while simulated time stands still.
+const FAKE_TIME_FUNCTIONS: NonNullable<Parameters<typeof vi.useFakeTimers>[0]>["toFake"] = [
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+  "Date"
+]
+const realSetTimeout = globalThis.setTimeout
+const realPerformanceNow = performance.now.bind(performance)
+
+/**
+ * Polls `assertion` on real timers while fake timers stay frozen, so simulated time never advances.
+ * Paired with `vi.useFakeTimers({ toFake: FAKE_TIME_FUNCTIONS })` this proves that a step completes
+ * without waiting for any timer, independent of how fast the machine runs. `harnessTimeoutMs` only
+ * bounds how long the test waits for real (non-timer) async work before reporting the failure.
+ */
+async function waitWithoutAdvancingFakeTime(assertion: () => void, harnessTimeoutMs = 10_000): Promise<void> {
+  const deadline = realPerformanceNow() + harnessTimeoutMs
+  for (;;) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      if (realPerformanceNow() >= deadline) {
+        throw error
+      }
+    }
+
+    await new Promise<void>((resolve) => {
+      realSetTimeout(resolve, 10)
+    })
+  }
+}
+
 interface FetchHarnessOptions {
   allowLogin: boolean
-  logoutDelayMs?: number
+  logoutGate?: Promise<void>
   includeSparsePoster?: boolean
   alwaysFailMediaStatus?: number
   mediaFailureStatusAfterFirstSuccess?: number
@@ -320,10 +356,8 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
     }
 
     if (url.endsWith("/Sessions/Logout")) {
-      if (options.logoutDelayMs && options.logoutDelayMs > 0) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, options.logoutDelayMs)
-        })
+      if (options.logoutGate) {
+        await options.logoutGate
       }
 
       return new Response(null, { status: 204 })
@@ -751,17 +785,25 @@ describe("desktop onboarding auth runtime", () => {
     window.localStorage.removeItem("mps.auth.session")
     window.history.pushState({}, "", "/")
 
-    const relaunchStartedAt = Date.now()
-    const relaunchedRuntime = createDesktopOnboardingAppRuntime(document.body, {
-      platformBridge: platformHarness.bridge
-    })
-    relaunchedRuntime.start()
+    // Simulated time stays frozen across the relaunch: the wall must appear without waiting on any
+    // timer, which deterministically satisfies the 5 s relaunch budget.
+    vi.useFakeTimers({ toFake: FAKE_TIME_FUNCTIONS })
+    let relaunchedRuntime: ReturnType<typeof createDesktopOnboardingAppRuntime>
+    try {
+      const relaunchStartedAt = Date.now()
+      relaunchedRuntime = createDesktopOnboardingAppRuntime(document.body, {
+        platformBridge: platformHarness.bridge
+      })
+      relaunchedRuntime.start()
 
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
-    }, { timeout: 5_000 })
+      await waitWithoutAdvancingFakeTime(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+      })
 
-    expect(Date.now() - relaunchStartedAt).toBeLessThanOrEqual(5_000)
+      expect(Date.now() - relaunchStartedAt).toBeLessThanOrEqual(5_000)
+    } finally {
+      vi.useRealTimers()
+    }
     expect(fetchHarness).toHaveBeenCalledWith(
       expect.stringContaining("/Users/AuthenticateByName"),
       expect.anything()
@@ -902,16 +944,24 @@ describe("desktop onboarding auth runtime", () => {
       alwaysFailMediaStatus: 503
     })
 
-    const restartStartedAt = Date.now()
-    const restartedRuntime = createDesktopOnboardingAppRuntime(document.body)
-    restartedRuntime.start()
+    // Cached first paint must not wait on any timer (simulated time stays frozen), which
+    // deterministically satisfies the 5 s offline first-paint budget.
+    vi.useFakeTimers({ toFake: FAKE_TIME_FUNCTIONS })
+    let restartedRuntime: ReturnType<typeof createDesktopOnboardingAppRuntime>
+    try {
+      const restartStartedAt = Date.now()
+      restartedRuntime = createDesktopOnboardingAppRuntime(document.body)
+      restartedRuntime.start()
 
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
-      expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
-    }, { timeout: 5_000 })
+      await waitWithoutAdvancingFakeTime(() => {
+        expect(document.querySelector('[data-testid="poster-wall-root"]')).toBeTruthy()
+        expect(document.querySelector('[data-testid="poster-item-0"]')).toBeTruthy()
+      })
 
-    expect(Date.now() - restartStartedAt).toBeLessThanOrEqual(5_000)
+      expect(Date.now() - restartStartedAt).toBeLessThanOrEqual(5_000)
+    } finally {
+      vi.useRealTimers()
+    }
 
     restartedRuntime.dispose()
   })
@@ -1036,16 +1086,24 @@ describe("desktop onboarding auth runtime", () => {
         expect(countMediaCalls()).toBeGreaterThanOrEqual(2)
       })
 
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 8_100)
-      })
-      const idleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+      // Drive the 8 s idle-hide timer on fake timers instead of sleeping in real time. The pointermove
+      // re-arms the idle timer under the fake clock.
+      vi.useFakeTimers()
+      let idleRefreshVisibility: string
+      let revealRefreshVisibility: string
+      try {
+        window.dispatchEvent(createMousePointerEvent("pointermove"))
+        await vi.advanceTimersByTimeAsync(8_100)
+        idleRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
 
-      window.dispatchEvent(createMousePointerEvent("pointermove"))
-      await vi.waitFor(() => {
-        expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
-      })
-      const revealRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+        window.dispatchEvent(createMousePointerEvent("pointermove"))
+        await vi.waitFor(() => {
+          expect(getComputedStyle(getElement("manual-refresh-button")).visibility).toBe("visible")
+        })
+        revealRefreshVisibility = getComputedStyle(getElement("manual-refresh-button")).visibility
+      } finally {
+        vi.useRealTimers()
+      }
 
       const selectorPresence = {
         wallRoot: document.querySelector('[data-testid="poster-wall-root"]') !== null,
@@ -1808,11 +1866,15 @@ describe("desktop onboarding auth runtime", () => {
     }
   })
 
-  it("clears token/password artifacts on logout within 1s and preserves remembered server/username", async () => {
-    globalThis.fetch = createFetchHarness({
+  it("clears token/password artifacts on logout without waiting for the server and preserves remembered server/username", async () => {
+    // The server-side logout stays pending until the cleanup assertions pass, so the cleanup provably
+    // does not wait for the server (the wall-clock 1 s budget is enforced by the desktop gate).
+    const serverLogout = createDeferred()
+    const fetchHarness = createFetchHarness({
       allowLogin: true,
-      logoutDelayMs: 1_500
+      logoutGate: serverLogout.promise
     })
+    globalThis.fetch = fetchHarness
 
     const runtime = createDesktopOnboardingAppRuntime(document.body)
     runtime.start()
@@ -1836,7 +1898,6 @@ describe("desktop onboarding auth runtime", () => {
     expect(window.sessionStorage.getItem("mps.auth.session")).toContain("token-abc")
     expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeTruthy()
 
-    const logoutStartedAt = Date.now()
     clickByTestId("logout-button")
 
     await vi.waitFor(() => {
@@ -1846,8 +1907,11 @@ describe("desktop onboarding auth runtime", () => {
       expect(window.localStorage.getItem(DESKTOP_PASSWORD_STORE_STORAGE_KEY)).toBeNull()
     })
 
-    const elapsedMs = Date.now() - logoutStartedAt
-    expect(elapsedMs).toBeLessThanOrEqual(1_000)
+    expect(fetchHarness).toHaveBeenCalledWith(
+      expect.stringContaining("/Sessions/Logout"),
+      expect.anything()
+    )
+    serverLogout.resolve()
     await vi.waitFor(() => {
       expect(getInput("server-url-input").value).toBe(TEST_SERVER)
       expect(getInput("username-input").value).toBe("demo-user")
