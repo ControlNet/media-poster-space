@@ -1350,6 +1350,12 @@ export function createOnboardingAppRuntime(
           clearWallHandoff: () => {
             clearOnboardingWallHandoff(sessionStorageRef)
             clearOnboardingWallHandoff(localStorageRef)
+            // After an auth failure the token is dead; keeping it would send the user
+            // through library selection straight back into the same 401.
+            if (state.ingestionErrorCategory === "auth") {
+              clearSessionArtifacts()
+              state.session = null
+            }
           },
           navigateToOnboarding: () => {
             window.history.pushState({}, "", ONBOARDING_PATHNAME)

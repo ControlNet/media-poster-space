@@ -1200,6 +1200,13 @@ export function createDesktopOnboardingAppRuntime(
       disposeIngestionRuntime,
       clearSessionArtifacts,
       onBeforeStateReset: async () => {
+        // The current identity explicitly too: keychain entries from older builds are not
+        // in the index that clearAll() walks.
+        const serverUrl = state.serverUrl.trim()
+        const username = state.username.trim()
+        if (serverUrl && username) {
+          await clearRememberedPassword(() => passwordVault.clearForIdentity({ serverUrl, username }))
+        }
         await clearRememberedPassword(() => passwordVault.clearAll())
       },
       onAfterCommonStateReset: () => {
@@ -1607,6 +1614,12 @@ export function createDesktopOnboardingAppRuntime(
           clearWallHandoff: () => {
             clearOnboardingWallHandoff(sessionStorageRef)
             clearOnboardingWallHandoff(localStorageRef)
+            // After an auth failure the token is dead; keeping it would send the user
+            // through library selection straight back into the same 401.
+            if (state.ingestionErrorCategory === "auth") {
+              clearSessionArtifacts()
+              state.session = null
+            }
           },
           navigateToOnboarding: () => {
             window.history.pushState({}, "", "/")

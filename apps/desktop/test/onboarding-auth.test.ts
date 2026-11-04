@@ -348,6 +348,8 @@ interface PlatformHarnessOptions {
   initialAutostartEnabled?: boolean
   initialFullscreenEnabled?: boolean
   displays?: DesktopDisplayOption[]
+  // Keychain entries written by builds before the Rust identity index existed.
+  legacyCredentials?: Record<string, string>
 }
 
 function createPlatformHarness(options: PlatformHarnessOptions = {}): {
@@ -371,7 +373,10 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
     }
   ]
 
-  const credentialStore = new Map<string, string>()
+  const credentialStore = new Map<string, string>(Object.entries(options.legacyCredentials ?? {}))
+  // Mirrors `credentialIdentities` in platform-state.json: clear-all only walks this
+  // index, and a successful read registers the identity (as the Rust command does).
+  const indexedCredentialKeys = new Set<string>()
 
   const bridge: DesktopPlatformBridge = {
     getCapabilities: async () => ({
@@ -395,7 +400,12 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
       fullscreenEnabled = enabled
     },
     readCredential: async ({ serverUrl, username }) => {
-      return credentialStore.get(`${serverUrl}::${username}`) ?? null
+      const key = `${serverUrl}::${username}`
+      const password = credentialStore.get(key) ?? null
+      if (password !== null) {
+        indexedCredentialKeys.add(key)
+      }
+      return password
     },
     writeCredential: async ({ serverUrl, username, password }) => {
       // Mirrors the Rust command: without a keychain nothing is stored anywhere.
@@ -407,6 +417,7 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
       }
 
       credentialStore.set(`${serverUrl}::${username}`, password)
+      indexedCredentialKeys.add(`${serverUrl}::${username}`)
       return {
         storageKind: "secure-service",
         warning: null
@@ -414,9 +425,13 @@ function createPlatformHarness(options: PlatformHarnessOptions = {}): {
     },
     clearCredential: async ({ serverUrl, username }) => {
       credentialStore.delete(`${serverUrl}::${username}`)
+      indexedCredentialKeys.delete(`${serverUrl}::${username}`)
     },
     clearAllCredentials: async () => {
-      credentialStore.clear()
+      for (const key of indexedCredentialKeys) {
+        credentialStore.delete(key)
+      }
+      indexedCredentialKeys.clear()
     }
   }
 
@@ -1822,6 +1837,49 @@ describe("desktop onboarding auth runtime", () => {
       vi.useRealTimers()
       runtime.dispose()
     }
+  })
+
+  it("logout forgets a keychain password written by an older build (not in the identity index)", async () => {
+    globalThis.fetch = createFetchHarness({ allowLogin: true })
+    const platformHarness = createPlatformHarness({
+      legacyCredentials: { [`${TEST_SERVER}::demo-user`]: "legacy-secret" }
+    })
+    window.localStorage.setItem("mps.onboarding.remembered-server", TEST_SERVER)
+    window.localStorage.setItem("mps.onboarding.remembered-username", "demo-user")
+    window.sessionStorage.setItem("mps.auth.session", JSON.stringify({
+      providerId: "jellyfin",
+      serverUrl: TEST_SERVER,
+      userId: "user-1",
+      username: "demo-user",
+      accessToken: "token-abc",
+      createdAt: "2026-11-04T00:00:00.000Z"
+    }))
+    window.sessionStorage.setItem("mps.wall.handoff", JSON.stringify({
+      selectedLibraryIds: ["movies-main"],
+      preferences: { rememberServer: true, rememberUsername: true, rememberPasswordRequested: false }
+    }))
+
+    const runtime = createDesktopOnboardingAppRuntime(document.body, {
+      platformBridge: platformHarness.bridge
+    })
+    runtime.start()
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="logout-button"]')).toBeTruthy()
+    })
+    clickByTestId("logout-button")
+
+    await vi.waitFor(() => {
+      expect(window.sessionStorage.getItem("mps.auth.session")).toBeNull()
+    })
+    await vi.waitFor(async () => {
+      await expect(platformHarness.bridge.readCredential({
+        serverUrl: TEST_SERVER,
+        username: "demo-user"
+      })).resolves.toBeNull()
+    })
+
+    runtime.dispose()
   })
 
   it("clears token/password artifacts on logout within 1s and preserves remembered server/username", async () => {

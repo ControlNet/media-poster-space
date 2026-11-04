@@ -371,13 +371,26 @@ fn platform_set_fullscreen(window: Window, enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn platform_read_credential(server_url: String, username: String) -> Result<Option<String>, String> {
+fn platform_read_credential(
+    app: AppHandle,
+    server_url: String,
+    username: String,
+) -> Result<Option<String>, String> {
     if !linux_secret_service_available() {
         return Ok(None);
     }
 
-    secure_store_read(&to_identity_key(&server_url, &username))
-        .map_err(|error| format!("Could not read the remembered password: {error}"))
+    let identity_key = to_identity_key(&server_url, &username);
+    let password = secure_store_read(&identity_key)
+        .map_err(|error| format!("Could not read the remembered password: {error}"))?;
+
+    // Entries written by builds before the identity index existed register themselves
+    // here, so "forget all" on logout can find them too.
+    if password.is_some() {
+        remember_credential_identity(&app, &identity_key)?;
+    }
+
+    Ok(password)
 }
 
 #[tauri::command]
