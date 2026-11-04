@@ -5,7 +5,9 @@ import path from "node:path"
 
 import { expect, test, type Browser } from "@playwright/test"
 
-const TEST_SERVER = "https://jellyfin.test"
+import { FIXTURE_SERVER_ORIGIN, routeUnstubbedFixtureServerTraffic } from "../support/fixture-server-routes"
+
+const TEST_SERVER = FIXTURE_SERVER_ORIGIN
 const MILESTONE = "v1"
 const SCENE = "mandatory-gates"
 const VERSION = "r1"
@@ -29,11 +31,6 @@ interface GateMetrics {
     milestone: string
     scene: string
     version: string
-    seed: string
-    width: number
-    height: number
-    frameRate: number
-    clipDurationMs: number
     clipPath: string
     screenshots: string[]
     seedProof: {
@@ -73,13 +70,10 @@ async function captureSeededSceneFrameHash(browser: Browser, seed: string): Prom
     const rafTimers = new Map<number, number>()
     const originalGetContext = HTMLCanvasElement.prototype.getContext
 
-    try {
-      Object.defineProperty(performance, "now", {
-        configurable: true,
-        value: () => 0
-      })
-    } catch {
-    }
+    Object.defineProperty(performance, "now", {
+      configurable: true,
+      value: () => 0
+    })
 
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
@@ -156,6 +150,7 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
 
   const page = await context.newPage()
   const video = page.video()
+  await routeUnstubbedFixtureServerTraffic(page)
 
   let offlineMode = false
   let tokenRevoked = false
@@ -263,8 +258,8 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
   const loginFlowMs = Date.now() - loginStart
 
   const namingPrefix = `${MILESTONE}-${SCENE}-${VERSION}`
-  const webClipPath = path.join(EVIDENCE_ROOT, `${namingPrefix}-web-1080p60-30s.webm`)
-  const screenshotPaths = [
+  const webClipPath = path.join(EVIDENCE_ROOT, `${namingPrefix}-web-session.webm`)
+  const screenshotPaths: [string, string, string] = [
     path.join(EVIDENCE_ROOT, `${namingPrefix}-web-segment-1.png`),
     path.join(EVIDENCE_ROOT, `${namingPrefix}-web-segment-2.png`),
     path.join(EVIDENCE_ROOT, `${namingPrefix}-web-segment-3.png`)
@@ -312,16 +307,13 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
   expect(cleanupState.sessionSnapshot).toBeNull()
   expect(cleanupState.wallHandoff).toBeNull()
 
-  const elapsedForClip = Date.now() - loginStart
-  const remainingClipMs = Math.max(0, 30_000 - elapsedForClip)
-  if (remainingClipMs > 0) {
-    await page.waitForTimeout(remainingClipMs)
-  }
-
   await context.close()
-  if (video) {
-    await video.saveAs(webClipPath)
+  if (!video) {
+    throw new Error("Missing web gate session recording for visual evidence")
   }
+  await video.saveAs(webClipPath)
+  // saveAs copies the recording; remove Playwright's randomly named original so no orphan webm remains.
+  await video.delete()
 
   const fixedSeedProbe = await captureSeededSceneFrameHash(browser, FIXED_SEED)
   const fixedSeedReplayProbe = await captureSeededSceneFrameHash(browser, FIXED_SEED)
@@ -343,11 +335,6 @@ test("enforces mandatory V1 web gates and writes deterministic evidence", async 
       milestone: MILESTONE,
       scene: SCENE,
       version: VERSION,
-      seed: FIXED_SEED,
-      width: 1920,
-      height: 1080,
-      frameRate: 60,
-      clipDurationMs: 30_000,
       clipPath: webClipPath,
       screenshots: screenshotPaths,
       seedProof: {

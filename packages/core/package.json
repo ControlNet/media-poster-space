@@ -17,9 +17,7 @@
   "scripts": {
     "lint": "echo \"@mps/core lint placeholder\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
-    "build": "echo \"@mps/core build placeholder\"",
-    "e2e": "echo \"@mps/core e2e placeholder\""
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.10.10",

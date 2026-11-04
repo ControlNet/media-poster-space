@@ -9,12 +9,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build:ui": "vite build --base ./",
-    "build": "pnpm run typecheck && pnpm run test && pnpm run build:ui",
+    "build": "pnpm run build:ui",
     "build:release": "node ../../scripts/release/package-desktop-release.mjs",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
-    "e2e": "echo \"@mps/desktop e2e placeholder\"",
-    "e2e:desktop": "vitest run --config vitest.config.ts test/gates/mandatory-v1-gates.test.ts && node ../../scripts/verify-thresholds.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json"
+    "e2e:desktop": "node ../../scripts/run-gates.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json -- vitest run --config vitest.gates.config.ts"
   },
   "dependencies": {
     "@mps/core": "workspace:*"

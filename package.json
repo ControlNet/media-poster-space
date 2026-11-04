@@ -17,7 +17,7 @@
     "verify:release-artifacts": "node scripts/release/verify-release-artifacts.mjs",
     "verify:docs-parity": "node scripts/verify-docs-parity.mjs",
     "e2e": "turbo run e2e",
-    "e2e:web": "turbo run e2e --filter=@mps/web"
+    "e2e:web": "turbo run e2e e2e:web --filter=@mps/web"
   },
   "devDependencies": {
     "turbo": "^2.9.14"

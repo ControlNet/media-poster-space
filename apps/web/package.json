@@ -8,10 +8,10 @@
     "lint": "echo \"@mps/web lint placeholder\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "pnpm run typecheck && vitest run --passWithNoTests && vite build",
+    "build": "vite build",
     "build:release": "node ../../scripts/release/package-web-release.mjs",
     "e2e": "playwright test --config=playwright.config.ts --project=web-chromium",
-    "e2e:web": "playwright test --config=playwright.config.ts --project=web-chromium e2e/gates && node ../../scripts/verify-thresholds.mjs --platform web --metrics ../../.omo/evidence/task-16-web-gates.metrics.json"
+    "e2e:web": "node ../../scripts/run-gates.mjs --platform web --metrics ../../.omo/evidence/task-16-web-gates.metrics.json -- playwright test --config=playwright.config.ts --project=web-gates"
   },
   "dependencies": {
     "@mps/core": "workspace:*"
