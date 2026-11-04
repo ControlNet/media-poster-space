@@ -32,7 +32,12 @@ node .omo/review-repros/2026-11-04/providers/repro-url.mts            # from rep
 node .omo/review-repros/2026-11-04/queue/diag-growth.mjs              # also diag-export / cache-tick-cost
 ```
 
-Expected today: queue `4 failed | 1 passed`, onboarding `2 passed` + `3 passed`, apps `1 failed | 17 passed`.
+Expected at review time (`9ff2172`): queue `4 failed | 1 passed`, onboarding `2 passed` + `3 passed`, apps `1 failed | 17 passed`.
+
+Expected after the fixes (`2b9adb3`): queue `5 passed` (they assert correct behaviour); onboarding node
+`1 failed | 1 passed` (`cache-size` only measures) and jsdom `3 failed`; apps `6 failed | 12 passed` —
+the remaining passes only log observations or contrast with already-correct web behaviour.
+`providers/repro-timeout-errors.mts` exits 0 and prints typed provider errors for every case.
 
 `apps/probe-download-beforeunload.mjs` launches real Chromium/Firefox through Playwright
 (`pnpm --filter @mps/web exec playwright install chromium firefox` first).
