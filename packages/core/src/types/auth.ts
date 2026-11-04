@@ -14,6 +14,10 @@ export interface SessionSnapshot {
   accessToken: string;
   createdAt: string;
   expiresAt?: string;
+  /** Client name sent at sign-in; reused in session Authorization headers when present. */
+  clientName?: string;
+  /** Device id sent at sign-in; reused in session Authorization headers when present. */
+  deviceId?: string;
 }
 
 export interface ProviderSession extends SessionSnapshot {

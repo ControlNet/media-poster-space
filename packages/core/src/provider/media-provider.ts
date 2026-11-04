@@ -2,7 +2,11 @@ import type { AuthCredentials, ProviderSession, SessionSnapshot } from "../types
 import type { MediaItem, VisualItem } from "../types/media";
 import type { ProviderCapability, ProviderError } from "../types/provider";
 
-export interface ProviderPreflightRequest {
+export interface ProviderRequestOptions {
+  signal?: AbortSignal;
+}
+
+export interface ProviderPreflightRequest extends ProviderRequestOptions {
   serverUrl: string;
   origin?: string;
   timeoutMs?: number;
@@ -26,7 +30,7 @@ export interface MediaLibrary {
   kind: "movies" | "shows" | "mixed" | "other";
 }
 
-export interface MediaQuery {
+export interface MediaQuery extends ProviderRequestOptions {
   libraryIds: readonly string[];
   cursor?: string;
   limit?: number;
@@ -49,7 +53,7 @@ export interface MediaProvider {
   restoreSession(snapshot: SessionSnapshot): Promise<ProviderSession | null>;
   invalidateSession(session: ProviderSession): Promise<void>;
 
-  listLibraries(session: ProviderSession): Promise<MediaLibrary[]>;
+  listLibraries(session: ProviderSession, options?: ProviderRequestOptions): Promise<MediaLibrary[]>;
   listMedia(session: ProviderSession, query: MediaQuery): Promise<MediaPage>;
   toVisualItems(items: readonly MediaItem[]): VisualItem[];
 }
