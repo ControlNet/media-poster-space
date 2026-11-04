@@ -57,15 +57,24 @@ for (const [label, err] of [
   }
 }
 
-// 3) Truncated JSON body on a 200 listMedia -> silently becomes an empty page
+// Since the fix these calls throw a typed provider error; print it instead of crashing.
+async function observe(label: string, run: () => Promise<unknown>): Promise<void> {
+  try {
+    console.log(`[${label}] ->`, JSON.stringify(await run()));
+  } catch (e) {
+    const pe = (e as Error & { providerError?: unknown }).providerError;
+    console.log(`[${label}] threw ${(e as Error).constructor.name}: "${(e as Error).message}" providerError=${JSON.stringify(pe)}`);
+  }
+}
+
+// 3) Truncated JSON body on a 200 listMedia -> silently becomes an empty page (before the fix)
 {
   const p = createJellyfinMediaProvider({
     fetch: async () => new Response('{"Items":[{"Id":"a","Name":"A","Type":"Movie","ImageTags":{"Primary":"t"}}],"TotalRec', {
       status: 200, headers: { "content-type": "application/json" }
     })
   });
-  const page = await p.listMedia(SESSION, { libraryIds: ["lib"] });
-  console.log("[truncated JSON listMedia] ->", JSON.stringify(page));
+  await observe("truncated JSON listMedia", () => p.listMedia(SESSION, { libraryIds: ["lib"] }));
 }
 
 // 4) Body stream errors mid-read (connection reset) -> also swallowed into an empty page
@@ -78,8 +87,7 @@ for (const [label, err] of [
       return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
     }
   });
-  const page = await p.listMedia(SESSION, { libraryIds: ["lib"] });
-  console.log("[body reset listMedia] ->", JSON.stringify(page));
+  await observe("body reset listMedia", () => p.listMedia(SESSION, { libraryIds: ["lib"] }));
 }
 
 // 5) SSO / captive portal: every API call returns 200 text/html (fetch follows the 302 to the login page)
@@ -89,10 +97,9 @@ for (const [label, err] of [
     return new Response("<html>Sign in</html>", { status: 200, headers: { "content-type": "text/html" } });
   };
   const p = createJellyfinMediaProvider({ fetch: htmlFetch });
-  const restored = await p.restoreSession(SESSION);
-  const libs = await p.listLibraries(SESSION);
-  const page = await p.listMedia(SESSION, { libraryIds: ["lib"] });
-  console.log("[html 200] restoreSession ->", restored ? "SESSION RESTORED" : null, "| libraries:", libs, "| media page:", JSON.stringify(page));
+  await observe("html 200 restoreSession", () => p.restoreSession(SESSION));
+  await observe("html 200 listLibraries", () => p.listLibraries(SESSION));
+  await observe("html 200 listMedia", () => p.listMedia(SESSION, { libraryIds: ["lib"] }));
 }
 
 // 6) Malformed entries -> raw TypeError, not ProviderError

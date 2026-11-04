@@ -232,7 +232,9 @@ function formatServerStatusText(
   }
 
   if (isCurrentServerChecked && state.preflightError) {
-    return `Server unavailable — ${state.preflightError}`
+    // Provider errors are already full sentences (missing scheme, HTTPS page vs http://
+    // server, unreachable, unsupported version); a prefix would misdescribe most of them.
+    return state.preflightError
   }
 
   if (isCurrentServerChecked && state.preflightServerVersion) {

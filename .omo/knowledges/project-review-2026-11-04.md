@@ -145,3 +145,38 @@ Token never appears in poster/image URLs; crash-export redaction covers token/pa
 keys and header patterns; pagination terminates; listeners on window/document are paired; render
 loop cancels its RAF; GitHub Actions permissions are scoped per job and `github-release` requires
 quality + e2e + native builds.
+
+## Fix status (2026-11-04, same day)
+
+Fixed on `master` (commits `d3beca9`, `af0f5d1`, provider merge, plus the CI/build batch):
+
+- 1, 5, 6, 9, 10, 18, 25, 26 (providers/validation): `Authorization: MediaBrowser … Token="…"` for
+  Jellyfin (`X-Emby-Token` kept for Emby); relative API URLs keep sub-paths; one timer + optional
+  `AbortSignal` cover fetch **and** body; non-JSON 2xx throws a typed error; server URL must have a
+  scheme; HTTPS page + `http://` non-loopback server gets an explicit mixed-content error.
+  Jellyfin 12 accepts a token-only `MediaBrowser Token="…"` (server fills Client/Device from the
+  device record); its header parser URL-decodes values, so `\"` escaping only works for plain values.
+- 2, 11, 12: adapter restarts a **full pass** after the cursor runs out (no permanent `updatedSince`);
+  warm start does not stamp `ingestionFetchedAt`; empty refill page falls back to wrap-around source
+  items; refill results are enqueued onto the *current* queue; in-flight refill skips ticks; failed
+  refills back off 2 s → 60 s; runtime generation guard drops results from disposed runtimes.
+  Regression tests: `packages/core/test/runtime/onboarding-ingestion-stream-regressions.test.ts`.
+- 13, 14: diagnostics log keeps 1/60 samples and caps entries (20 000, head-index ring);
+  poster cache persisted at most every 30 s on ticks, 1.5 MB cap, `QuotaExceededError` logged,
+  cleared on logout. The diagnostics panel stays unreachable by design — docs now say so.
+- 3, 4, 19, 20, 24 (desktop): keychain only, no local fallback (decision: no keychain ⇒ password not
+  remembered + warning); Rust keeps `credentialIdentities` in `platform-state.json` so clear-all can
+  delete keychain entries; legacy `credential-fallback.json` and `mps.desktop.password-vault` are
+  deleted; display selection moves the window (also on start-up); Tauri CSP added;
+  `<select>` built with `new Option`.
+- 15, 16, 17, 27: return-to-onboarding clears the handoff; desktop `render()` coalesces re-entrant
+  requests; desktop wall clock loop; web logout clears locally first; web token goes to
+  localStorage only when "Remember server" is on; `/wall/` consistent; cross-origin redirect
+  target ignored; provider switch drops the abandoned session.
+
+Pitfall: `parseJson` now returns `unknown` — narrow with `isWallHandoff` / `isPersistedProviderSession`
+/ `parsePosterCacheSnapshot` from `packages/core/src/runtime/onboarding-shared.ts`. Never log a
+`JSON.parse` error message for stored session data: V8 quotes the input (token) in it.
+
+Follow-ups not done: refill adapter does not forward an `AbortSignal` (late results are already
+dropped by the lifecycle nonce); apps do not pass a signal to preflight/listLibraries.
