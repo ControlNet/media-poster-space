@@ -5,13 +5,11 @@ import {
   createMediaIngestionRuntime,
   createDynamicAccentTokens,
   getBrandFontFamilies,
-  schedulePoster,
   validateMediaItem,
   validateVisualItem
 } from "../src";
 import { createMediaIngestionRuntime as createMediaIngestionRuntimeFromIngestion } from "../src/ingestion";
 import { createOledCinematicControllerState as createOledCinematicControllerStateFromOled } from "../src/oled";
-import { schedulePoster as schedulePosterFromScheduler } from "../src/scheduler";
 import {
   validateMediaItem as validateMediaItemFromValidation,
   validateVisualItem as validateVisualItemFromValidation
@@ -60,10 +58,6 @@ describe("public exports", () => {
 
   it("keeps root and ingestion exports aligned", () => {
     expect(createMediaIngestionRuntime).toBe(createMediaIngestionRuntimeFromIngestion);
-  });
-
-  it("keeps root and scheduler exports aligned", () => {
-    expect(schedulePoster).toBe(schedulePosterFromScheduler);
   });
 
   it("keeps root and oled exports aligned", () => {

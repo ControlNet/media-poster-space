@@ -9,15 +9,14 @@ export interface WallInteractionTransitionResult extends WallInteractionStateSna
 
 function toTransitionResult(
   previousState: WallInteractionStateSnapshot,
-  nextState: WallInteractionStateSnapshot,
-  forceRender = false
+  nextState: WallInteractionStateSnapshot
 ): WallInteractionTransitionResult {
   const didChange = previousState.activePosterIndex !== nextState.activePosterIndex
     || previousState.wallControlsHidden !== nextState.wallControlsHidden;
 
   return {
     ...nextState,
-    shouldRender: forceRender || didChange
+    shouldRender: didChange
   };
 }
 
@@ -38,16 +37,6 @@ export function normalizeWallActivePosterIndex(
   }
 
   return activePosterIndex;
-}
-
-export function createWallPosterSelectionTransition(
-  previousState: WallInteractionStateSnapshot,
-  nextPosterIndex: number
-): WallInteractionTransitionResult {
-  return toTransitionResult(previousState, {
-    activePosterIndex: nextPosterIndex,
-    wallControlsHidden: false
-  }, true);
 }
 
 export function createWallIdleHideTransition(

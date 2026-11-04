@@ -8,7 +8,6 @@
     "./types": "./src/types/index.ts",
     "./provider": "./src/provider/index.ts",
     "./ingestion": "./src/ingestion/index.ts",
-    "./scheduler": "./src/scheduler/index.ts",
     "./oled": "./src/oled/index.ts",
     "./validation": "./src/validation/index.ts",
     "./tokens": "./src/tokens/index.ts"
