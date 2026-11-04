@@ -18,7 +18,7 @@ This matrix describes shipped behavior for V1 and documented platform exceptions
 | Capability | Desktop | Web | Source of truth |
 | --- | --- | --- | --- |
 | Password persistence | Yes (OS keychain only) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/web/src/onboarding/runtime.ts` |
-| Display selection | Yes (moves the window to the chosen monitor; checked under Xvfb by window offset, not yet on a physical multi-monitor setup) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
+| Display selection | Yes (moves the window to the chosen monitor) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
 | Autostart | Yes (disabled in portable mode) | No | `apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/src/features/platform/tauri-bridge.ts` |
 | Fullscreen control | Yes (Tauri window fullscreen) | Yes (browser Fullscreen API) | `apps/web/src/onboarding/runtime.ts` |
 | Poster tile click opens detail card | No | No | `packages/core/src/runtime/onboarding-wall-callbacks.ts`, `packages/core/src/wall/ui/presentation-sections.ts` |
@@ -31,6 +31,7 @@ This matrix describes shipped behavior for V1 and documented platform exceptions
 
 - Web runtime stays static and direct to Jellyfin/Emby, with client-held token flow. The access token is kept in `sessionStorage`; it is copied to `localStorage` only when "Remember server" is checked.
 - Desktop platform commands are capability-gated to the bundled UI in the main window (no `window.__TAURI__` global, Content Security Policy enabled).
+- Display selection has been checked under Xvfb (single monitor, by window offset); placement on a physical multi-monitor setup has not been verified yet.
 - Desktop remembers passwords only in the OS keychain (Secret Service on Linux). Without a keychain the password is not remembered and a warning is shown; there is no local-file fallback. Logout removes remembered passwords from the keychain.
 - The hosted HTTPS web app cannot reach a plain `http://` server (browser mixed-content blocking), except `localhost`. Use an `https://` address (for example behind a reverse proxy) or the desktop app.
 - No BFF runtime dependency in V1.
