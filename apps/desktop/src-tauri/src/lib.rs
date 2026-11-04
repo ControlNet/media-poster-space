@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, Position, Window};
+use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, Position, Runtime, Window};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 const APP_SERVICE_NAME: &str = "media-poster-space";
@@ -83,7 +83,7 @@ fn resolve_portable_dir() -> Option<PathBuf> {
     None
 }
 
-fn resolve_data_root(app: &AppHandle) -> Result<(PathBuf, bool), String> {
+fn resolve_data_root<R: Runtime>(app: &AppHandle<R>) -> Result<(PathBuf, bool), String> {
     if let Some(portable_dir) = resolve_portable_dir() {
         return Ok((portable_dir, true));
     }
@@ -96,17 +96,17 @@ fn resolve_data_root(app: &AppHandle) -> Result<(PathBuf, bool), String> {
     Ok((data_dir, false))
 }
 
-fn platform_state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn platform_state_file_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let (root, _) = resolve_data_root(app)?;
     Ok(root.join(PLATFORM_STATE_FILE_NAME))
 }
 
-fn legacy_fallback_credential_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn legacy_fallback_credential_file_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let (root, _) = resolve_data_root(app)?;
     Ok(root.join(LEGACY_FALLBACK_CREDENTIAL_FILE_NAME))
 }
 
-fn remove_legacy_fallback_credential_file(app: &AppHandle) -> Result<(), String> {
+fn remove_legacy_fallback_credential_file<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let path = legacy_fallback_credential_file_path(app)?;
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -117,7 +117,7 @@ fn remove_legacy_fallback_credential_file(app: &AppHandle) -> Result<(), String>
     }
 }
 
-fn read_platform_state(app: &AppHandle) -> Result<PlatformStateFile, String> {
+fn read_platform_state<R: Runtime>(app: &AppHandle<R>) -> Result<PlatformStateFile, String> {
     let path = platform_state_file_path(app)?;
     let raw = match fs::read_to_string(&path) {
         Ok(raw) => raw,
@@ -141,7 +141,7 @@ fn read_platform_state(app: &AppHandle) -> Result<PlatformStateFile, String> {
     }
 }
 
-fn write_platform_state(app: &AppHandle, state: &PlatformStateFile) -> Result<(), String> {
+fn write_platform_state<R: Runtime>(app: &AppHandle<R>, state: &PlatformStateFile) -> Result<(), String> {
     let path = platform_state_file_path(app)?;
     let payload = serde_json::to_string_pretty(state).map_err(|error| error.to_string())?;
     write_file_atomically(&path, &payload)
@@ -191,7 +191,7 @@ fn secure_store_delete(identity_key: &str) -> Result<(), String> {
     }
 }
 
-fn remember_credential_identity(app: &AppHandle, identity_key: &str) -> Result<(), String> {
+fn remember_credential_identity<R: Runtime>(app: &AppHandle<R>, identity_key: &str) -> Result<(), String> {
     let mut state = read_platform_state(app)?;
     if state
         .credential_identities
@@ -205,7 +205,7 @@ fn remember_credential_identity(app: &AppHandle, identity_key: &str) -> Result<(
     write_platform_state(app, &state)
 }
 
-fn forget_credential_identity(app: &AppHandle, identity_key: &str) -> Result<(), String> {
+fn forget_credential_identity<R: Runtime>(app: &AppHandle<R>, identity_key: &str) -> Result<(), String> {
     let mut state = read_platform_state(app)?;
     let known_count = state.credential_identities.len();
     state
@@ -371,8 +371,8 @@ fn platform_set_fullscreen(window: Window, enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn platform_read_credential(
-    app: AppHandle,
+fn platform_read_credential<R: Runtime>(
+    app: AppHandle<R>,
     server_url: String,
     username: String,
 ) -> Result<Option<String>, String> {
@@ -394,8 +394,8 @@ fn platform_read_credential(
 }
 
 #[tauri::command]
-fn platform_write_credential(
-    app: AppHandle,
+fn platform_write_credential<R: Runtime>(
+    app: AppHandle<R>,
     server_url: String,
     username: String,
     password: String,
@@ -432,8 +432,8 @@ fn platform_write_credential(
 }
 
 #[tauri::command]
-fn platform_clear_credential(
-    app: AppHandle,
+fn platform_clear_credential<R: Runtime>(
+    app: AppHandle<R>,
     server_url: String,
     username: String,
 ) -> Result<(), String> {
@@ -448,7 +448,7 @@ fn platform_clear_credential(
 }
 
 #[tauri::command]
-fn platform_clear_all_credentials(app: AppHandle) -> Result<(), String> {
+fn platform_clear_all_credentials<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     remove_legacy_fallback_credential_file(&app)?;
 
     let mut state = read_platform_state(&app)?;
@@ -527,4 +527,77 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running media-poster-space desktop application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_key_is_case_and_whitespace_insensitive() {
+        assert_eq!(
+            to_identity_key(" https://Jellyfin.Local ", " Demo "),
+            "https://jellyfin.local::demo"
+        );
+    }
+
+    /// Talks to a real Secret Service. Run inside a throwaway D-Bus session with an
+    /// unlocked gnome-keyring, never against the developer's own keyring:
+    /// `dbus-run-session -- sh -c 'printf pw | gnome-keyring-daemon --unlock --components=secrets
+    ///  && cargo test -- --ignored'`
+    #[test]
+    #[ignore = "needs an isolated Secret Service (see doc comment)"]
+    fn credentials_live_only_in_the_keychain_and_clear_all_removes_them() {
+        let data_dir = std::env::temp_dir().join(format!("mps-credential-test-{}", std::process::id()));
+        fs::create_dir_all(&data_dir).expect("create temp data dir");
+        std::env::set_var("MPS_PORTABLE_DIR", &data_dir);
+        let legacy_file = data_dir.join(LEGACY_FALLBACK_CREDENTIAL_FILE_NAME);
+        fs::write(&legacy_file, "{\"entries\":{}}").expect("seed legacy file");
+
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let server = "https://jellyfin.test".to_string();
+
+        let result = platform_write_credential(
+            handle.clone(),
+            server.clone(),
+            "demo".to_string(),
+            "super-secret".to_string(),
+        )
+        .expect("write");
+        assert_eq!(result.storage_kind, SECURE_SERVICE_KIND);
+        assert!(result.warning.is_none());
+        assert!(!legacy_file.exists(), "legacy fallback file must be deleted");
+
+        // The password is in the keychain, not in any file we own.
+        for entry in fs::read_dir(&data_dir).expect("list data dir") {
+            let content = fs::read_to_string(entry.expect("entry").path()).unwrap_or_default();
+            assert!(!content.contains("super-secret"));
+        }
+        assert_eq!(
+            platform_read_credential(handle.clone(), server.clone(), "demo".to_string()).expect("read"),
+            Some("super-secret".to_string())
+        );
+
+        // An entry written by an older build (not indexed) registers itself on read.
+        secure_store_write(&to_identity_key(&server, "legacy"), "old-secret").expect("seed legacy entry");
+        assert_eq!(
+            platform_read_credential(handle.clone(), server.clone(), "legacy".to_string()).expect("read legacy"),
+            Some("old-secret".to_string())
+        );
+        assert_eq!(read_platform_state(&handle).expect("state").credential_identities.len(), 2);
+
+        platform_clear_all_credentials(handle.clone()).expect("clear all");
+        assert_eq!(
+            platform_read_credential(handle.clone(), server.clone(), "demo".to_string()).expect("read after clear"),
+            None
+        );
+        assert_eq!(
+            platform_read_credential(handle.clone(), server, "legacy".to_string()).expect("read legacy after clear"),
+            None
+        );
+        assert!(read_platform_state(&handle).expect("state").credential_identities.is_empty());
+
+        fs::remove_dir_all(&data_dir).expect("remove temp data dir");
+    }
 }

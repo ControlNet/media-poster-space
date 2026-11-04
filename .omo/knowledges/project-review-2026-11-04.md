@@ -200,3 +200,26 @@ sync (which re-enables the refresh button) was skipped. Check:
 Command meaning changes (AGENTS.md not edited — only on explicit request): `pnpm --filter @mps/web e2e`
 no longer runs `e2e/gates/`; `pnpm -w e2e:web` runs the full suite then the gates; `pnpm -w test` no
 longer runs the desktop Chromium gate; new `pnpm -w verify:versions`.
+
+## Desktop runtime verification recipe (no WebDriver needed)
+
+Throwaway keyring + data dir only; never point these at the real `$HOME`.
+
+```bash
+T=$(mktemp -d); mkdir -m 700 $T/run
+# Rust credential commands against a real Secret Service (gnome-keyring in a private D-Bus session):
+cd apps/desktop/src-tauri && HOME=$T XDG_DATA_HOME=$T/data XDG_RUNTIME_DIR=$T/run \
+  CARGO_HOME=~/.cargo RUSTUP_HOME=~/.rustup dbus-run-session -- sh -c \
+  'printf pw | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -- --include-ignored'
+# Real app under Xvfb (portable data dir via MPS_PORTABLE_DIR; WebKit needs the DMA-BUF renderer off):
+pnpm --filter @mps/desktop exec tauri build --debug --no-bundle
+WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR=$T/data \
+  xvfb-run -a -s "-screen 0 1920x1080x24" apps/desktop/src-tauri/target/debug/mps-desktop
+```
+
+- `import -window root` gives a black frame; capture the window id from `xwininfo -root -children` instead.
+- This Xvfb ignores `xrandr --setmonitor` and `+xinerama` (one monitor only). To check that display
+  selection moves the window, build with `--config '{"app":{"windows":[{…,"x":400,"y":120}]}}'`:
+  no saved display → window stays at +400+120; saved `display-0-1920x1080-0,0` → +0+0.
+- Verified 2026-11-04: UI renders under the CSP, IPC works, legacy `credential-fallback.json` is deleted
+  at start-up, a stale saved display logs `[mps] Could not restore the selected display` and is replaced.

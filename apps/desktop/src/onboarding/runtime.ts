@@ -1319,7 +1319,7 @@ export function createDesktopOnboardingAppRuntime(
     const onboardingView = createOnboardingFormView({
       createElement,
       state,
-      rememberPasswordLabel: "Remember password (stored encrypted on this device)",
+      rememberPasswordLabel: "Remember password (system keychain)",
       authenticationAvailable: isAvailableOnboardingProvider(state.selectedProviderId),
       providerSelectionMessage: toUnavailableProviderMessage(state.selectedProviderId),
       providerTransitionFrom,
