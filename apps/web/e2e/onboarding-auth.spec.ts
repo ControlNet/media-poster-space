@@ -19,13 +19,6 @@ function createDeferred(): {
   }
 }
 
-// verify-wall-contracts literal anchors (kept as comments for contract parity checks)
-// page.getByTestId("exit-hotspot")
-// page.locator('[data-testid="wall-controls-container"]:visible')
-// page.getByTestId("wall-fullscreen-button")
-// toBeGreaterThanOrEqual(240)
-// toBeLessThanOrEqual(320)
-
 async function wireSuccessfulPreflight(page: Page): Promise<void> {
   await page.route("**/System/Info/Public", async (route) => {
     await route.fulfill({

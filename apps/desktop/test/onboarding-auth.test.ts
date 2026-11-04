@@ -13,14 +13,6 @@ import type {
 
 const TEST_SERVER = "https://jellyfin.test"
 
-// verify-wall-contracts literal anchors (kept as comments for contract parity checks)
-// clickByTestId("exit-hotspot")
-// getElement("wall-controls-container")
-// expect(transitionMs).toBeGreaterThanOrEqual(240)
-// expect(transitionMs).toBeLessThanOrEqual(320)
-// expect(controlsTransitionMs).toBeGreaterThanOrEqual(240)
-// expect(controlsTransitionMs).toBeLessThanOrEqual(320)
-
 interface FetchHarnessOptions {
   allowLogin: boolean
   logoutDelayMs?: number
