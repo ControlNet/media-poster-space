@@ -1,6 +1,6 @@
 - Plan lines 6/125 anchor the bootstrap: monorepo roots under `apps/web`, `apps/desktop`, `packages/core` and packages scoped as `@mps/web`, `@mps/desktop`, `@mps/core` (per the filter names used throughout, e.g. lines 180-297).
 - Root script style must center on `pnpm -w` + Turbo: `pnpm -w install --frozen-lockfile`, `pnpm -w turbo run lint typecheck test build`, `pnpm -w turbo run e2e:web e2e:desktop`, `pnpm -w turbo run build:release`, and the verify scripts such as `pnpm -w verify:release-artifacts` / `pnpm -w verify:docs-parity` (plan lines 48-813 show these commands as mandatory QA/gate references).
-- Evidence/QA artifacts belong under `.sisyphus/evidence` (line 82), and CI should touch `.github/workflows/*` + `turbo.json`, `package.json`, `playwright.config.*`, `vitest.config.*` (line 355).
+- Evidence/QA artifacts belong under `.omo/evidence` (line 82), and CI should touch `.github/workflows/*` + `turbo.json`, `package.json`, `playwright.config.*`, `vitest.config.*` (line 355).
 - Repository is also required to ship a minimal README and AGPL license at the root (line 125), to satisfy the open-source governance called out by AGENTS.md + plan.
 - 2026-02-23: Chose placeholder echo scripts across packages to keep turbo tasks resolvable until real implementations are added in later tasks.
 - 2026-02-23: Decided to keep actual turbo binary invocation for root `turbo` script so bootstrap commands align with plan checks without altering downstream packages.
@@ -50,4 +50,4 @@
 - 2026-02-25: Task 17 artifact verification is fail-closed on desktop realism: portable artifacts must be structurally valid tar payloads with expected `desktop-portable/` internals and manifest semantics, while Linux AppImage must be executable and checksum-linked to the linux portable artifact.
 - 2026-02-25: Stable-channel release docs verification remains explicit by requiring deterministic metadata fields and exact artifact entry ordering, plus root/release changelog content parity and mandatory changelog headings.
 - 2026-02-25: For Task 18 final audit, kept a no-change outcome because the current docs/parity corpus is already fail-closed and implementation-backed; adding edits without a concrete mismatch would increase drift risk.
-- 2026-03-01: Task 9 evidence artifacts now recorded under `.sisyphus/evidence/task-9-desktop-parity-tests.txt` and `.sisyphus/evidence/task-9-desktop-reconnect-logout.txt` to document the required log capture for parity gates and reconnect/logout flow.
+- 2026-03-01: Task 9 evidence artifacts now recorded under `.omo/evidence/task-9-desktop-parity-tests.txt` and `.omo/evidence/task-9-desktop-reconnect-logout.txt` to document the required log capture for parity gates and reconnect/logout flow.

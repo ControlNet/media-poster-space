@@ -14,7 +14,7 @@
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "e2e": "echo \"@mps/desktop e2e placeholder\"",
-    "e2e:desktop": "vitest run --config vitest.config.ts test/gates/mandatory-v1-gates.test.ts && node ../../scripts/verify-thresholds.mjs --platform desktop --metrics ../../.sisyphus/evidence/task-16-desktop-gates.metrics.json"
+    "e2e:desktop": "vitest run --config vitest.config.ts test/gates/mandatory-v1-gates.test.ts && node ../../scripts/verify-thresholds.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json"
   },
   "dependencies": {
     "@mps/core": "workspace:*"

@@ -74,7 +74,7 @@ Implement an infinite poster conveyor runtime that continuously rotates posters 
 > ZERO HUMAN INTERVENTION — all verification is agent-executed.
 - Test decision: TDD + existing Vitest/Playwright/contract checks.
 - QA policy: Every task includes agent-executed happy + failure scenarios.
-- Evidence: `.sisyphus/evidence/task-{N}-{slug}.{ext}`
+- Evidence: `.omo/evidence/task-{N}-{slug}.{ext}`
 
 ## Execution Strategy
 ### Parallel Execution Waves
@@ -140,7 +140,7 @@ Wave 3: Stabilization and regression hardening
 
   **Acceptance Criteria** (agent-executable only):
   - [x] Baseline evidence artifacts are generated for wall selectors and visual layout: `node scripts/verify-wall-contracts.mjs` returns PASS and screenshots/DOM snapshots are stored.
-  - [x] A baseline matrix is saved to `.sisyphus/evidence/task-1-baseline-contracts.md` listing invariant selectors/text/timing to preserve.
+  - [x] A baseline matrix is saved to `.omo/evidence/task-1-baseline-contracts.md` listing invariant selectors/text/timing to preserve.
 
   **QA Scenarios** (MANDATORY — task incomplete without these):
   ```
@@ -148,16 +148,16 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Run `node scripts/verify-wall-contracts.mjs`; run targeted web/desktop wall tests asserting selectors.
     Expected: Contract PASS and selector assertions remain green.
-    Evidence: .sisyphus/evidence/task-1-baseline-contracts.md
+    Evidence: .omo/evidence/task-1-baseline-contracts.md
 
   Scenario: Baseline visual invariants capture
     Tool: Playwright
     Steps: Enter /wall, capture full-page screenshot and element snapshots for `poster-wall-root`, `wall-poster-grid`, `manual-refresh-button`.
     Expected: Evidence exists and is referenced for no-visual-change comparisons.
-    Evidence: .sisyphus/evidence/task-1-baseline-visual.png
+    Evidence: .omo/evidence/task-1-baseline-visual.png
   ```
 
-  **Commit**: NO | Message: `chore(wall): capture pre-change wall invariants` | Files: [`.sisyphus/evidence/*`]
+  **Commit**: NO | Message: `chore(wall): capture pre-change wall invariants` | Files: [`.omo/evidence/*`]
 
 - [x] 2. Split render reasons so diagnostics ticks cannot trigger full wall rebuild
 
@@ -190,13 +190,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Playwright
     Steps: Enter /wall; record `poster-wall-root` first child identity; wait >=3 sampling ticks; re-read child identity.
     Expected: Root/primary wall node identity remains stable (no full remount).
-    Evidence: .sisyphus/evidence/task-2-diagnostics-no-remount.json
+    Evidence: .omo/evidence/task-2-diagnostics-no-remount.json
 
   Scenario: Diagnostics contract stability
     Tool: Bash
     Steps: Run web+desktop diagnostics unit tests for exact 1000ms assertions.
     Expected: All interval assertions pass unchanged.
-    Evidence: .sisyphus/evidence/task-2-diagnostics-tests.txt
+    Evidence: .omo/evidence/task-2-diagnostics-tests.txt
   ```
 
   **Commit**: YES | Message: `refactor(runtime): decouple diagnostics sampling from full wall rerender` | Files: [`packages/core/src/runtime/*`, `apps/web/src/onboarding/runtime.ts`, `apps/desktop/src/onboarding/runtime.ts`]
@@ -230,13 +230,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Run queue unit tests with cases size=9,10,39,40.
     Expected: Refill requested only for size<10; target reach is 40.
-    Evidence: .sisyphus/evidence/task-3-queue-threshold-tests.txt
+    Evidence: .omo/evidence/task-3-queue-threshold-tests.txt
 
   Scenario: Duplicate payload rejection
     Tool: Bash
     Steps: Feed queue model duplicate media IDs across multiple refill batches.
     Expected: Queue holds unique IDs only; counters remain correct.
-    Evidence: .sisyphus/evidence/task-3-queue-dedupe-tests.txt
+    Evidence: .omo/evidence/task-3-queue-dedupe-tests.txt
   ```
 
   **Commit**: YES | Message: `feat(core-runtime): add deterministic wall queue policy model` | Files: [`packages/core/src/runtime/*queue*`, `packages/core/test/**`]
@@ -270,13 +270,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Run new queue test file before implementation (expect fail), implement logic, rerun.
     Expected: Initial failure then full pass.
-    Evidence: .sisyphus/evidence/task-4-queue-tdd-cycle.txt
+    Evidence: .omo/evidence/task-4-queue-tdd-cycle.txt
 
   Scenario: Refill race prevention
     Tool: Bash
     Steps: Trigger concurrent refill requests in tests while queue<10.
     Expected: Exactly one fetch in-flight; no duplicate enqueue.
-    Evidence: .sisyphus/evidence/task-4-queue-singleflight.txt
+    Evidence: .omo/evidence/task-4-queue-singleflight.txt
   ```
 
   **Commit**: YES | Message: `test(core-runtime): add TDD coverage for wall queue refill policy` | Files: [`packages/core/test/**queue*`, `packages/core/test/**wall*`]
@@ -310,13 +310,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Mock provider returning fewer than requested items; execute refill.
     Expected: Queue grows by available unique items, no crash, next fetch remains eligible.
-    Evidence: .sisyphus/evidence/task-5-partial-refill.txt
+    Evidence: .omo/evidence/task-5-partial-refill.txt
 
   Scenario: Provider error backoff mapping
     Tool: Bash
     Steps: Mock 401/network errors during refill and inspect emitted error categories.
     Expected: Auth/network categories remain correctly surfaced for reconnect guidance.
-    Evidence: .sisyphus/evidence/task-5-error-mapping.txt
+    Evidence: .omo/evidence/task-5-error-mapping.txt
   ```
 
   **Commit**: YES | Message: `feat(core-runtime): add queue refill adapter for provider pagination` | Files: [`packages/core/src/runtime/*`, `packages/core/src/ingestion/*`, `packages/core/test/**`]
@@ -350,13 +350,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Playwright
     Steps: Capture element handles for `poster-wall-root` and `wall-poster-grid`; wait 5 diagnostics intervals.
     Expected: Handles remain attached and identity-stable (no full re-create).
-    Evidence: .sisyphus/evidence/task-6-dom-stability.json
+    Evidence: .omo/evidence/task-6-dom-stability.json
 
   Scenario: Stream replacement at row entry edge
     Tool: Playwright
     Steps: Observe a specific row over time; verify outgoing tile replaced by queued incoming tile at entry edge without full flash.
     Expected: Incremental content turnover occurs; no whole-screen remount flicker.
-    Evidence: .sisyphus/evidence/task-6-stream-entry.mp4
+    Evidence: .omo/evidence/task-6-stream-entry.mp4
   ```
 
   **Commit**: YES | Message: `feat(wall-ui): switch to incremental stream updates without full rerender` | Files: [`packages/core/src/wall/ui/*`, `packages/core/test/**`, `apps/web/e2e/**`]
@@ -390,13 +390,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Simulate repeated dequeues to push queue below 10; observe controller refill behavior.
     Expected: Refill occurs and queue returns to 40 with single in-flight fetch.
-    Evidence: .sisyphus/evidence/task-7-watermark-integration.txt
+    Evidence: .omo/evidence/task-7-watermark-integration.txt
 
   Scenario: Reconnect path with queue underflow
     Tool: Bash
     Steps: Force ingestion errors while queue drains near threshold.
     Expected: Reconnect guide/backoff remain correct; runtime does not crash or spam fetches.
-    Evidence: .sisyphus/evidence/task-7-reconnect-underflow.txt
+    Evidence: .omo/evidence/task-7-reconnect-underflow.txt
   ```
 
   **Commit**: YES | Message: `feat(runtime): integrate queue lifecycle into onboarding ingestion controller` | Files: [`packages/core/src/runtime/onboarding-ingestion.ts`, `packages/core/test/**`, `apps/*/test/**`]
@@ -430,13 +430,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Playwright
     Steps: Enter wall, keep diagnostics open for >=5 seconds, interact with poster tile and close detail card.
     Expected: No periodic full-screen flash; interactions remain responsive and selectors stable.
-    Evidence: .sisyphus/evidence/task-8-web-wall-continuity.mp4
+    Evidence: .omo/evidence/task-8-web-wall-continuity.mp4
 
   Scenario: Web fallback resilience
     Tool: Playwright
     Steps: Force missing handoff/session route fallback then return to onboarding and re-enter wall.
     Expected: Fallback route still works and wall stream resumes correctly after re-entry.
-    Evidence: .sisyphus/evidence/task-8-web-fallback.txt
+    Evidence: .omo/evidence/task-8-web-fallback.txt
   ```
 
   **Commit**: YES | Message: `refactor(web-runtime): adopt incremental wall stream updates` | Files: [`apps/web/src/onboarding/runtime.ts`, `apps/web/test/**`, `apps/web/e2e/**`]
@@ -470,13 +470,13 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Run desktop onboarding auth runtime tests covering wall entry, diagnostics, and refresh.
     Expected: Existing assertions pass; no regression in platform warning/display/autostart behavior.
-    Evidence: .sisyphus/evidence/task-9-desktop-parity-tests.txt
+    Evidence: .omo/evidence/task-9-desktop-parity-tests.txt
 
   Scenario: Desktop reconnect and logout safety
     Tool: Bash
     Steps: Run desktop tests for reconnect backoff and logout reset with wall interactions.
     Expected: Reconnect/logout semantics unchanged; queue/stream path does not leak session artifacts.
-    Evidence: .sisyphus/evidence/task-9-desktop-reconnect-logout.txt
+    Evidence: .omo/evidence/task-9-desktop-reconnect-logout.txt
   ```
 
   **Commit**: YES | Message: `refactor(desktop-runtime): align wall stream behavior with shared core queue runtime` | Files: [`apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/test/**`]
@@ -497,7 +497,7 @@ Wave 3: Stabilization and regression hardening
   - Commands: `AGENTS.md` canonical workspace gates.
   - Contract: `scripts/contracts/wall-contracts.json` and `scripts/verify-wall-contracts.mjs`.
   - Tests: `apps/web/e2e/onboarding-auth.spec.ts`, `apps/web/e2e/gates/mandatory-v1-gates.spec.ts`, `apps/desktop/test/onboarding-auth.test.ts`, `apps/desktop/test/gates/mandatory-v1-gates.test.ts`.
-  - Baseline: `.sisyphus/evidence/task-1-baseline-*`.
+  - Baseline: `.omo/evidence/task-1-baseline-*`.
 
   **Acceptance Criteria** (agent-executable only):
   - [x] `pnpm -w lint` / `pnpm -w typecheck` / `pnpm -w test` / `pnpm -w build` all pass.
@@ -512,16 +512,16 @@ Wave 3: Stabilization and regression hardening
     Tool: Bash
     Steps: Run all workspace verification commands and collect logs.
     Expected: All commands exit 0 with no new contract violations.
-    Evidence: .sisyphus/evidence/task-10-full-gates.txt
+    Evidence: .omo/evidence/task-10-full-gates.txt
 
   Scenario: No-1s-remount proof under diagnostics ticks
     Tool: Playwright
     Steps: Capture DOM identity + video for wall root/grid over >=10s with diagnostics active.
     Expected: No full wall remount cadence; stream remains continuous.
-    Evidence: .sisyphus/evidence/task-10-no-remount-proof.mp4
+    Evidence: .omo/evidence/task-10-no-remount-proof.mp4
   ```
 
-  **Commit**: YES | Message: `test(wall-runtime): verify queue stream rollout and contract parity` | Files: [`apps/web/**`, `apps/desktop/**`, `packages/core/**`, `.sisyphus/evidence/**`]
+  **Commit**: YES | Message: `test(wall-runtime): verify queue stream rollout and contract parity` | Files: [`apps/web/**`, `apps/desktop/**`, `packages/core/**`, `.omo/evidence/**`]
 
 ## Final Verification Wave (4 parallel agents, ALL must APPROVE)
 - [x] F1. Plan Compliance Audit — oracle

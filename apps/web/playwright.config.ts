@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const artifactRoot = "../../.sisyphus/evidence/playwright";
+const artifactRoot = "../../.omo/evidence/playwright";
 
 export default defineConfig({
   testDir: "./e2e",

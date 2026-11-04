@@ -79,7 +79,7 @@ Ship V1 of `media-poster-space` with cinematic visual quality, OLED-aware behavi
 > ZERO HUMAN INTERVENTION — all verification is agent-executed.
 - Test decision: **tests-after** with Vitest + Playwright.
 - QA policy: Every task includes executable happy + failure scenarios.
-- Evidence: `.sisyphus/evidence/task-{N}-{slug}.{ext}`
+- Evidence: `.omo/evidence/task-{N}-{slug}.{ext}`
 
 ## Execution Strategy
 ### Parallel Execution Waves
@@ -134,7 +134,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
 
   **References**:
   - Pattern: `AGENTS.md` — repo workflow and session expectations.
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — architecture decisions source of truth.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — architecture decisions source of truth.
   - External: `https://turbo.build/repo/docs` — workspace and pipeline conventions.
 
   **Acceptance Criteria** (agent-executable only):
@@ -148,13 +148,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w install --frozen-lockfile && pnpm -w turbo run lint typecheck test build`
     Expected: All commands exit 0; turbo graph includes web, desktop, core packages
-    Evidence: .sisyphus/evidence/task-1-bootstrap.log
+    Evidence: .omo/evidence/task-1-bootstrap.log
 
   Scenario: Missing package linkage failure
     Tool: Bash
     Steps: Run `pnpm -w turbo run build`
     Expected: No "Cannot find workspace package" or missing dependency pipeline errors
-    Evidence: .sisyphus/evidence/task-1-bootstrap-error.log
+    Evidence: .omo/evidence/task-1-bootstrap-error.log
   ```
 
   **Commit**: YES | Message: `chore(repo): initialize pnpm monorepo and turbo pipeline` | Files: [`package.json`,`pnpm-workspace.yaml`,`turbo.json`,`apps/*`,`packages/*`,`LICENSE`]
@@ -172,7 +172,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: NO | Wave 1 | Blocks: [T3,T9,T10,T12] | Blocked By: [T1]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — unified model decision (`MediaItem`, provider-first design).
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — unified model decision (`MediaItem`, provider-first design).
   - API/Type: `packages/core/src/types/*` (to create) — canonical contracts.
   - External: `https://api.jellyfin.org/openapi/` — source schema for mapping boundaries.
 
@@ -187,13 +187,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test && pnpm -w turbo run typecheck --filter=@mps/web --filter=@mps/desktop`
     Expected: Shared contracts compile in both app targets without platform-specific leakage
-    Evidence: .sisyphus/evidence/task-2-contracts.log
+    Evidence: .omo/evidence/task-2-contracts.log
 
   Scenario: Provider-specific field leakage failure
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- provider-contract-boundary`
     Expected: Test fails when Jellyfin-only fields are exposed in public `MediaItem`
-    Evidence: .sisyphus/evidence/task-2-contracts-error.log
+    Evidence: .omo/evidence/task-2-contracts-error.log
   ```
 
   **Commit**: YES | Message: `feat(core): add provider abstraction and unified media contracts` | Files: [`packages/core/src/types/*`,`packages/core/src/provider/*`,`packages/core/test/*`]
@@ -211,7 +211,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: PARTIAL | Wave 1 | Blocks: [T7,T8] | Blocked By: [T1,T2]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — direct token mode, preflight-first connection.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — direct token mode, preflight-first connection.
   - API/Type: `packages/core/src/provider/MediaProvider` — contract to implement.
   - External: `https://api.jellyfin.org/openapi/jellyfin-openapi-stable.json` — endpoint behavior.
 
@@ -226,13 +226,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- jellyfin-provider-happy`
     Expected: Preflight passes, login returns token, item fetch returns normalized `MediaItem[]`
-    Evidence: .sisyphus/evidence/task-3-jellyfin-provider.log
+    Evidence: .omo/evidence/task-3-jellyfin-provider.log
 
   Scenario: Invalid endpoint failure path
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- jellyfin-provider-failure`
     Expected: Client reports categorized failure (no raw stack/token leak)
-    Evidence: .sisyphus/evidence/task-3-jellyfin-provider-error.log
+    Evidence: .omo/evidence/task-3-jellyfin-provider-error.log
   ```
 
   **Commit**: YES | Message: `feat(core): implement jellyfin provider with preflight diagnostics` | Files: [`packages/core/src/providers/jellyfin/*`,`packages/core/test/jellyfin/*`]
@@ -250,7 +250,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 1 | Blocks: [T7,T10,T11] | Blocked By: [T1]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — dynamic accent + brand font decisions.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — dynamic accent + brand font decisions.
   - Test: `apps/web/src/styles/*` (to create) — token snapshots.
   - External: `https://tailwindcss.com/docs/theme` — token mapping.
 
@@ -265,13 +265,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/web test -- design-tokens && pnpm -w --filter @mps/web build`
     Expected: Token snapshots pass; font fallback chain resolves without runtime crashes
-    Evidence: .sisyphus/evidence/task-4-design-tokens.log
+    Evidence: .omo/evidence/task-4-design-tokens.log
 
   Scenario: Font load failure fallback
     Tool: Playwright
     Steps: Block brand-font URL; open app route `/`; inspect computed font family of `[data-testid="app-shell"]`
     Expected: App falls back to system font and remains readable
-    Evidence: .sisyphus/evidence/task-4-design-tokens-error.png
+    Evidence: .omo/evidence/task-4-design-tokens-error.png
   ```
 
   **Commit**: YES | Message: `feat(ui): add cinematic design tokens and typography baseline` | Files: [`apps/web/tailwind.config.*`,`packages/core/src/tokens/*`,`apps/web/src/styles/*`]
@@ -289,7 +289,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 1 | Blocks: [T10,T11] | Blocked By: [T1,T4]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — mixed rendering, high-refresh, non-degrading visual policy.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — mixed rendering, high-refresh, non-degrading visual policy.
   - API/Type: `packages/core/src/render/*` (to create) — renderer interfaces.
   - External: `https://developer.mozilla.org/docs/Web/API/WebGL_API` — fallback behavior constraints.
 
@@ -304,13 +304,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Open `/wall?mode=test`; verify `[data-testid="scene-layer-front"]` and `[data-testid="scene-layer-back"]` animate
     Expected: Layer transforms update over time; no blank canvas
-    Evidence: .sisyphus/evidence/task-5-renderer.mp4
+    Evidence: .omo/evidence/task-5-renderer.mp4
 
   Scenario: WebGL-disabled fallback
     Tool: Playwright
     Steps: Launch browser with WebGL disabled; open `/wall?mode=test`
     Expected: `[data-testid="scene-fallback-css"]` visible; app remains interactive
-    Evidence: .sisyphus/evidence/task-5-renderer-error.png
+    Evidence: .omo/evidence/task-5-renderer-error.png
   ```
 
   **Commit**: YES | Message: `feat(render): add layered renderer with webgl and css fallback` | Files: [`packages/core/src/render/*`,`apps/web/src/scene/*`]
@@ -329,7 +329,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
 
   **References**:
   - Pattern: `AGENTS.md` — quality gate expectations.
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — strict gate + stable-only strategy.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — strict gate + stable-only strategy.
   - External: `https://docs.github.com/actions` — workflow matrix patterns.
 
   **Acceptance Criteria** (agent-executable only):
@@ -343,13 +343,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w turbo run lint typecheck test build`
     Expected: Exit 0 with all packages included in pipeline
-    Evidence: .sisyphus/evidence/task-6-ci.log
+    Evidence: .omo/evidence/task-6-ci.log
 
   Scenario: Intentional failing check
     Tool: Bash
     Steps: Execute a failing test target `pnpm -w --filter @mps/core test -- __nonexistent__`
     Expected: Pipeline exits non-zero and reports failure cause clearly
-    Evidence: .sisyphus/evidence/task-6-ci-error.log
+    Evidence: .omo/evidence/task-6-ci-error.log
   ```
 
   **Commit**: YES | Message: `chore(ci): configure test and build gates with gha workflows` | Files: [`.github/workflows/*`,`turbo.json`,`package.json`,`playwright.config.*`,`vitest.config.*`]
@@ -367,7 +367,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: PARTIAL | Wave 2 | Blocks: [T8,T11,T13,T14,T16] | Blocked By: [T3,T4]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — onboarding 3-step, remember semantics, logout cleanup rules.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — onboarding 3-step, remember semantics, logout cleanup rules.
   - API/Type: `packages/core/src/providers/jellyfin/*` — auth/preflight client.
   - Test: `apps/web/e2e/auth.spec.ts` (to create) — login path validation.
 
@@ -382,13 +382,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Fill `[data-testid="server-url-input"]`, click `[data-testid="preflight-check-button"]`, login via `[data-testid="login-submit"]`, select libraries `[data-testid="library-checkbox-*"]`, continue `[data-testid="onboarding-finish"]`
     Expected: `[data-testid="poster-wall-root"]` visible and timing artifact <=45s
-    Evidence: .sisyphus/evidence/task-7-onboarding.mp4
+    Evidence: .omo/evidence/task-7-onboarding.mp4
 
   Scenario: Invalid credentials failure path
     Tool: Playwright
     Steps: Submit wrong password on `[data-testid="password-input"]`
     Expected: `[data-testid="auth-error-banner"]` shown; no token persisted
-    Evidence: .sisyphus/evidence/task-7-onboarding-error.png
+    Evidence: .omo/evidence/task-7-onboarding-error.png
   ```
 
   **Commit**: YES | Message: `feat(auth): add three-step onboarding and session UX` | Files: [`apps/web/src/features/onboarding/*`,`apps/desktop/src/features/onboarding/*`,`apps/*/e2e/auth*`]
@@ -406,7 +406,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 2 | Blocks: [T9,T12,T16] | Blocked By: [T3,T7]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — selected-library policy, missing-poster skip, 5-minute refresh.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — selected-library policy, missing-poster skip, 5-minute refresh.
   - API/Type: `MediaItem` contract in `packages/core`.
   - External: `https://typescript-sdk.jellyfin.org/classes/generated-client.ItemsApi.html`.
 
@@ -421,13 +421,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Select subset libraries; enter wall; open diagnostics `[data-testid="diagnostics-open"]`
     Expected: Diagnostics list only selected library IDs; no unselected content appears
-    Evidence: .sisyphus/evidence/task-8-ingestion.png
+    Evidence: .omo/evidence/task-8-ingestion.png
 
   Scenario: No-poster filtering failure path
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- ingestion-missing-poster`
     Expected: Items lacking poster image are excluded from output set
-    Evidence: .sisyphus/evidence/task-8-ingestion-error.log
+    Evidence: .omo/evidence/task-8-ingestion-error.log
   ```
 
   **Commit**: YES | Message: `feat(data): add selected-library ingestion and refresh pipeline` | Files: [`packages/core/src/ingestion/*`,`apps/*/src/features/library/*`,`packages/core/test/ingestion*`]
@@ -445,7 +445,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 2 | Blocks: [T10,T12,T16] | Blocked By: [T2,T8]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — anti-cluster, 45-minute window, no weighting.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — anti-cluster, 45-minute window, no weighting.
   - API/Type: `packages/core/src/scheduler/*` (to create).
   - Test: deterministic seed protocol requirement in draft.
 
@@ -460,13 +460,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- scheduler-seed-stability`
     Expected: Two seeded runs output identical sequence hashes
-    Evidence: .sisyphus/evidence/task-9-scheduler.log
+    Evidence: .omo/evidence/task-9-scheduler.log
 
   Scenario: Anti-cluster guard failure path
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/core test -- scheduler-anti-cluster`
     Expected: Guard test fails if same-cluster items appear within blocked window
-    Evidence: .sisyphus/evidence/task-9-scheduler-error.log
+    Evidence: .omo/evidence/task-9-scheduler-error.log
   ```
 
   **Commit**: YES | Message: `feat(core): add random scheduler with anti-cluster constraints` | Files: [`packages/core/src/scheduler/*`,`packages/core/test/scheduler*`]
@@ -484,7 +484,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: NO | Wave 2 | Blocks: [T11,T15,T16] | Blocked By: [T5,T9]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — drift speed, micro-shift cadence, relayout cycles, OLED thresholds.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — drift speed, micro-shift cadence, relayout cycles, OLED thresholds.
   - API/Type: scheduler output from `T9` and renderer hooks from `T5`.
   - Test: visual evidence protocol requirements (fixed seed + 1080p/60).
 
@@ -499,13 +499,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Open `/wall?seed=baseline-1&profile=showcase`; run 90s capture
     Expected: Layer drift visible; periodic relayout occurs; no static-threshold breach
-    Evidence: .sisyphus/evidence/task-10-cinematic.mp4
+    Evidence: .omo/evidence/task-10-cinematic.mp4
 
   Scenario: Static risk trigger path
     Tool: Bash
     Steps: Run `pnpm -w --filter @mps/web test -- oled-risk-trigger`
     Expected: Risk detector forces early relayout before threshold breach
-    Evidence: .sisyphus/evidence/task-10-cinematic-error.log
+    Evidence: .omo/evidence/task-10-cinematic-error.log
   ```
 
   **Commit**: YES | Message: `feat(scene): implement cinematic drift and oled safety thresholds` | Files: [`apps/*/src/scene/*`,`packages/core/src/oled/*`,`packages/core/test/oled*`]
@@ -523,7 +523,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 2 | Blocks: [T15,T16] | Blocked By: [T7,T10]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — interaction and exit decisions.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — interaction and exit decisions.
   - Test: selectors contract for QA (`data-testid` namespace).
   - External: `https://developer.mozilla.org/docs/Web/API/Fullscreen_API` (web fullscreen interaction consistency).
 
@@ -538,13 +538,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Click `[data-testid="poster-item-0"]`; inspect `[data-testid="detail-card"]`; wait 8s idle
     Expected: Card appears with valid fields then auto-hides at idle threshold
-    Evidence: .sisyphus/evidence/task-11-interaction.mp4
+    Evidence: .omo/evidence/task-11-interaction.mp4
 
   Scenario: Exit gesture failure path
     Tool: Playwright
     Steps: Trigger ESC and hotspot `[data-testid="exit-hotspot"]` repeatedly under active animation
     Expected: Exit always routes to expected state without stuck overlay or crash
-    Evidence: .sisyphus/evidence/task-11-interaction-error.png
+    Evidence: .omo/evidence/task-11-interaction-error.png
   ```
 
   **Commit**: YES | Message: `feat(ui): add detail card behavior and exit interactions` | Files: [`apps/*/src/features/wall-interaction/*`,`apps/*/e2e/interaction*`]
@@ -562,7 +562,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 2 | Blocks: [T13,T14,T16] | Blocked By: [T8,T9]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — offline/TTL/eviction/reconnect decisions.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — offline/TTL/eviction/reconnect decisions.
   - API/Type: `packages/core/src/cache/*` (to create).
   - Test: must-pass scenario requirements (offline first paint <=5s).
 
@@ -577,13 +577,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Warm cache; cut network; restart app/page
     Expected: `[data-testid="poster-wall-root"]` visible <=5s; reconnect attempts logged
-    Evidence: .sisyphus/evidence/task-12-cache.mp4
+    Evidence: .omo/evidence/task-12-cache.mp4
 
   Scenario: Token revoked failure path
     Tool: Playwright
     Steps: Revoke token on server fixture; keep app running for 60s
     Expected: App enters `[data-testid="reconnect-guide"]` state without crash
-    Evidence: .sisyphus/evidence/task-12-cache-error.png
+    Evidence: .omo/evidence/task-12-cache-error.png
   ```
 
   **Commit**: YES | Message: `feat(resilience): add cache policy and offline recovery flows` | Files: [`packages/core/src/cache/*`,`apps/*/src/features/recovery/*`,`packages/core/test/cache*`]
@@ -601,7 +601,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 3 | Blocks: [T16,T17] | Blocked By: [T7,T12]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — desktop exception matrix and storage fallbacks.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — desktop exception matrix and storage fallbacks.
   - Pattern: `AGENTS.md` — non-destructive workflow expectations.
   - External: `https://v2.tauri.app/develop/calling-rust/` — desktop command bridge patterns.
 
@@ -616,13 +616,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: interactive_bash
     Steps: Launch desktop app in tmux; enable autostart, remember-password, choose monitor 2; restart app
     Expected: Settings persist; app opens on chosen monitor; credentials decrypt successfully
-    Evidence: .sisyphus/evidence/task-13-desktop.log
+    Evidence: .omo/evidence/task-13-desktop.log
 
   Scenario: Missing secret-service failure path
     Tool: Bash
     Steps: Run desktop integration test with mocked unavailable secret-service
     Expected: Fallback encryption path used; warning recorded; no plaintext secret write
-    Evidence: .sisyphus/evidence/task-13-desktop-error.log
+    Evidence: .omo/evidence/task-13-desktop-error.log
   ```
 
   **Commit**: YES | Message: `feat(desktop): add monitor selection startup and secure persistence paths` | Files: [`apps/desktop/src-tauri/*`,`apps/desktop/src/features/platform/*`,`apps/desktop/test/*`]
@@ -640,7 +640,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 3 | Blocks: [T16,T17] | Blocked By: [T7,T12]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — static deployment and web exception decisions.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — static deployment and web exception decisions.
   - External: `https://developer.mozilla.org/docs/Web/API/Fullscreen_API`.
 
   **Acceptance Criteria** (agent-executable only):
@@ -654,13 +654,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Serve static build; open app; click `[data-testid="web-fullscreen-button"]`; reload page
     Expected: Fullscreen works; previous server+username restored; password field empty
-    Evidence: .sisyphus/evidence/task-14-web.mp4
+    Evidence: .omo/evidence/task-14-web.mp4
 
   Scenario: Unsupported fullscreen failure path
     Tool: Playwright
     Steps: Mock fullscreen denial; click fullscreen button
     Expected: Non-blocking warning shown via `[data-testid="fullscreen-warning"]`; app continues
-    Evidence: .sisyphus/evidence/task-14-web-error.png
+    Evidence: .omo/evidence/task-14-web-error.png
   ```
 
   **Commit**: YES | Message: `feat(web): add static fullscreen and session-restore behavior` | Files: [`apps/web/src/features/platform/*`,`apps/web/e2e/platform*`,`apps/web/vite.config.*`]
@@ -678,7 +678,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 3 | Blocks: [T16,T18] | Blocked By: [T1,T10,T11]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — diagnostics panel and log retention decisions.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — diagnostics panel and log retention decisions.
   - Test: must-pass redaction behavior in crash package export.
 
   **Acceptance Criteria** (agent-executable only):
@@ -692,13 +692,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Playwright
     Steps: Open diagnostics `[data-testid="diagnostics-open"]`; observe metrics for 10s
     Expected: FPS/memory/reconnect counters update each second
-    Evidence: .sisyphus/evidence/task-15-diagnostics.mp4
+    Evidence: .omo/evidence/task-15-diagnostics.mp4
 
   Scenario: Redaction failure path
     Tool: Bash
     Steps: Trigger synthetic crash; export package; grep for token/password patterns
     Expected: No token/password strings present in exported archive
-    Evidence: .sisyphus/evidence/task-15-diagnostics-error.log
+    Evidence: .omo/evidence/task-15-diagnostics-error.log
   ```
 
   **Commit**: YES | Message: `feat(obs): add diagnostics panel and redacted crash exports` | Files: [`apps/*/src/features/diagnostics/*`,`apps/*/src/features/crash-export/*`,`apps/*/test/diagnostics*`]
@@ -716,7 +716,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: NO | Wave 3 | Blocks: [T17,T18] | Blocked By: [T7,T10,T11,T12,T13,T14,T15]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — must-pass list, thresholds, evidence protocol.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — must-pass list, thresholds, evidence protocol.
   - Test: Playwright and Vitest configs from `T6`.
 
   **Acceptance Criteria** (agent-executable only):
@@ -729,14 +729,14 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   Scenario: Gate suite happy path
     Tool: Bash
     Steps: Run `pnpm -w turbo run e2e:web e2e:desktop`
-    Expected: All threshold assertions pass; evidence files generated in `.sisyphus/evidence`
-    Evidence: .sisyphus/evidence/task-16-gates.log
+    Expected: All threshold assertions pass; evidence files generated in `.omo/evidence`
+    Evidence: .omo/evidence/task-16-gates.log
 
   Scenario: Threshold regression path
     Tool: Bash
     Steps: Run gate tests with throttled network/CPU profile
     Expected: Suite fails with clear threshold-specific messages (which gate failed)
-    Evidence: .sisyphus/evidence/task-16-gates-error.log
+    Evidence: .omo/evidence/task-16-gates-error.log
   ```
 
   **Commit**: YES | Message: `test(gates): enforce v1 mandatory scenario and timing thresholds` | Files: [`apps/*/e2e/gates/*`,`scripts/verify-thresholds.*`,`docs/evidence-protocol.*`]
@@ -754,7 +754,7 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: NO | Wave 3 | Blocks: [T18] | Blocked By: [T6,T16]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — portable-only, no signing, stable-only, changelog required.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — portable-only, no signing, stable-only, changelog required.
   - External: `https://v2.tauri.app/distribute/` — Tauri artifact configuration.
 
   **Acceptance Criteria** (agent-executable only):
@@ -768,13 +768,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w turbo run build:release`
     Expected: Artifacts generated in release directory for all targets; changelog file present
-    Evidence: .sisyphus/evidence/task-17-release.log
+    Evidence: .omo/evidence/task-17-release.log
 
   Scenario: Missing artifact failure path
     Tool: Bash
     Steps: Run release verification script `pnpm -w verify:release-artifacts`
     Expected: Script fails if any required target artifact is absent
-    Evidence: .sisyphus/evidence/task-17-release-error.log
+    Evidence: .omo/evidence/task-17-release-error.log
   ```
 
   **Commit**: YES | Message: `chore(release): add stable packaging and changelog pipeline` | Files: [`apps/desktop/src-tauri/tauri.conf.*`,`scripts/release/*`,`CHANGELOG.md`,`release/*`]
@@ -792,8 +792,8 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
   **Parallelization**: Can Parallel: YES | Wave 3 | Blocks: [-] | Blocked By: [T16,T17]
 
   **References**:
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — locked decisions and capability matrix basis.
-  - Pattern: `.sisyphus/plans/media-poster-space-v1.md` — execution-to-doc alignment.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — locked decisions and capability matrix basis.
+  - Pattern: `.omo/plans/media-poster-space-v1.md` — execution-to-doc alignment.
 
   **Acceptance Criteria** (agent-executable only):
   - [x] Capability matrix in docs matches implemented behavior for Desktop/Web.
@@ -806,13 +806,13 @@ Wave 3: Platform completion, diagnostics, release-readiness (T13-T18)
     Tool: Bash
     Steps: Run `pnpm -w verify:docs-parity`
     Expected: Script confirms docs matrices and implemented feature flags/paths align
-    Evidence: .sisyphus/evidence/task-18-docs.log
+    Evidence: .omo/evidence/task-18-docs.log
 
   Scenario: Drift detection failure path
     Tool: Bash
     Steps: Run `pnpm -w verify:docs-parity --strict`
     Expected: Verification fails when docs claim unsupported capability
-    Evidence: .sisyphus/evidence/task-18-docs-error.log
+    Evidence: .omo/evidence/task-18-docs-error.log
   ```
 
   **Commit**: YES | Message: `docs(v1): publish capability matrix and open-source operating rules` | Files: [`README.md`,`docs/capability-matrix.md`,`docs/quality-gates.md`,`docs/feedback-workflow.md`]

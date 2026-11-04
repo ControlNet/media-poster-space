@@ -11,7 +11,7 @@
     "build": "pnpm run typecheck && vitest run --passWithNoTests && vite build",
     "build:release": "node ../../scripts/release/package-web-release.mjs",
     "e2e": "playwright test --config=playwright.config.ts --project=web-chromium",
-    "e2e:web": "playwright test --config=playwright.config.ts --project=web-chromium e2e/gates && node ../../scripts/verify-thresholds.mjs --platform web --metrics ../../.sisyphus/evidence/task-16-web-gates.metrics.json"
+    "e2e:web": "playwright test --config=playwright.config.ts --project=web-chromium e2e/gates && node ../../scripts/verify-thresholds.mjs --platform web --metrics ../../.omo/evidence/task-16-web-gates.metrics.json"
   },
   "dependencies": {
     "@mps/core": "workspace:*"

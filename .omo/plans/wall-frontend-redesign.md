@@ -41,8 +41,8 @@ Deliver a full visual/interaction redesign of poster-wall frontend across Web an
 ### Definition of Done (verifiable conditions with commands)
 - `pnpm -w turbo run lint typecheck test build` exits 0.
 - `pnpm -w turbo run e2e:web e2e:desktop` exits 0.
-- `node scripts/verify-thresholds.mjs --platform web --metrics .sisyphus/evidence/task-16-web-gates.metrics.json` exits 0.
-- `node scripts/verify-thresholds.mjs --platform desktop --metrics .sisyphus/evidence/task-16-desktop-gates.metrics.json` exits 0.
+- `node scripts/verify-thresholds.mjs --platform web --metrics .omo/evidence/task-16-web-gates.metrics.json` exits 0.
+- `node scripts/verify-thresholds.mjs --platform desktop --metrics .omo/evidence/task-16-desktop-gates.metrics.json` exits 0.
 - Required selectors and wall contracts remain valid in Web and Desktop test suites.
 
 ### Must Have
@@ -76,7 +76,7 @@ Deliver a full visual/interaction redesign of poster-wall frontend across Web an
 > ZERO HUMAN INTERVENTION — all verification is agent-executed.
 - Test decision: **tests-after** with Vitest + Playwright + threshold verifier.
 - QA policy: Every task includes executable happy + failure scenarios.
-- Evidence: `.sisyphus/evidence/task-{N}-{slug}.{ext}`
+- Evidence: `.omo/evidence/task-{N}-{slug}.{ext}`
 
 ## Execution Strategy
 ### Parallel Execution Waves
@@ -150,13 +150,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `node scripts/verify-wall-contracts.mjs && pnpm --filter @mps/web test -- renderer-runtime`
     Expected: Contract verification passes and route semantics tests stay green
-    Evidence: .sisyphus/evidence/task-1-contract-freeze.log
+    Evidence: .omo/evidence/task-1-contract-freeze.log
 
   Scenario: Contract violation failure path
     Tool: Bash
     Steps: Run `MPS_CONTRACT_FORCE_FAIL=selector node scripts/verify-wall-contracts.mjs`
     Expected: Command exits non-zero with explicit missing-selector failure message
-    Evidence: .sisyphus/evidence/task-1-contract-freeze-error.log
+    Evidence: .omo/evidence/task-1-contract-freeze-error.log
   ```
 
   **Commit**: YES | Message: `test(contract): add wall behavior contract verifier` | Files: [`scripts/verify-wall-contracts.mjs`,`scripts/contracts/wall-contracts.json`]
@@ -192,13 +192,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- design-tokens && pnpm -w turbo run typecheck --filter=@mps/web --filter=@mps/desktop`
     Expected: Token tests and cross-app typechecks pass with Afterglow additions
-    Evidence: .sisyphus/evidence/task-2-afterglow-tokens.log
+    Evidence: .omo/evidence/task-2-afterglow-tokens.log
 
   Scenario: Accent fallback failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- design-tokens -- -t "falls back to cinematic default accent when media accent is malformed"`
     Expected: Fallback test remains green; any regression fails this target
-    Evidence: .sisyphus/evidence/task-2-afterglow-tokens-error.log
+    Evidence: .omo/evidence/task-2-afterglow-tokens-error.log
   ```
 
   **Commit**: YES | Message: `feat(ui): add afterglow orbit token extension` | Files: [`packages/core/src/tokens/design-system.ts`,`apps/web/src/styles/design-tokens.ts`,`apps/web/tailwind.config.ts`,`apps/desktop/src/main.ts`,`apps/web/src/styles/global.css`]
@@ -234,13 +234,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Playwright
     Steps: Run onboarding flow test targeting `poster-wall-root`, `wall-poster-grid`, `poster-item-0`, `detail-card`
     Expected: Flow reaches wall; selectors resolve and interactions remain functional
-    Evidence: .sisyphus/evidence/task-3-web-runtime-refactor.log
+    Evidence: .omo/evidence/task-3-web-runtime-refactor.log
 
   Scenario: Route semantics regression failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- renderer-runtime -- -t "handles /wall?mode=test query routing deterministically"`
     Expected: Test fails immediately if route semantics were altered
-    Evidence: .sisyphus/evidence/task-3-web-runtime-refactor-error.log
+    Evidence: .omo/evidence/task-3-web-runtime-refactor-error.log
   ```
 
   **Commit**: YES | Message: `refactor(web): modularize wall runtime while preserving selector contract` | Files: [`apps/web/src/main.ts`,`apps/web/src/onboarding/runtime.ts`,`apps/web/src/wall/*`]
@@ -275,13 +275,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "completes 3-step onboarding and persists encrypted remember-password data"`
     Expected: Onboarding-to-wall and desktop credential flow remain functional
-    Evidence: .sisyphus/evidence/task-4-desktop-runtime-refactor.log
+    Evidence: .omo/evidence/task-4-desktop-runtime-refactor.log
 
   Scenario: Desktop capability regression failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "disables autostart controls in portable package mode"`
     Expected: Test fails if platform exception contract is broken
-    Evidence: .sisyphus/evidence/task-4-desktop-runtime-refactor-error.log
+    Evidence: .omo/evidence/task-4-desktop-runtime-refactor-error.log
   ```
 
   **Commit**: YES | Message: `refactor(desktop): modularize wall runtime with platform adapters` | Files: [`apps/desktop/src/onboarding/runtime.ts`,`apps/desktop/src/wall/*`,`apps/desktop/src/features/platform/*`]
@@ -316,13 +316,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm -w turbo run test --filter=@mps/web --filter=@mps/desktop`
     Expected: Web/Desktop tests pass using shared wall model primitives
-    Evidence: .sisyphus/evidence/task-5-shared-wall-model.log
+    Evidence: .omo/evidence/task-5-shared-wall-model.log
 
   Scenario: Idle-hide contract failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web exec playwright test --config=playwright.config.ts e2e/onboarding-auth.spec.ts -g "poster tiles open detail card with idle hide and exit controls"`
     Expected: Test fails on any idle-hide/timing regression
-    Evidence: .sisyphus/evidence/task-5-shared-wall-model-error.log
+    Evidence: .omo/evidence/task-5-shared-wall-model-error.log
   ```
 
   **Commit**: YES | Message: `feat(core): add shared deterministic wall interaction model` | Files: [`packages/core/src/wall/*`,`apps/web/src/wall/*`,`apps/desktop/src/wall/*`]
@@ -357,13 +357,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Playwright
     Steps: Execute onboarding-to-wall flow and inspect `poster-wall-root`, `wall-poster-grid`, `poster-item-0`, `wall-controls-container`
     Expected: Redesigned UI renders correctly; core wall interactions remain passable
-    Evidence: .sisyphus/evidence/task-6-web-afterglow.mp4
+    Evidence: .omo/evidence/task-6-web-afterglow.mp4
 
   Scenario: Auth failure safety path
     Tool: Playwright
     Steps: Run `e2e/onboarding-auth.spec.ts` test "shows explicit auth error and keeps session token cleared on invalid credentials"
     Expected: Error banner appears and no wall mount occurs with invalid credentials
-    Evidence: .sisyphus/evidence/task-6-web-afterglow-error.png
+    Evidence: .omo/evidence/task-6-web-afterglow-error.png
   ```
 
   **Commit**: YES | Message: `feat(web): rebuild wall ui with afterglow orbit direction` | Files: [`apps/web/src/onboarding/runtime.ts`,`apps/web/src/wall/*`,`apps/web/src/styles/*`]
@@ -398,13 +398,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "opens detail card from poster tiles, supports ESC/hotspot close, and idle-hides after 8 seconds"`
     Expected: Redesigned wall passes interaction/timing checks in desktop harness
-    Evidence: .sisyphus/evidence/task-7-desktop-afterglow.log
+    Evidence: .omo/evidence/task-7-desktop-afterglow.log
 
   Scenario: Desktop platform exception failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "persists selected display and autostart settings across desktop restarts"`
     Expected: Test fails if redesign breaks desktop-specific capability behavior
-    Evidence: .sisyphus/evidence/task-7-desktop-afterglow-error.log
+    Evidence: .omo/evidence/task-7-desktop-afterglow-error.log
   ```
 
   **Commit**: YES | Message: `feat(desktop): rebuild wall ui with afterglow orbit parity` | Files: [`apps/desktop/src/onboarding/runtime.ts`,`apps/desktop/src/wall/*`,`apps/desktop/src/features/platform/*`]
@@ -441,13 +441,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Playwright
     Steps: Open `/wall?mode=test`; assert `wall-scene`, `scene-layer-front`, `scene-layer-back` or fallback mode semantics
     Expected: Scene renders deterministically with valid mode and expected layer visibility contract
-    Evidence: .sisyphus/evidence/task-8-scene-afterglow.mp4
+    Evidence: .omo/evidence/task-8-scene-afterglow.mp4
 
   Scenario: OLED/routing regression failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- oled-risk-trigger -- -t "triggers early relayout from risk state before showcase cadence interval"`
     Expected: Any regression in OLED trigger behavior causes failing test
-    Evidence: .sisyphus/evidence/task-8-scene-afterglow-error.log
+    Evidence: .omo/evidence/task-8-scene-afterglow-error.log
   ```
 
   **Commit**: YES | Message: `feat(scene): redesign cinematic wall scene for afterglow orbit` | Files: [`apps/web/src/scene/wall-scene.ts`,`apps/web/src/scene/route.ts`,`apps/web/src/scene/*`]
@@ -482,13 +482,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web exec playwright test --config=playwright.config.ts e2e/onboarding-auth.spec.ts -g "poster tiles open detail card with idle hide and exit controls"`
     Expected: Detail card behavior, transition window, idle hide, ESC/hotspot all pass
-    Evidence: .sisyphus/evidence/task-9-interaction-choreo.log
+    Evidence: .omo/evidence/task-9-interaction-choreo.log
 
   Scenario: Desktop interaction regression failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "opens detail card from poster tiles, supports ESC/hotspot close, and idle-hides after 8 seconds"`
     Expected: Test fails on any timing/exit/idle regression
-    Evidence: .sisyphus/evidence/task-9-interaction-choreo-error.log
+    Evidence: .omo/evidence/task-9-interaction-choreo-error.log
   ```
 
   **Commit**: YES | Message: `feat(interaction): rebuild cross-platform wall interaction choreography` | Files: [`apps/web/src/wall/*`,`apps/desktop/src/wall/*`,`packages/core/src/wall/*`]
@@ -525,13 +525,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- diagnostics-crash-export && pnpm --filter @mps/desktop test -- diagnostics-crash-export`
     Expected: Sampling and crash-export redaction behaviors remain intact post-redesign
-    Evidence: .sisyphus/evidence/task-10-diagnostics-controls.log
+    Evidence: .omo/evidence/task-10-diagnostics-controls.log
 
   Scenario: Reconnect/fullscreen failure handling path
     Tool: Playwright
     Steps: Run `pnpm --filter @mps/web exec playwright test --config=playwright.config.ts e2e/onboarding-auth.spec.ts -g "shows non-blocking warning when fullscreen request is denied|shows reconnect guide within 60s when token is revoked"`
     Expected: Warning/reconnect flows remain visible and non-crashing under failure conditions
-    Evidence: .sisyphus/evidence/task-10-diagnostics-controls-error.log
+    Evidence: .omo/evidence/task-10-diagnostics-controls-error.log
   ```
 
   **Commit**: YES | Message: `feat(ui): redesign diagnostics and wall control surfaces` | Files: [`apps/web/src/wall/*`,`apps/web/src/features/*`,`apps/desktop/src/wall/*`,`apps/desktop/src/features/*`]
@@ -568,13 +568,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test && node scripts/verify-wall-contracts.mjs`
     Expected: Entire web unit suite and contract verifier pass
-    Evidence: .sisyphus/evidence/task-11-web-tests.log
+    Evidence: .omo/evidence/task-11-web-tests.log
 
   Scenario: Forced contract failure path
     Tool: Bash
     Steps: Run `MPS_CONTRACT_FORCE_FAIL=route node scripts/verify-wall-contracts.mjs`
     Expected: Command exits non-zero with explicit route-contract failure message
-    Evidence: .sisyphus/evidence/task-11-web-tests-error.log
+    Evidence: .omo/evidence/task-11-web-tests-error.log
   ```
 
   **Commit**: YES | Message: `test(web): update wall unit coverage for redesign contracts` | Files: [`apps/web/test/*`,`scripts/verify-wall-contracts.mjs`,`scripts/contracts/wall-contracts.json`]
@@ -610,13 +610,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test`
     Expected: All desktop unit and gate-related Vitest suites pass
-    Evidence: .sisyphus/evidence/task-12-desktop-tests.log
+    Evidence: .omo/evidence/task-12-desktop-tests.log
 
   Scenario: Desktop security fallback failure path
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- onboarding-auth -- -t "shows non-crashing warning when linux secret-service is unavailable and fallback encryption is used"`
     Expected: Test fails on any regression in fallback warning/encryption behavior
-    Evidence: .sisyphus/evidence/task-12-desktop-tests-error.log
+    Evidence: .omo/evidence/task-12-desktop-tests-error.log
   ```
 
   **Commit**: YES | Message: `test(desktop): update wall and platform coverage for redesign` | Files: [`apps/desktop/test/*`,`apps/desktop/src/wall/*`,`apps/desktop/src/onboarding/runtime.ts`]
@@ -653,13 +653,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web e2e && pnpm --filter @mps/desktop test -- onboarding-auth`
     Expected: Web and desktop integration flows pass against redesigned wall
-    Evidence: .sisyphus/evidence/task-13-e2e-refresh.log
+    Evidence: .omo/evidence/task-13-e2e-refresh.log
 
   Scenario: Forced gate failure path
     Tool: Bash
     Steps: Run `MPS_GATE_FORCE_FAIL=visual-baseline pnpm -w turbo run e2e:web e2e:desktop`
     Expected: Command exits non-zero with explicit threshold/baseline failure reason
-    Evidence: .sisyphus/evidence/task-13-e2e-refresh-error.log
+    Evidence: .omo/evidence/task-13-e2e-refresh-error.log
   ```
 
   **Commit**: YES | Message: `test(e2e): refresh wall scenarios for afterglow redesign` | Files: [`apps/web/e2e/*`,`apps/desktop/test/*`,`apps/web/playwright.config.ts`]
@@ -682,8 +682,8 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
   - Test: `apps/web/e2e/gates/mandatory-v1-gates.spec.ts`
   - Test: `apps/desktop/test/gates/mandatory-v1-gates.test.ts`
   - Script: `scripts/verify-thresholds.mjs`
-  - Output: `.sisyphus/evidence/task-16-web-gates.metrics.json`
-  - Output: `.sisyphus/evidence/task-16-desktop-gates.metrics.json`
+  - Output: `.omo/evidence/task-16-web-gates.metrics.json`
+  - Output: `.omo/evidence/task-16-desktop-gates.metrics.json`
 
   **Acceptance Criteria** (agent-executable only):
   - [x] `pnpm -w turbo run e2e:web e2e:desktop` exits 0.
@@ -694,15 +694,15 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
   ```
   Scenario: Mandatory gates happy path
     Tool: Bash
-    Steps: Run `pnpm -w turbo run e2e:web e2e:desktop && node scripts/verify-thresholds.mjs --platform web --metrics .sisyphus/evidence/task-16-web-gates.metrics.json && node scripts/verify-thresholds.mjs --platform desktop --metrics .sisyphus/evidence/task-16-desktop-gates.metrics.json`
+    Steps: Run `pnpm -w turbo run e2e:web e2e:desktop && node scripts/verify-thresholds.mjs --platform web --metrics .omo/evidence/task-16-web-gates.metrics.json && node scripts/verify-thresholds.mjs --platform desktop --metrics .omo/evidence/task-16-desktop-gates.metrics.json`
     Expected: Gate suites and both threshold verifications pass
-    Evidence: .sisyphus/evidence/task-14-gate-hardening.log
+    Evidence: .omo/evidence/task-14-gate-hardening.log
 
   Scenario: Threshold regression failure path
     Tool: Bash
     Steps: Run `MPS_GATE_FORCE_FAIL=logout-cleanup pnpm -w turbo run e2e:web e2e:desktop`
     Expected: Gate run fails with explicit logout-cleanup threshold violation message
-    Evidence: .sisyphus/evidence/task-14-gate-hardening-error.log
+    Evidence: .omo/evidence/task-14-gate-hardening-error.log
   ```
 
   **Commit**: YES | Message: `test(gates): restore deterministic threshold compliance after redesign` | Files: [`apps/web/e2e/gates/*`,`apps/desktop/test/gates/*`,`scripts/verify-thresholds.mjs`,`docs/evidence-protocol.md`]
@@ -738,13 +738,13 @@ Wave 3: Hardening, gates, release confidence (T11-T15)
     Tool: Bash
     Steps: Run `pnpm -w verify:docs-parity && pnpm -w verify:docs-parity --strict`
     Expected: Documentation claims match implemented behavior and strict drift check passes
-    Evidence: .sisyphus/evidence/task-15-docs-ci.log
+    Evidence: .omo/evidence/task-15-docs-ci.log
 
   Scenario: Release artifact validation failure path
     Tool: Bash
     Steps: Run `pnpm -w verify:release-artifacts`
     Expected: Command exits non-zero when required release artifacts are absent, proving CI/doc guardrails catch missing outputs
-    Evidence: .sisyphus/evidence/task-15-docs-ci-error.log
+    Evidence: .omo/evidence/task-15-docs-ci-error.log
   ```
 
   **Commit**: YES | Message: `docs(ci): align wall redesign contracts and quality workflows` | Files: [`.github/workflows/quality-gates.yml`,`docs/poster-wall-design-principles.md`,`docs/capability-matrix.md`,`docs/quality-gates.md`,`docs/evidence-protocol.md`]

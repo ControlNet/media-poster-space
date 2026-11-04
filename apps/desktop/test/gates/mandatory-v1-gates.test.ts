@@ -14,7 +14,7 @@ const SCENE = "mandatory-gates"
 const VERSION = "r1"
 const FIXED_SEED = "v1-fixed-seed"
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url))
-const EVIDENCE_ROOT = path.resolve(CURRENT_DIR, "../../../../.sisyphus/evidence")
+const EVIDENCE_ROOT = path.resolve(CURRENT_DIR, "../../../../.omo/evidence")
 
 interface GateMetrics {
   platform: "desktop"

@@ -30,7 +30,7 @@
         "MPS_GATE_FORCE_FAIL"
       ],
       "outputs": [
-        ".sisyphus/evidence/playwright/**"
+        ".omo/evidence/playwright/**"
       ]
     },
     "e2e:web": {
@@ -39,7 +39,7 @@
         "MPS_GATE_FORCE_FAIL"
       ],
       "outputs": [
-        ".sisyphus/evidence/**"
+        ".omo/evidence/**"
       ]
     },
     "e2e:desktop": {
@@ -48,7 +48,7 @@
         "MPS_GATE_FORCE_FAIL"
       ],
       "outputs": [
-        ".sisyphus/evidence/**"
+        ".omo/evidence/**"
       ]
     }
   }

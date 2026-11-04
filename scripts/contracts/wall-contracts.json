@@ -622,12 +622,12 @@
         {
           "id": "web-package.threshold-verifier-wiring",
           "file": "apps/web/package.json",
-          "contains": "verify-thresholds.mjs --platform web --metrics ../../.sisyphus/evidence/task-16-web-gates.metrics.json"
+          "contains": "verify-thresholds.mjs --platform web --metrics ../../.omo/evidence/task-16-web-gates.metrics.json"
         },
         {
           "id": "desktop-package.threshold-verifier-wiring",
           "file": "apps/desktop/package.json",
-          "contains": "verify-thresholds.mjs --platform desktop --metrics ../../.sisyphus/evidence/task-16-desktop-gates.metrics.json"
+          "contains": "verify-thresholds.mjs --platform desktop --metrics ../../.omo/evidence/task-16-desktop-gates.metrics.json"
         },
         {
           "id": "docs.quality-gates-fixed-seed",
@@ -637,12 +637,12 @@
         {
           "id": "docs.quality-gates-web-metrics",
           "file": "docs/quality-gates.md",
-          "contains": ".sisyphus/evidence/task-16-web-gates.metrics.json"
+          "contains": ".omo/evidence/task-16-web-gates.metrics.json"
         },
         {
           "id": "docs.quality-gates-desktop-metrics",
           "file": "docs/quality-gates.md",
-          "contains": ".sisyphus/evidence/task-16-desktop-gates.metrics.json"
+          "contains": ".omo/evidence/task-16-desktop-gates.metrics.json"
         },
         {
           "id": "docs.evidence-protocol-fixed-seed",
@@ -652,12 +652,12 @@
         {
           "id": "docs.evidence-protocol-web-metrics",
           "file": "docs/evidence-protocol.md",
-          "contains": ".sisyphus/evidence/task-16-web-gates.metrics.json"
+          "contains": ".omo/evidence/task-16-web-gates.metrics.json"
         },
         {
           "id": "docs.evidence-protocol-desktop-metrics",
           "file": "docs/evidence-protocol.md",
-          "contains": ".sisyphus/evidence/task-16-desktop-gates.metrics.json"
+          "contains": ".omo/evidence/task-16-desktop-gates.metrics.json"
         },
         {
           "id": "docs.evidence-protocol-force-fail-sample",

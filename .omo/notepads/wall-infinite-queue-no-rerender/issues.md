@@ -56,14 +56,14 @@
 - [LOW] `apps/web/src/onboarding/runtime.ts:467` and `packages/core/src/runtime/onboarding-ingestion.ts:321` — diagnostics currently persist raw `error.message`; no direct token/password logging was found, but upstream message content could still leak sensitive fragments if provider errors are not scrubbed.
 
 ## 2026-03-01 — F3 real manual QA issues
-- Manual QA evidence run (`.sisyphus/evidence/f3-manual-results-2026-03-01.json`) passed only `1/5` required checks: wall entry flow passed, while diagnostics/manual-refresh/poster-detail/logout interactions failed.
+- Manual QA evidence run (`.omo/evidence/f3-manual-results-2026-03-01.json`) passed only `1/5` required checks: wall entry flow passed, while diagnostics/manual-refresh/poster-detail/logout interactions failed.
 - Deterministic failure confirmed on selector `[data-testid="diagnostics-open"]`: `3/3` open/close cycles failed standard Playwright actionability click with `element is not stable`, and close attempts often left `[data-testid="wall-diagnostics-panel"]` visible.
 - Additional control failures observed on `[data-testid="manual-refresh-button"]` and `[data-testid="logout-button"]` with the same `element is not stable` timeout signature during click actionability.
 - Poster interaction remained unstable: `[data-testid="poster-item-0"]` click timed out with repeated `element is not stable` and one detach/retry event, so detail close path (`[data-testid="exit-hotspot"]`) could not be validated.
-- Refreshed continuity artifact (`.sisyphus/evidence/task-10-no-remount-proof.mp4` + `.log` at `18:34`): continuity still reports `allStable=false`, with `rootSameNode=false` and `gridSameNode=false` for all `11` samples while diagnostics stayed open.
+- Refreshed continuity artifact (`.omo/evidence/task-10-no-remount-proof.mp4` + `.log` at `18:34`): continuity still reports `allStable=false`, with `rootSameNode=false` and `gridSameNode=false` for all `11` samples while diagnostics stayed open.
 
 ## 2026-03-01 — Task 10 rerun blocking issue
-- Fresh continuity proof run (`.sisyphus/evidence/task-10-no-remount-proof.log` at `19:14`) still reports `allStable=false` with `rootSameNode=false` and `gridSameNode=false` on every sample (`0..10`) while diagnostics remained open (`diagnosticsOpen=true`).
+- Fresh continuity proof run (`.omo/evidence/task-10-no-remount-proof.log` at `19:14`) still reports `allStable=false` with `rootSameNode=false` and `gridSameNode=false` on every sample (`0..10`) while diagnostics remained open (`diagnosticsOpen=true`).
 - The rerun therefore still fails the no-1s-remount closure condition despite full gate wave success.
 
 ## 2026-03-01 — Task 10 final blocker fix issues

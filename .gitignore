@@ -55,7 +55,12 @@ __pycache__/
 Thumbs.db
 
 # --- Custom/Internal Tools ---
-.sisyphus/evidence
+# OMO runtime state. Durable notes (.omo/plans, .omo/notepads, .omo/knowledges) stay tracked.
+/.omo/boulder.json
+/.omo/evidence/
+/.omo/run-continuation/
+/.omo/start-work/
+/.omo/drafts/
 
 # --- Local database state ---
 *.db

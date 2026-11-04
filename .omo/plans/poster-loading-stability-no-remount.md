@@ -68,7 +68,7 @@ Ensure poster wall updates are incremental and stable: eliminate idle-triggered 
 > ZERO HUMAN INTERVENTION — all verification is agent-executed.
 - Test decision: **TDD** for queue/remount-critical logic; integration/e2e verification for host behavior.
 - QA policy: Every task includes agent-executed happy + failure scenarios.
-- Evidence: `.sisyphus/evidence/task-{N}-{slug}.{ext}`
+- Evidence: `.omo/evidence/task-{N}-{slug}.{ext}`
 
 ## Execution Strategy
 ### Parallel Execution Waves
@@ -125,7 +125,7 @@ Wave 3 (Stabilization + parity regression): T9
   **Acceptance Criteria** (agent-executable only):
   - [x] Add no-remount probe utilities/tests in non-gating mode (baseline capture only) for `poster-wall-root` and `wall-poster-grid` identity during idle-hide cycles.
   - [x] Existing selector contracts remain intact: `poster-wall-root`, `wall-poster-grid`, `poster-item-0`, `manual-refresh-button`, `diagnostics-open`.
-  - [x] Baseline evidence stored under `.sisyphus/evidence/task-1-*`.
+  - [x] Baseline evidence stored under `.omo/evidence/task-1-*`.
 
   **QA Scenarios** (MANDATORY — task incomplete without these):
   ```
@@ -133,16 +133,16 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Playwright
     Steps: Complete onboarding flow to /wall; capture handles for `[data-testid="poster-wall-root"]` and `[data-testid="wall-poster-grid"]`; wait >= 10s without navigation; compare identity.
     Expected: Baseline probe output is captured deterministically; pass/fail gate is deferred to T7/T9 after runtime remount fixes.
-    Evidence: .sisyphus/evidence/task-1-web-idle-baseline.json
+    Evidence: .omo/evidence/task-1-web-idle-baseline.json
 
   Scenario: Desktop selector contract baseline
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts` and extract assertions for wall selectors.
     Expected: Selector assertions pass; evidence logs contain wall selector checks.
-    Evidence: .sisyphus/evidence/task-1-desktop-selector-baseline.txt
+    Evidence: .omo/evidence/task-1-desktop-selector-baseline.txt
   ```
 
-  **Commit**: YES | Message: `test(wall): add no-remount baseline probes` | Files: [`apps/web/e2e/**`, `apps/desktop/test/**`, `.sisyphus/evidence/**`]
+  **Commit**: YES | Message: `test(wall): add no-remount baseline probes` | Files: [`apps/web/e2e/**`, `apps/desktop/test/**`, `.omo/evidence/**`]
 
 - [x] 2. Define and test repeat policy + queue refill contract
 
@@ -174,13 +174,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Bash
     Steps: Run queue policy tests with fixture pool >= 40 and consume sequentially through one full cycle.
     Expected: No repeated media identity before cycle exhaustion.
-    Evidence: .sisyphus/evidence/task-2-large-catalog-repeat-policy.txt
+    Evidence: .omo/evidence/task-2-large-catalog-repeat-policy.txt
 
   Scenario: Refill race handling
     Tool: Bash
     Steps: Trigger concurrent refill requests while queue size is 9.
     Expected: Exactly one fetch call is in flight; resulting queue size is deterministic.
-    Evidence: .sisyphus/evidence/task-2-refill-singleflight.txt
+    Evidence: .omo/evidence/task-2-refill-singleflight.txt
   ```
 
   **Commit**: YES | Message: `test(core-runtime): codify poster repeat and refill policy` | Files: [`packages/core/test/runtime/**`, `packages/core/src/runtime/**`]
@@ -214,13 +214,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Playwright
     Steps: Enter /wall; drain stream with repeated ticks; inspect diagnostics event payloads for `queue.refill-completed` adapter state.
     Expected: Adapter state is non-null and refill source is fetch-based (not wrap-only fallback).
-    Evidence: .sisyphus/evidence/task-3-web-adapter-refill.json
+    Evidence: .omo/evidence/task-3-web-adapter-refill.json
 
   Scenario: Web refresh/reconnect regression guard
     Tool: Bash
     Steps: Run `pnpm --filter @mps/web test -- -t "reconnect"` and `pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts --grep "manual refresh"`.
     Expected: Existing reconnect/manual-refresh behavior remains green.
-    Evidence: .sisyphus/evidence/task-3-web-regression.txt
+    Evidence: .omo/evidence/task-3-web-regression.txt
   ```
 
   **Commit**: YES | Message: `feat(web-runtime): wire queue refill adapter into ingestion controller` | Files: [`apps/web/src/onboarding/runtime.ts`, `packages/core/test/runtime/**`, `apps/web/**`]
@@ -253,13 +253,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Bash
     Steps: Run desktop runtime test flow that drains queue and triggers refill; inspect emitted diagnostics payload.
     Expected: Adapter state is present; refill path is fetch-based.
-    Evidence: .sisyphus/evidence/task-4-desktop-adapter-refill.txt
+    Evidence: .omo/evidence/task-4-desktop-adapter-refill.txt
 
   Scenario: Desktop onboarding parity guard
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts`.
     Expected: No regression in onboarding→wall flow and manual refresh behavior.
-    Evidence: .sisyphus/evidence/task-4-desktop-regression.txt
+    Evidence: .omo/evidence/task-4-desktop-regression.txt
   ```
 
   **Commit**: YES | Message: `feat(desktop-runtime): wire queue refill adapter into ingestion controller` | Files: [`apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/test/**`, `packages/core/test/runtime/**`]
@@ -294,13 +294,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Bash
     Steps: Run ingestion runtime tests with mocked provider returning `nextCursor`; assert query sequence uses increasing cursor values.
     Expected: Cursor advances across calls and resets only per documented policy.
-    Evidence: .sisyphus/evidence/task-5-cursor-progression.txt
+    Evidence: .omo/evidence/task-5-cursor-progression.txt
 
   Scenario: Manual refresh reset policy
     Tool: Bash
     Steps: Trigger runtime manual refresh after several scheduled pages consumed.
     Expected: Behavior matches policy (reset or continue) and is asserted explicitly.
-    Evidence: .sisyphus/evidence/task-5-manual-refresh-policy.txt
+    Evidence: .omo/evidence/task-5-manual-refresh-policy.txt
   ```
 
   **Commit**: YES | Message: `feat(ingestion): add deterministic cursor progression for poster refresh` | Files: [`packages/core/src/ingestion/**`, `packages/core/src/runtime/**`, `packages/core/test/**`]
@@ -334,13 +334,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Playwright
     Steps: Enter /wall and trigger ingestion update during render window; observe fallback behavior.
     Expected: At most one fallback render; no repeated remount cascade.
-    Evidence: .sisyphus/evidence/task-6-fallback-oneshot.json
+    Evidence: .omo/evidence/task-6-fallback-oneshot.json
 
   Scenario: Healthy stream patch path bypasses fallback
     Tool: Bash
     Steps: Run host runtime tests asserting stream apply success and no fallback render invocation in healthy state.
     Expected: Stream applies incrementally with fallback counter unchanged.
-    Evidence: .sisyphus/evidence/task-6-stream-no-fallback.txt
+    Evidence: .omo/evidence/task-6-stream-no-fallback.txt
   ```
 
   **Commit**: YES | Message: `fix(runtime): harden wall stream fallback readiness checks` | Files: [`apps/web/src/onboarding/runtime.ts`, `apps/desktop/src/onboarding/runtime.ts`, `packages/core/src/wall/**`, `apps/*/test/**`]
@@ -373,13 +373,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Playwright
     Steps: Enter /wall; record wall root/grid element handles; remain idle for >= 9s; then move pointer.
     Expected: Controls visibility toggles, but wall root/grid element handles remain identity-stable.
-    Evidence: .sisyphus/evidence/task-7-idle-no-remount.json
+    Evidence: .omo/evidence/task-7-idle-no-remount.json
 
   Scenario: Escape detail behavior preserved
     Tool: Playwright
     Steps: Open detail card (if enabled in diagnostics mode), press Escape, verify close + controls state.
     Expected: Detail dismisses correctly with no full wall remount.
-    Evidence: .sisyphus/evidence/task-7-escape-detail.txt
+    Evidence: .omo/evidence/task-7-escape-detail.txt
   ```
 
   **Commit**: YES | Message: `refactor(wall-runtime): patch idle interactions without full wall rerender` | Files: [`packages/core/src/wall/**`, `apps/web/src/onboarding/runtime.ts`, `apps/desktop/src/onboarding/runtime.ts`, `apps/web/e2e/**`]
@@ -413,13 +413,13 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Bash
     Steps: Run host-specific runtime tests that keep diagnostics open and wait beyond idle threshold.
     Expected: Both hosts follow the same policy (no hidden divergence).
-    Evidence: .sisyphus/evidence/task-8-host-idle-parity.txt
+    Evidence: .omo/evidence/task-8-host-idle-parity.txt
 
   Scenario: Diagnostics closed behavior unchanged
     Tool: Playwright
     Steps: Enter wall with diagnostics closed; idle for >= 9s; verify intended control-hide behavior still occurs.
     Expected: Intended idle UX remains, without full wall remount.
-    Evidence: .sisyphus/evidence/task-8-diagnostics-closed-idle.json
+    Evidence: .omo/evidence/task-8-diagnostics-closed-idle.json
   ```
 
   **Commit**: YES | Message: `test(runtime): enforce web-desktop idle diagnostics parity` | Files: [`apps/web/**`, `apps/desktop/**`, `packages/core/src/runtime/**`]
@@ -454,16 +454,16 @@ Wave 3 (Stabilization + parity regression): T9
     Tool: Bash
     Steps: Run `pnpm -w lint && pnpm -w typecheck && pnpm -w test && pnpm -w build && pnpm -w e2e && node scripts/verify-wall-contracts.mjs`.
     Expected: All commands exit 0.
-    Evidence: .sisyphus/evidence/task-9-full-gates.txt
+    Evidence: .omo/evidence/task-9-full-gates.txt
 
   Scenario: End-to-end no-remount proof at idle boundary
     Tool: Playwright
     Steps: Enter /wall, keep route stable, wait >= 12s across idle threshold with diagnostics open/closed subcases.
     Expected: No full-wall remount flash; identity probes stay stable.
-    Evidence: .sisyphus/evidence/task-9-no-remount-proof.mp4
+    Evidence: .omo/evidence/task-9-no-remount-proof.mp4
   ```
 
-  **Commit**: YES | Message: `test(wall): verify no-remount rollout and repeat-policy stability` | Files: [`apps/web/**`, `apps/desktop/**`, `packages/core/**`, `.sisyphus/evidence/**`]
+  **Commit**: YES | Message: `test(wall): verify no-remount rollout and repeat-policy stability` | Files: [`apps/web/**`, `apps/desktop/**`, `packages/core/**`, `.omo/evidence/**`]
 
 ## Final Verification Wave (4 parallel agents, ALL must APPROVE)
 - [x] F1. Plan Compliance Audit — oracle

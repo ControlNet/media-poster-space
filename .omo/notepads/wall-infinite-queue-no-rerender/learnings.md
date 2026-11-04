@@ -66,7 +66,7 @@
 - Anti-pattern scan across focus files/tests found no `TODO`/`FIXME`/`HACK`/`as any`/`@ts-ignore`; current quality risks are concentrated in async rejection handling and runtime-key identity scope, not type-safety shortcuts.
 
 ## 2026-03-01 — Task 10 rerun regression wave learnings
-- Re-ran all required gate commands (`lint`, `typecheck`, `test`, `build`, `verify-wall-contracts`, `verify:docs-parity --strict`) with explicit `EXIT_STATUS=0` entries and `OVERALL_STATUS=0` captured in `.sisyphus/evidence/task-10-full-gates.txt`.
+- Re-ran all required gate commands (`lint`, `typecheck`, `test`, `build`, `verify-wall-contracts`, `verify:docs-parity --strict`) with explicit `EXIT_STATUS=0` entries and `OVERALL_STATUS=0` captured in `.omo/evidence/task-10-full-gates.txt`.
 - Refreshed no-remount capture exceeded the required 10s window (`elapsedMs=10656`, `sampleCount=11`) and kept diagnostics open for the full sample set (`diagnosticsStable=true`).
 
 ## 2026-03-01 — Task 10 baseline-after-open rationale

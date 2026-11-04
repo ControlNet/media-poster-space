@@ -38,8 +38,8 @@ All mandatory baseline artifacts follow `milestone-scene-version` naming with fi
 
 Gate suites write deterministic JSON payloads consumed by the verifier:
 
-- `.sisyphus/evidence/task-16-web-gates.metrics.json`
-- `.sisyphus/evidence/task-16-desktop-gates.metrics.json`
+- `.omo/evidence/task-16-web-gates.metrics.json`
+- `.omo/evidence/task-16-desktop-gates.metrics.json`
 
 ## Failure-mode run
 

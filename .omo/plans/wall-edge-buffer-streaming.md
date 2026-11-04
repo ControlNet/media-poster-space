@@ -72,7 +72,7 @@ Implement Scheme A in the shared onboarding wall runtime so only entry-side off-
 > ZERO HUMAN INTERVENTION — all verification is agent-executed.
 - Test decision: TDD + existing Vitest/Playwright suites.
 - QA policy: Every task includes agent-executed happy + failure scenarios.
-- Evidence: `.sisyphus/evidence/task-{N}-{slug}.{ext}`
+- Evidence: `.omo/evidence/task-{N}-{slug}.{ext}`
 - Default verification approach: pure/core helper tests own geometry/eligibility math; host tests verify parity, remount discipline, fullscreen, and clock behavior.
 
 ## Execution Strategy
@@ -144,13 +144,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "computes right-side writable entry buffer for normal rows"`.
     Expected: Command exits 0 and the test proves only the two nearest fully off-screen right-side tiles are writable.
-    Evidence: .sisyphus/evidence/task-1-entry-buffer-normal.txt
+    Evidence: .omo/evidence/task-1-entry-buffer-normal.txt
 
   Scenario: Reverse-row visible freeze
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "treats any viewport intersection as protected for reverse rows"`.
     Expected: Command exits 0 and the test proves left-entry rows freeze tiles on first-pixel visibility.
-    Evidence: .sisyphus/evidence/task-1-entry-buffer-reverse.txt
+    Evidence: .omo/evidence/task-1-entry-buffer-reverse.txt
   ```
 
   **Commit**: YES | Message: `test(core): lock wall entry-buffer eligibility semantics` | Files: [`packages/core/src/wall/ui/presentation-sections.ts`, `packages/core/test/wall-poster-grid-stream.test.ts`]
@@ -184,13 +184,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "keeps incoming posters pending when no writable slots exist"`.
     Expected: Command exits 0 and the test proves zero visible replacements, non-zero deferred count, and FIFO backlog retention.
-    Evidence: .sisyphus/evidence/task-2-healthy-defer.txt
+    Evidence: .omo/evidence/task-2-healthy-defer.txt
 
   Scenario: True unavailable still signals failure
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "returns unavailable when poster grid stream state is missing"`.
     Expected: Command exits 0 and the test proves missing stream state still maps to `unavailable`, not `deferred`.
-    Evidence: .sisyphus/evidence/task-2-unavailable.txt
+    Evidence: .omo/evidence/task-2-unavailable.txt
   ```
 
   **Commit**: YES | Message: `feat(core): defer incoming wall posters with typed apply results` | Files: [`packages/core/src/wall/ui/presentation-sections.ts`, `packages/core/test/wall-poster-grid-stream.test.ts`]
@@ -223,13 +223,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "applies incoming posters only to eligible entry-buffer tiles"`.
     Expected: Command exits 0 and the test proves viewport-intersecting tiles keep their original identities.
-    Evidence: .sisyphus/evidence/task-3-visible-freeze.txt
+    Evidence: .omo/evidence/task-3-visible-freeze.txt
 
   Scenario: Round-robin still spans rows under bounded writes
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "preserves row round-robin distribution while using bounded writable slots"`.
     Expected: Command exits 0 and incoming posters are distributed row-by-row without violating the writable-slot cap.
-    Evidence: .sisyphus/evidence/task-3-round-robin.txt
+    Evidence: .omo/evidence/task-3-round-robin.txt
   ```
 
   **Commit**: YES | Message: `feat(core): stream new posters through bounded off-screen entry slots` | Files: [`packages/core/src/wall/ui/presentation-sections.ts`, `packages/core/test/wall-poster-grid-stream.test.ts`]
@@ -262,13 +262,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "reclassifies writable entry slots after viewport expansion without mutating visible tiles"`.
     Expected: Command exits 0 and newly visible tiles remain frozen after the viewport grows.
-    Evidence: .sisyphus/evidence/task-4-viewport-expand.txt
+    Evidence: .omo/evidence/task-4-viewport-expand.txt
 
   Scenario: Viewport contraction restores off-screen eligibility
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts -t "makes fully exited tiles writable again after viewport contraction"`.
     Expected: Command exits 0 and previously protected tiles only become writable once fully outside the viewport.
-    Evidence: .sisyphus/evidence/task-4-viewport-contract.txt
+    Evidence: .omo/evidence/task-4-viewport-contract.txt
   ```
 
   **Commit**: YES | Message: `refactor(core): recompute wall entry eligibility from live geometry snapshots` | Files: [`packages/core/src/wall/ui/presentation-sections.ts`, `packages/core/test/wall-poster-grid-stream.test.ts`]
@@ -303,13 +303,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/runtime/onboarding-ingestion-queue-integration.test.ts -t "defers incoming posters until entry slots reopen without dropping them"`.
     Expected: Command exits 0 and the test proves deferred posters remain pending and later apply in original order.
-    Evidence: .sisyphus/evidence/task-5-deferred-drain.txt
+    Evidence: .omo/evidence/task-5-deferred-drain.txt
 
   Scenario: Queue policy remains unchanged
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/runtime/poster-queue-refill.test.ts`.
     Expected: Command exits 0 and the low-watermark/target-40 semantics remain unchanged.
-    Evidence: .sisyphus/evidence/task-5-queue-policy.txt
+    Evidence: .omo/evidence/task-5-queue-policy.txt
   ```
 
   **Commit**: YES | Message: `test(core-runtime): cover deferred wall stream backlog drain` | Files: [`packages/core/test/runtime/onboarding-ingestion-queue-integration.test.ts`, `packages/core/test/runtime/poster-queue-refill.test.ts`, `packages/core/src/wall/ui/presentation-sections.ts`]
@@ -343,13 +343,13 @@ Wave 2: Host parity and regressions
     Tool: Playwright
     Steps: Run `pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts --grep "handles healthy stream without poster-item-0 sentinel and limits fallback to one remount per incident"`; inspect emitted probe JSON for `remountCount` during healthy refreshes.
     Expected: Command exits 0; healthy stream path keeps `remountCount` at 0 and only broken readiness incidents increment it to 1.
-    Evidence: .sisyphus/evidence/task-6-web-remount-discipline.txt
+    Evidence: .omo/evidence/task-6-web-remount-discipline.txt
 
   Scenario: Clock/fullscreen remain in-place patches
     Tool: Playwright
     Steps: Run `pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts --grep "updates the wall clock without remounting the wall|keeps the existing wall mounted when entering fullscreen"`.
     Expected: Command exits 0 and `sameWallRootAsBaseline` / `sameWallGridAsBaseline` remain true before and after clock/fullscreen changes.
-    Evidence: .sisyphus/evidence/task-6-web-clock-fullscreen.txt
+    Evidence: .omo/evidence/task-6-web-clock-fullscreen.txt
   ```
 
   **Commit**: YES | Message: `fix(web-onboarding): treat healthy wall defers as in-place updates` | Files: [`apps/web/src/onboarding/runtime.ts`, `apps/web/e2e/onboarding-auth.spec.ts`, `packages/core/src/wall/ui/presentation-sections.ts`]
@@ -382,13 +382,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts -t "keeps healthy stream updates mounted when poster-item-0 is absent"`.
     Expected: Command exits 0 and the existing `poster-wall-root` / `wall-poster-grid` elements remain identical across healthy refreshes.
-    Evidence: .sisyphus/evidence/task-7-desktop-mounted.txt
+    Evidence: .omo/evidence/task-7-desktop-mounted.txt
 
   Scenario: Broken readiness still remounts once per incident
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts -t "falls back once per broken readiness incident and rearms after recovery"`.
     Expected: Command exits 0 and the first broken incident remounts once, repeated broken refreshes do not remount again until recovery.
-    Evidence: .sisyphus/evidence/task-7-desktop-fallback.txt
+    Evidence: .omo/evidence/task-7-desktop-fallback.txt
   ```
 
   **Commit**: YES | Message: `fix(desktop-onboarding): honor healthy wall defer contract` | Files: [`apps/desktop/src/onboarding/runtime.ts`, `apps/desktop/test/onboarding-auth.test.ts`, `packages/core/src/wall/ui/presentation-sections.ts`]
@@ -421,13 +421,13 @@ Wave 2: Host parity and regressions
     Tool: Playwright
     Steps: Run `pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts --grep "does not replace visible posters during healthy refreshes"`; inspect the emitted probe payload for the before/after visible poster backgrounds.
     Expected: Command exits 0 and the same visible poster elements keep identical background-image strings before and after refresh.
-    Evidence: .sisyphus/evidence/task-8-web-visible-identities.txt
+    Evidence: .omo/evidence/task-8-web-visible-identities.txt
 
   Scenario: Existing remount/fullscreen/clock probes still pass
     Tool: Playwright
     Steps: Run `pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts --grep "handles healthy stream without poster-item-0 sentinel and limits fallback to one remount per incident|updates the wall clock without remounting the wall|keeps the existing wall mounted when entering fullscreen"`.
     Expected: Command exits 0 and all existing probes remain green alongside the new visible-identity coverage.
-    Evidence: .sisyphus/evidence/task-8-web-regressions.txt
+    Evidence: .omo/evidence/task-8-web-regressions.txt
   ```
 
   **Commit**: YES | Message: `test(web-wall): prove visible posters stay immutable during healthy refreshes` | Files: [`apps/web/e2e/onboarding-auth.spec.ts`, `apps/web/src/onboarding/runtime.ts`, `packages/core/src/wall/ui/presentation-sections.ts`]
@@ -460,13 +460,13 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts -t "keeps visible posters unchanged during healthy refreshes"`.
     Expected: Command exits 0 and the stubbed visible tile elements keep the same background-image strings before/after refresh.
-    Evidence: .sisyphus/evidence/task-9-desktop-visible-identities.txt
+    Evidence: .omo/evidence/task-9-desktop-visible-identities.txt
 
   Scenario: Desktop incident contract still rearms correctly
     Tool: Bash
     Steps: Run `pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts -t "falls back once per broken readiness incident and rearms after recovery"`.
     Expected: Command exits 0 and one-remount-per-incident behavior remains intact.
-    Evidence: .sisyphus/evidence/task-9-desktop-incident.txt
+    Evidence: .omo/evidence/task-9-desktop-incident.txt
   ```
 
   **Commit**: YES | Message: `test(desktop-wall): preserve visible-poster immutability parity` | Files: [`apps/desktop/test/onboarding-auth.test.ts`, `apps/desktop/src/onboarding/runtime.ts`, `packages/core/src/wall/ui/presentation-sections.ts`]
@@ -491,7 +491,7 @@ Wave 2: Host parity and regressions
   - Test: `apps/desktop/test/onboarding-auth.test.ts:745-918` — desktop parity coverage.
 
   **Acceptance Criteria** (agent-executable only):
-  - [ ] All targeted package-level commands pass and evidence artifacts exist under `.sisyphus/evidence/` for tasks 1-9.
+  - [ ] All targeted package-level commands pass and evidence artifacts exist under `.omo/evidence/` for tasks 1-9.
   - [ ] `pnpm -w lint`, `pnpm -w typecheck`, `pnpm -w test`, `pnpm -w build`, and `pnpm -w e2e` all exit 0.
 
   **QA Scenarios** (MANDATORY — task incomplete without these):
@@ -500,16 +500,16 @@ Wave 2: Host parity and regressions
     Tool: Bash
     Steps: Run `pnpm --filter @mps/core test -- test/wall-poster-grid-stream.test.ts && pnpm --filter @mps/core test -- test/runtime/onboarding-ingestion-queue-integration.test.ts && pnpm --filter @mps/desktop test -- test/onboarding-auth.test.ts && pnpm --filter @mps/web e2e -- e2e/onboarding-auth.spec.ts`.
     Expected: Command exits 0 and evidence for visible immutability, deferred backlog, and incident parity is captured.
-    Evidence: .sisyphus/evidence/task-10-targeted-sweep.txt
+    Evidence: .omo/evidence/task-10-targeted-sweep.txt
 
   Scenario: Workspace gate sweep
     Tool: Bash
     Steps: Run `pnpm -w lint && pnpm -w typecheck && pnpm -w test && pnpm -w build && pnpm -w e2e`.
     Expected: Command exits 0 across the workspace with no regressions.
-    Evidence: .sisyphus/evidence/task-10-workspace-gates.txt
+    Evidence: .omo/evidence/task-10-workspace-gates.txt
   ```
 
-  **Commit**: NO | Message: `chore(verify): run wall edge-buffer verification sweep` | Files: [`.sisyphus/evidence/*`]
+  **Commit**: NO | Message: `chore(verify): run wall edge-buffer verification sweep` | Files: [`.omo/evidence/*`]
 
 ## Final Verification Wave (4 parallel agents, ALL must APPROVE)
 - [x] F1. Plan Compliance Audit — oracle
@@ -520,9 +520,9 @@ Wave 2: Host parity and regressions
   **F1 QA Scenario**
   ```
   Tool: task(subagent_type="oracle")
-  Steps: Review `.sisyphus/plans/wall-edge-buffer-streaming.md` against the saved requirements and verify every task preserves Scheme A defaults, shared-core scope, and zero-human verification.
+  Steps: Review `.omo/plans/wall-edge-buffer-streaming.md` against the saved requirements and verify every task preserves Scheme A defaults, shared-core scope, and zero-human verification.
   Expected: Oracle returns APPROVE with no critical scope or contract drift.
-  Evidence: .sisyphus/evidence/f1-plan-compliance.md
+  Evidence: .omo/evidence/f1-plan-compliance.md
   ```
 
   **F2 QA Scenario**
@@ -530,7 +530,7 @@ Wave 2: Host parity and regressions
   Tool: task(category="unspecified-high")
   Steps: Audit the final implementation diff against the plan, focusing on type safety, selector stability, queue-policy preservation, and absence of row-wide visible writes.
   Expected: Reviewer returns APPROVE with zero critical findings.
-  Evidence: .sisyphus/evidence/f2-code-quality.md
+  Evidence: .omo/evidence/f2-code-quality.md
   ```
 
   **F3 QA Scenario**
@@ -538,15 +538,15 @@ Wave 2: Host parity and regressions
   Tool: task(category="unspecified-high", load_skills=["playwright"])
   Steps: Run the web wall flow, capture visible-poster identities before/after healthy refreshes, verify fullscreen and wall-clock no-remount behavior, and save the browser evidence.
   Expected: Reviewer returns APPROVE and attached evidence proves visible posters remain unchanged during healthy refreshes.
-  Evidence: .sisyphus/evidence/f3-playwright-qa.md
+  Evidence: .omo/evidence/f3-playwright-qa.md
   ```
 
   **F4 QA Scenario**
   ```
   Tool: task(category="deep")
-  Steps: Compare final changes against `.sisyphus/plans/wall-edge-buffer-streaming.md` and reject any queue-policy, ingestion-cadence, scene-runtime, selector, or visual-design scope creep.
+  Steps: Compare final changes against `.omo/plans/wall-edge-buffer-streaming.md` and reject any queue-policy, ingestion-cadence, scene-runtime, selector, or visual-design scope creep.
   Expected: Reviewer returns APPROVE with no out-of-scope modifications.
-  Evidence: .sisyphus/evidence/f4-scope-fidelity.md
+  Evidence: .omo/evidence/f4-scope-fidelity.md
   ```
 
 ## Commit Strategy

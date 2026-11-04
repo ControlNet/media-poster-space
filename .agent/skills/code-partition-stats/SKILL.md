@@ -16,26 +16,26 @@ Generate reproducible measurements for codebase partitions and compare refactor 
 From repository root, create a baseline snapshot:
 
 ```bash
-python ".opencode/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
+python ".agent/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
   --root "." \
-  --output ".sisyphus/evidence/refactor-baseline.partition-stats.json"
+  --output ".omo/evidence/refactor-baseline.partition-stats.json"
 ```
 
 After changes, create a second snapshot:
 
 ```bash
-python ".opencode/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
+python ".agent/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
   --root "." \
-  --output ".sisyphus/evidence/refactor-after.partition-stats.json"
+  --output ".omo/evidence/refactor-after.partition-stats.json"
 ```
 
 Build a quantitative diff report:
 
 ```bash
-python ".opencode/skills/code-partition-stats/scripts/partition_stats.py" diff \
-  --before ".sisyphus/evidence/refactor-baseline.partition-stats.json" \
-  --after ".sisyphus/evidence/refactor-after.partition-stats.json" \
-  --output ".sisyphus/evidence/refactor-diff.partition-stats.json"
+python ".agent/skills/code-partition-stats/scripts/partition_stats.py" diff \
+  --before ".omo/evidence/refactor-baseline.partition-stats.json" \
+  --after ".omo/evidence/refactor-after.partition-stats.json" \
+  --output ".omo/evidence/refactor-diff.partition-stats.json"
 ```
 
 ## Default Partition Model (`mps-wall-refactor`)
@@ -72,17 +72,17 @@ Example config file:
     ]
   },
   "extensions": [".ts", ".tsx", ".js", ".mjs", ".css"],
-  "exclude_dirs": ["node_modules", "dist", "dist-release", "release", ".git", ".sisyphus"]
+  "exclude_dirs": ["node_modules", "dist", "dist-release", "release", ".git", ".omo"]
 }
 ```
 
 Run with custom config:
 
 ```bash
-python ".opencode/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
+python ".agent/skills/code-partition-stats/scripts/partition_stats.py" snapshot \
   --root "." \
-  --config ".sisyphus/evidence/partition-config.json" \
-  --output ".sisyphus/evidence/refactor-custom.partition-stats.json"
+  --config ".omo/evidence/partition-config.json" \
+  --output ".omo/evidence/refactor-custom.partition-stats.json"
 ```
 
 ## How To Read Results

@@ -5,14 +5,14 @@ partition_stats.py
 Generate per-partition code statistics and before/after diff reports.
 
 Usage:
-  python .opencode/skills/code-partition-stats/scripts/partition_stats.py snapshot \
+  python .agent/skills/code-partition-stats/scripts/partition_stats.py snapshot \
     --root . \
-    --output .sisyphus/evidence/refactor-baseline.partition-stats.json
+    --output .omo/evidence/refactor-baseline.partition-stats.json
 
-  python .opencode/skills/code-partition-stats/scripts/partition_stats.py diff \
-    --before .sisyphus/evidence/refactor-baseline.partition-stats.json \
-    --after .sisyphus/evidence/refactor-after.partition-stats.json \
-    --output .sisyphus/evidence/refactor-diff.partition-stats.json
+  python .agent/skills/code-partition-stats/scripts/partition_stats.py diff \
+    --before .omo/evidence/refactor-baseline.partition-stats.json \
+    --after .omo/evidence/refactor-after.partition-stats.json \
+    --output .omo/evidence/refactor-diff.partition-stats.json
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ".turbo",
         ".git",
         "release",
-        ".sisyphus",
+        ".omo",
         "coverage",
     ],
 }

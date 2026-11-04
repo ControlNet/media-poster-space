@@ -1,7 +1,7 @@
 # Decisions
 
 ## 2026-03-01 — Task 1 baseline policy decisions
-- Treat Task 1 as evidence-only lock: no runtime/UI code changes; baseline recorded in `.sisyphus/evidence/task-1-baseline-*` artifacts.
+- Treat Task 1 as evidence-only lock: no runtime/UI code changes; baseline recorded in `.omo/evidence/task-1-baseline-*` artifacts.
 - Freeze these comparison anchors for downstream tasks: `poster-wall-root`, `wall-poster-grid`, `manual-refresh-button`, `wall-ingestion-summary`, `wall-diagnostics-sampling-interval`, and diagnostics text `1000ms`.
 - Accept `/wall` baseline screenshot captured under ingestion-error state (network unresolved) because required selectors and diagnostics interval remain present and measurable; this still provides valid no-visual-change reference for selector/shell invariants.
 
@@ -66,12 +66,12 @@
   - Queue contract (`<10` refill to `40`): delivered and evidenced by queue/runtime tests (`task-3-queue-threshold-tests.txt`, `task-7-watermark-integration.txt`).
   - No 1s remount: **not delivered** in final evidence (`task-10-no-remount-proof.log` shows `allStable=false`, `rootSameNode=false`, `gridSameNode=false` across 11 samples / ~10s).
   - Shared core web/desktop behavior: partially delivered (desktop parity evidence is green; web continuity remains unstable).
-- Out-of-scope additions observed in current diff map: legacy tracker exports and `.sisyphus/notepads/media-poster-space-v1/*` bookkeeping updates; these do not satisfy wall runtime scope and should be treated as process artifacts.
+- Out-of-scope additions observed in current diff map: legacy tracker exports and `.omo/notepads/media-poster-space-v1/*` bookkeeping updates; these do not satisfy wall runtime scope and should be treated as process artifacts.
 - Decision: **NO-GO** until web wall root/grid continuity is proven stable for >=10s diagnostics-open runtime and Task 8/10 continuity obligations are re-verified green.
 
 
 ## 2026-03-01 — F1 plan compliance audit (oracle)
-- Audit basis: `.sisyphus/plans/wall-infinite-queue-no-rerender.md` acceptance criteria + mandatory QA scenarios; missing/failed evidence treated as non-compliant.
+- Audit basis: `.omo/plans/wall-infinite-queue-no-rerender.md` acceptance criteria + mandatory QA scenarios; missing/failed evidence treated as non-compliant.
 - Verdict snapshot (tasks 1-10): FAIL overall due to Task 1 web QA scenario failures, Task 2 missing evidence, Task 6 turnover proof gap, Task 8 missing green e2e proof, Task 10 no-remount proof failing.
 - Explicit blockers:
   - Task 8: no evidence that web onboarding-to-wall e2e suite passes unchanged; notepad notes continued `diagnostics-open` instability/detach.
@@ -79,12 +79,12 @@
 
 ## 2026-03-01 — F3 real manual QA decision
 - Decision: **BLOCKED / not shippable** for wall interaction continuity.
-- Basis: manual QA evidence (`.sisyphus/evidence/f3-manual-results-2026-03-01.json`) shows `1/5` pass (`wall entry flow` only) with deterministic click instability on controls (`diagnostics-open`, `manual-refresh-button`, `logout-button`) and unstable/detached poster interaction (`poster-item-0`).
+- Basis: manual QA evidence (`.omo/evidence/f3-manual-results-2026-03-01.json`) shows `1/5` pass (`wall entry flow` only) with deterministic click instability on controls (`diagnostics-open`, `manual-refresh-button`, `logout-button`) and unstable/detached poster interaction (`poster-item-0`).
 - Supporting continuity artifact was refreshed (`task-10-no-remount-proof.mp4` + `.log`) and still shows `allStable=false` with root/grid node identity instability across all 11 samples during diagnostics-open window.
 
 ## 2026-03-01 — Task 10 rerun verdict decision
-- Keep full regression wave marked **PASS** for mandatory gates because `.sisyphus/evidence/task-10-full-gates.txt` logs all required commands with `EXIT_STATUS=0` and `OVERALL_STATUS=0`.
-- Keep Task 10 final closure marked **FAIL/BLOCKED** because refreshed no-remount continuity proof (`.sisyphus/evidence/task-10-no-remount-proof.log`) still shows `allStable=false` with `rootSameNode=false` and `gridSameNode=false` across the >=10s diagnostics-open sample window.
+- Keep full regression wave marked **PASS** for mandatory gates because `.omo/evidence/task-10-full-gates.txt` logs all required commands with `EXIT_STATUS=0` and `OVERALL_STATUS=0`.
+- Keep Task 10 final closure marked **FAIL/BLOCKED** because refreshed no-remount continuity proof (`.omo/evidence/task-10-no-remount-proof.log`) still shows `allStable=false` with `rootSameNode=false` and `gridSameNode=false` across the >=10s diagnostics-open sample window.
 
 ## 2026-03-01 — Task 10 final blocker resolution decision
 - PASS: Apply a minimal web-only runtime callback guard in `apps/web/src/onboarding/runtime.ts` so idle-hide does not transition/render while `state.diagnosticsOpen === true`; preserve existing idle-hide behavior when diagnostics is closed.

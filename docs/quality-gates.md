@@ -34,8 +34,8 @@ Visual baseline artifacts use fixed seed `v1-fixed-seed` and `milestone-scene-ve
 
 Metrics payloads consumed by threshold verification:
 
-- `.sisyphus/evidence/task-16-web-gates.metrics.json`
-- `.sisyphus/evidence/task-16-desktop-gates.metrics.json`
+- `.omo/evidence/task-16-web-gates.metrics.json`
+- `.omo/evidence/task-16-desktop-gates.metrics.json`
 
 ## Docs parity check
 

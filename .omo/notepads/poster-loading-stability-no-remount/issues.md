@@ -24,6 +24,6 @@
 
 - 2026-03-03: Task 9 first full-gate attempt failed at `verify-wall-contracts` due strict literal-string checks (selectors/timing/docs wording) and required minimal literal-anchor updates in existing web/desktop test files plus docs wording parity line.
 - 2026-03-03: Subsequent full-gate attempt failed on a flaky web e2e click race (`manual-refresh-button` disabled/hidden during Task 6 test); stabilized by adding a pointer-reveal + visible/enabled wait helper before each manual-refresh click in the affected test block.
-- 2026-03-03: Playwright CLI in this environment does not accept `--video=on`; video capture required a Task 9-specific config under `.sisyphus/evidence/` and explicit test-path scoping to avoid unrelated parser issues when running with external config.
+- 2026-03-03: Playwright CLI in this environment does not accept `--video=on`; video capture required a Task 9-specific config under `.omo/evidence/` and explicit test-path scoping to avoid unrelated parser issues when running with external config.
 - 2026-03-03: Direct no-remount capture scripts require a running web server; using `vite preview --host 127.0.0.1 --port 4173` with managed startup/shutdown avoids connection-refused failures from offline script runs.
 - 2026-03-03: F4 task execution complete; scope-fidelity assessment outcome remains REJECT due identified out-of-scope interaction and presentation changes relative to original request.

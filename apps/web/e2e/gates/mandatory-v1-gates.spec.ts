@@ -14,7 +14,7 @@ const SEED_PROOF_PROFILE = "balanced"
 const SEED_PROOF_VARIANT = `${FIXED_SEED}-variant`
 
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url))
-const EVIDENCE_ROOT = path.resolve(CURRENT_DIR, "../../../../.sisyphus/evidence")
+const EVIDENCE_ROOT = path.resolve(CURRENT_DIR, "../../../../.omo/evidence")
 
 interface GateMetrics {
   platform: "web"

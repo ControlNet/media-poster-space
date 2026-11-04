@@ -92,7 +92,7 @@ If risk is detected, relayout/motion correction must trigger automatically (no m
 
 ## References
 
-- `.sisyphus/plans/media-poster-space-v1.md`
+- `.omo/plans/media-poster-space-v1.md`
 - `docs/quality-gates.md`
 - `docs/evidence-protocol.md`
 - `docs/capability-matrix.md`
