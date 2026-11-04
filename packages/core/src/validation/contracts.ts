@@ -81,7 +81,9 @@ const PROVIDER_SESSION_KEYS = [
   "accessToken",
   "createdAt",
   "expiresAt",
-  "refreshToken"
+  "refreshToken",
+  "clientName",
+  "deviceId"
 ] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -187,6 +189,26 @@ function readRequiredStringArray(
   return value as string[];
 }
 
+function isAbsoluteHttpUrlWithoutCredentials(value: string): boolean {
+  const trimmedValue = value.trim();
+  if (!/^https?:\/\//i.test(trimmedValue)) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmedValue);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && url.username.length === 0
+      && url.password.length === 0;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 function validateIsoDateString(value: string | undefined, path: string, issues: ValidationIssue[]): void {
   if (value === undefined) {
     return;
@@ -278,8 +300,9 @@ export function validateMediaItem(value: unknown): ValidationResult<MediaItem> {
   }
 
   const criticRating = readOptionalFiniteNumber(value, "criticRating", "mediaItem", issues);
-  if (criticRating !== undefined && (criticRating < 0 || criticRating > 10)) {
-    addIssue(issues, "mediaItem.criticRating", "Expected rating in range [0, 10]");
+  // Jellyfin/Emby critic ratings are Rotten-Tomatoes-style percentages.
+  if (criticRating !== undefined && (criticRating < 0 || criticRating > 100)) {
+    addIssue(issues, "mediaItem.criticRating", "Expected rating in range [0, 100]");
   }
 
   readRequiredStringArray(value, "genres", "mediaItem", issues);
@@ -364,7 +387,11 @@ export function validateProviderSession(value: unknown): ValidationResult<Provid
   ensureKnownKeys(value, "providerSession", PROVIDER_SESSION_KEYS, issues);
 
   readRequiredString(value, "providerId", "providerSession", issues);
-  readRequiredString(value, "serverUrl", "providerSession", issues);
+  const serverUrl = readRequiredString(value, "serverUrl", "providerSession", issues);
+  if (serverUrl !== undefined && serverUrl.trim().length > 0 && !isAbsoluteHttpUrlWithoutCredentials(serverUrl)) {
+    addIssue(issues, "providerSession.serverUrl", "Expected an absolute http(s) URL without credentials");
+  }
+
   readRequiredString(value, "userId", "providerSession", issues);
   readRequiredString(value, "username", "providerSession", issues);
   readRequiredString(value, "accessToken", "providerSession", issues);
@@ -378,6 +405,8 @@ export function validateProviderSession(value: unknown): ValidationResult<Provid
     issues
   );
   readOptionalString(value, "refreshToken", "providerSession", issues);
+  readOptionalString(value, "clientName", "providerSession", issues);
+  readOptionalString(value, "deviceId", "providerSession", issues);
 
   if (issues.length > 0) {
     return { ok: false, errors: issues };
