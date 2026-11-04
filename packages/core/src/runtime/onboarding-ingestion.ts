@@ -52,6 +52,11 @@ type OnboardingSharedState = OnboardingBaseState<
   MediaIngestionRefreshTrigger
 >
 
+// Writing the whole poster cache to storage on every one-second stream tick is wasteful
+// (and was the hot path where a full quota surfaced). Ingestion results still persist
+// immediately; stream ticks persist at most this often.
+export const ONBOARDING_POSTER_CACHE_PERSIST_INTERVAL_MS = 30_000
+
 export interface CreateOnboardingIngestionControllerOptions<Snapshot = unknown> {
   state: OnboardingSharedState
   localStorageRef: Storage | null
@@ -130,6 +135,10 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   let queueRefillSourceCursor = 0
   let queueRefillFetchAdapter: RuntimePosterQueueRefillFetchAdapter | null = null
   let queueLifecycleNonce = 0
+  let runtimeGeneration = 0
+  let refillRetryNotBeforeMs: number | null = null
+  let refillRetryBackoffMs = options.reconnectInitialBackoffMs
+  let lastPosterCachePersistAtMs: number | null = null
 
   function isProviderErrorCategory(value: unknown): value is ProviderErrorCategory {
     if (typeof value !== "string") {
@@ -146,6 +155,8 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     queueRefillSourceItems = []
     queueRefillSourceCursor = 0
     queueRefillFetchAdapter = null
+    refillRetryNotBeforeMs = null
+    refillRetryBackoffMs = options.reconnectInitialBackoffMs
   }
 
   function syncWallItemsFromQueue(): void {
@@ -215,7 +226,16 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
 
   async function fetchQueueRefillItems(requestedCount: number): Promise<readonly MediaItem[]> {
     if (queueRefillFetchAdapter) {
-      return queueRefillFetchAdapter.fetchItems(requestedCount)
+      const fetchedItems = await queueRefillFetchAdapter.fetchItems(requestedCount)
+      if (fetchedItems.length > 0) {
+        return fetchedItems
+      }
+
+      // An empty page (e.g. the end of a pass) must not starve the wall: keep rotating
+      // through the items the ingestion runtime already delivered.
+      return takeQueueRefillSourceItems(requestedCount, {
+        allowWrap: true
+      })
     }
 
     return takeQueueRefillSourceItems(requestedCount, {
@@ -238,6 +258,16 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
 
     const refillIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState })
     if (!refillIntent.shouldRefill || refillIntent.reason === null || refillIntent.requestedCount === 0) {
+      return
+    }
+
+    // Only one refill runs at a time; ticks that arrive meanwhile simply wait for it
+    // instead of each applying (and logging) the same result.
+    if (posterQueueRefillRuntime.hasInFlightRefill()) {
+      return
+    }
+
+    if (refillRetryNotBeforeMs !== null && now() < refillRetryNotBeforeMs) {
       return
     }
 
@@ -265,7 +295,15 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
         return
       }
 
-      posterQueueState = refillResult.nextState
+      refillRetryNotBeforeMs = null
+      refillRetryBackoffMs = options.reconnectInitialBackoffMs
+
+      // The refill started from an older snapshot; stream ticks kept consuming while it
+      // was in flight. Add the fetched items to the queue as it is now.
+      posterQueueState = enqueueRuntimePosterQueueItems({
+        state: posterQueueState,
+        items: refillResult.acceptedItems
+      }).nextState
       syncWallItemsFromQueue()
       options.state.activePosterIndex = options.normalizeWallActivePosterIndex(
         options.state.activePosterIndex,
@@ -273,7 +311,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       )
 
       if (ingestionRuntimeKey) {
-        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items, { force: false })
       }
 
       options.appendDiagnosticsLog({
@@ -318,10 +356,13 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
           source,
           queueSize: posterQueueState.items.length,
           errorCategory: providerErrorCategory,
-          message: error instanceof Error ? error.message : "Queue refill failed"
+          message: error instanceof Error ? error.message : "Queue refill failed",
+          retryDelayMs: refillRetryBackoffMs
         }
       })
 
+      refillRetryNotBeforeMs = now() + refillRetryBackoffMs
+      refillRetryBackoffMs = Math.min(refillRetryBackoffMs * 2, options.reconnectMaxBackoffMs)
       scheduleReconnectAttempt(providerErrorCategory)
       options.onRenderRequest()
     }
@@ -346,11 +387,39 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     options.state.reconnectGuideReason = null
   }
 
-  function syncPosterCacheToStorage(runtimeKey: string): void {
-    options.localStorageRef?.setItem(
-      options.toPosterCacheStorageKey(runtimeKey),
-      JSON.stringify(options.posterCache.toSnapshot())
-    )
+  function syncPosterCacheToStorage(runtimeKey: string, persistOptions: { force: boolean }): void {
+    const storage = options.localStorageRef
+    if (!storage) {
+      return
+    }
+
+    const nowMs = now()
+    if (
+      !persistOptions.force
+      && lastPosterCachePersistAtMs !== null
+      && nowMs - lastPosterCachePersistAtMs < ONBOARDING_POSTER_CACHE_PERSIST_INTERVAL_MS
+    ) {
+      return
+    }
+
+    lastPosterCachePersistAtMs = nowMs
+    try {
+      storage.setItem(
+        options.toPosterCacheStorageKey(runtimeKey),
+        JSON.stringify(options.posterCache.toSnapshot())
+      )
+    } catch (error) {
+      // Typically QuotaExceededError. The in-memory cache keeps working; only the warm
+      // start after a reload is affected, so this must not break the stream tick.
+      options.appendDiagnosticsLog({
+        timestamp: new Date(nowMs).toISOString(),
+        level: "warn",
+        event: "cache.persist-failed",
+        details: {
+          message: error instanceof Error ? error.message : String(error)
+        }
+      })
+    }
   }
 
   function clearPosterCache(runtimeKey: string): void {
@@ -372,7 +441,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
 
       if (preheatedKeys.length > 0) {
         options.posterCache.markPreheated(preheatedKeys)
-        syncPosterCacheToStorage(runtimeKey)
+        syncPosterCacheToStorage(runtimeKey, { force: true })
       }
     }
 
@@ -388,15 +457,20 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       return
     }
 
+    // Cached posters are shown right away, but nothing has been fetched yet, so
+    // `ingestionFetchedAt` stays unset until the runtime reports a real fetch.
     options.state.ingestionStatus = "ready"
     syncWallItemsFromQueue()
-    options.state.ingestionFetchedAt = new Date().toISOString()
     options.state.ingestionTrigger = null
     options.state.ingestionError = null
     options.state.ingestionErrorCategory = null
   }
 
-  function cacheIngestionItems(runtimeKey: string, items: readonly MediaItem[]): void {
+  function cacheIngestionItems(
+    runtimeKey: string,
+    items: readonly MediaItem[],
+    persistOptions: { force: boolean }
+  ): void {
     if (items.length === 0) {
       clearPosterCache(runtimeKey)
       return
@@ -420,7 +494,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       setManyOptions
     )
 
-    syncPosterCacheToStorage(runtimeKey)
+    syncPosterCacheToStorage(runtimeKey, persistOptions)
   }
 
   function scheduleReconnectAttempt(errorCategory: ProviderErrorCategory | null): void {
@@ -493,13 +567,15 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       }
 
       if (ingestionRuntimeKey) {
-        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+        cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items, { force: true })
       }
 
       if (nextState.status === "ready") {
         void refillPosterQueueIfNeeded("ingestion-ready")
       }
     } else if (nextState.status === "ready") {
+      // Replacing the queue invalidates any refill still in flight.
+      queueLifecycleNonce += 1
       setQueueRefillSourceItems([])
       posterQueueState = createRuntimePosterQueueState()
       options.state.ingestionItems = []
@@ -545,6 +621,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   }
 
   function disposeRuntime(): void {
+    runtimeGeneration += 1
     ingestionRuntime?.dispose()
     ingestionRuntime = null
     ingestionRuntimeKey = null
@@ -573,18 +650,29 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     }
 
     disposeRuntime()
+    const generation = runtimeGeneration
     ingestionRuntimeKey = runtimeKey
     hydratePosterCache(runtimeKey)
+    // Always start with a full pass: a changes-only first query returns nothing for a
+    // library that has not changed, which used to starve a warm-started wall.
     queueRefillFetchAdapter = options.createQueueRefillFetchAdapter?.({
       session,
       selectedLibraryIds,
       cursor: null,
-      updatedSince: options.state.ingestionFetchedAt
+      updatedSince: null
     }) ?? null
     ingestionRuntime = options.createRuntime({
       session,
       selectedLibraryIds,
-      onStateChange: applyIngestionState
+      onStateChange: (nextState) => {
+        // A runtime that was disposed (logout, server or library change) can still
+        // resolve a request it started earlier; its result belongs to the old session.
+        if (generation !== runtimeGeneration) {
+          return
+        }
+
+        applyIngestionState(nextState)
+      }
     })
     ingestionRuntime.start()
   }
@@ -617,7 +705,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     )
 
     if (ingestionRuntimeKey) {
-      cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items)
+      cacheIngestionItems(ingestionRuntimeKey, posterQueueState.items, { force: false })
     }
 
     if (!consumeResult.consumedItem) {

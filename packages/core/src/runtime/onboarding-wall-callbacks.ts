@@ -17,6 +17,9 @@ export function createOnboardingWallRouteCallbacks(options: {
   applyWallInteractionTransition: (transition: WallInteractionTransitionResult) => boolean
   scheduleIdleHide: () => void
   dismissActiveDetailCard: () => boolean
+  // Called before leaving the wall. Without it the persisted handoff makes the
+  // onboarding route resume the wall straight away, so the user could never leave.
+  clearWallHandoff: () => void
   navigateToOnboarding: () => void
   onRefresh: () => void
   onLogout: () => void
@@ -39,6 +42,7 @@ export function createOnboardingWallRouteCallbacks(options: {
     },
     onExportCrashReport: options.onExportCrashReport,
     onReturnToOnboarding: () => {
+      options.clearWallHandoff()
       options.navigateToOnboarding()
       options.onRenderRequest()
     },

@@ -73,14 +73,16 @@ export function createWallReconnectGuideSection(
     textContent:
       options.reconnectGuideReason === "auth"
         ? "Session token appears invalid. Reconnect by signing in again."
-        : "Connection to Jellyfin is unstable. Keep this screen open while reconnect retries continue."
+        : "Connection to the media server is unstable. Keep this screen open while reconnect retries continue."
   })
   reconnectReason.style.margin = "0"
   reconnectReason.style.color = "var(--mps-color-foreground-support)"
   reconnectReason.style.lineHeight = "1.38"
 
   const reconnectMeta = createElement("p", {
-    textContent: `Retry attempts: ${options.reconnectAttempt}; next retry in ${options.reconnectNextDelayMs ?? "n/a"}ms.`
+    textContent: options.reconnectNextDelayMs === null
+      ? `Retry attempts: ${options.reconnectAttempt}; no retry scheduled.`
+      : `Retry attempts: ${options.reconnectAttempt}; next retry in ${options.reconnectNextDelayMs}ms.`
   })
   reconnectMeta.style.margin = "0"
   reconnectMeta.style.fontFamily = "var(--mps-font-mono)"

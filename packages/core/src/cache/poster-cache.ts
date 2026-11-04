@@ -83,16 +83,14 @@ function normalizeSizeBytes(value: number): number {
 }
 
 function estimateSerializedSizeBytes(value: unknown): number {
-  try {
-    const serialized = JSON.stringify(value);
-    if (typeof serialized !== "string") {
-      return 1;
-    }
-
-    return new TextEncoder().encode(serialized).byteLength;
-  } catch {
+  // JSON.stringify throws for values that cannot be persisted (cycles, BigInt). Let it
+  // surface at write time: such a value would break `toSnapshot()` later anyway.
+  const serialized = JSON.stringify(value);
+  if (typeof serialized !== "string") {
     return 1;
   }
+
+  return new TextEncoder().encode(serialized).byteLength;
 }
 
 function normalizeKey(key: string): string {
@@ -386,6 +384,12 @@ export function createPosterCache<Value>(options: PosterCacheOptions<Value> = {}
 
       const nowMs = now();
       for (const rawEntry of snapshot.entries) {
+        // Snapshots come from storage; skip entries whose key is not a string rather than
+        // throwing during start-up.
+        if (typeof rawEntry !== "object" || rawEntry === null || typeof rawEntry.key !== "string") {
+          continue;
+        }
+
         const normalizedKey = normalizeKey(rawEntry.key);
         if (normalizedKey.length === 0) {
           continue;

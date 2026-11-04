@@ -140,9 +140,11 @@ describe("runtime poster queue refill fetch adapter", () => {
       cursor: "cursor-001",
       limit: 31
     });
+    // The cursor ran out, so the pass is complete: the next refill starts a new full pass
+    // instead of switching to changes-only (`updatedSince`) queries for good.
     expect(adapter.getState()).toEqual({
       cursor: null,
-      updatedSince: "2026-03-01T11:05:00.000Z"
+      updatedSince: null
     });
 
     const afterSecondConsume = consumeRuntimePosterQueueItem({
@@ -157,17 +159,17 @@ describe("runtime poster queue refill fetch adapter", () => {
     });
 
     expect(thirdRefill.requestedCount).toBe(31);
-    expect(thirdRefill.acceptedCount).toBe(1);
-    expect(thirdRefill.starvation).toBe("partial");
-    expect(thirdRefill.nextState.items).toHaveLength(10);
     expect(listMedia).toHaveBeenNthCalledWith(3, TEST_SESSION, {
       libraryIds: ["movies", "shows"],
-      limit: 31,
-      updatedSince: "2026-03-01T11:05:00.000Z"
+      limit: 31
     });
+    // fresh-001/fresh-002 are still queued, so the new pass's first page adds nothing new;
+    // it does continue with the next cursor.
+    expect(thirdRefill.acceptedCount).toBe(0);
+    expect(thirdRefill.nextState.items).toHaveLength(9);
     expect(adapter.getState()).toEqual({
-      cursor: null,
-      updatedSince: "2026-03-01T11:10:00.000Z"
+      cursor: "cursor-001",
+      updatedSince: null
     });
   });
 

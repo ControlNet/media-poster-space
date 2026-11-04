@@ -1,6 +1,7 @@
 export const DIAGNOSTICS_SAMPLING_INTERVAL_MS = 1_000
 export const DIAGNOSTICS_RETENTION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 export const DIAGNOSTICS_RETENTION_MAX_BYTES = 100 * 1024 * 1024
+export const DIAGNOSTICS_RETENTION_MAX_ENTRIES = 20_000
 
 export interface DiagnosticsReconnectMetrics {
   attempt: number
@@ -36,6 +37,7 @@ export interface DiagnosticsLogRetentionSnapshot {
   byteSize: number
   maxAgeMs: number
   maxByteSize: number
+  maxEntries: number
 }
 
 export interface DiagnosticsLogStore {
@@ -69,6 +71,16 @@ function toFiniteNumber(value: number | null | undefined): number | null {
   }
 
   return value
+}
+
+// A late or coalesced interval tick covers more than one sampling window, so the raw
+// frame count has to be scaled by the time that actually elapsed.
+function toFramesPerSecond(frameCount: number, elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return frameCount
+  }
+
+  return Math.round((frameCount * 1_000) / elapsedMs)
 }
 
 function resolveHeapUsageMb(): number | null {
@@ -108,44 +120,64 @@ export function createDiagnosticsLogStore(options: {
   now?: () => number
   maxAgeMs?: number
   maxByteSize?: number
+  maxEntries?: number
 } = {}): DiagnosticsLogStore {
   const now = options.now ?? Date.now
   const maxAgeMs = options.maxAgeMs ?? DIAGNOSTICS_RETENTION_MAX_AGE_MS
   const maxByteSize = options.maxByteSize ?? DIAGNOSTICS_RETENTION_MAX_BYTES
+  const maxEntries = Math.max(1, Math.trunc(options.maxEntries ?? DIAGNOSTICS_RETENTION_MAX_ENTRIES))
 
+  // Entries before `head` are already pruned. Advancing an index instead of calling
+  // `shift()` keeps appends O(1) once the store is at capacity.
   let entries: DiagnosticsLogEntryInternal[] = []
+  let head = 0
   let totalByteSize = 0
 
+  const liveCount = (): number => entries.length - head
+
   const toSnapshot = (): DiagnosticsLogRetentionSnapshot => ({
-    count: entries.length,
+    count: liveCount(),
     byteSize: totalByteSize,
     maxAgeMs,
-    maxByteSize
+    maxByteSize,
+    maxEntries
   })
+
+  const dropOldest = (): void => {
+    const oldest = entries[head]
+    if (!oldest) {
+      return
+    }
+
+    head += 1
+    totalByteSize -= oldest.byteSize
+  }
+
+  const compact = (): void => {
+    if (head > 1_024 && head * 2 > entries.length) {
+      entries = entries.slice(head)
+      head = 0
+    }
+  }
 
   const prune = (): void => {
     const cutoffMs = now() - maxAgeMs
 
-    while (entries.length > 0) {
-      const oldest = entries[0]
+    while (liveCount() > 0) {
+      const oldest = entries[head]
       if (!oldest || oldest.timestampMs >= cutoffMs) {
         break
       }
 
-      entries.shift()
-      totalByteSize -= oldest.byteSize
+      dropOldest()
     }
 
-    while (entries.length > 0 && totalByteSize > maxByteSize) {
-      const oldest = entries.shift()
-      if (!oldest) {
-        break
-      }
-
-      totalByteSize -= oldest.byteSize
+    while (liveCount() > 0 && (totalByteSize > maxByteSize || liveCount() > maxEntries)) {
+      dropOldest()
     }
 
     totalByteSize = Math.max(0, totalByteSize)
+    compact()
   }
 
   return {
@@ -179,10 +211,11 @@ export function createDiagnosticsLogStore(options: {
       prune()
       return toSnapshot()
     },
-    snapshot: () => entries.map(cloneLogEntry),
+    snapshot: () => entries.slice(head).map(cloneLogEntry),
     getRetentionSnapshot: () => toSnapshot(),
     clear: () => {
       entries = []
+      head = 0
       totalByteSize = 0
     }
   }
@@ -212,6 +245,7 @@ export function createDiagnosticsSampler(options: {
   let intervalId: ReturnType<typeof setInterval> | null = null
   let animationFrameId: number | null = null
   let frameCounter = 0
+  let lastSampleAtMs = 0
   let started = false
 
   const queueAnimationFrame = (): void => {
@@ -227,9 +261,10 @@ export function createDiagnosticsSampler(options: {
 
   const sampleNow = (): void => {
     const reconnectMetrics = options.getReconnectMetrics()
+    const sampledAtMs = now()
     const sample: DiagnosticsSample = {
-      sampledAt: new Date(now()).toISOString(),
-      fps: frameCounter,
+      sampledAt: new Date(sampledAtMs).toISOString(),
+      fps: toFramesPerSecond(frameCounter, sampledAtMs - lastSampleAtMs),
       memoryMb: toFiniteNumber(readMemoryUsageMb()),
       reconnectAttempt: Math.max(0, Math.trunc(reconnectMetrics.attempt)),
       reconnectNextDelayMs:
@@ -239,6 +274,7 @@ export function createDiagnosticsSampler(options: {
     }
 
     frameCounter = 0
+    lastSampleAtMs = sampledAtMs
     options.onSample(sample)
   }
 
@@ -250,6 +286,7 @@ export function createDiagnosticsSampler(options: {
 
       started = true
       frameCounter = 0
+      lastSampleAtMs = now()
       queueAnimationFrame()
       intervalId = setIntervalFn(sampleNow, DIAGNOSTICS_SAMPLING_INTERVAL_MS)
     },

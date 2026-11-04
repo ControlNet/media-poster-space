@@ -195,6 +195,13 @@ export async function runOnboardingLogin<
           defaultSelectedLibraryIds
         })
       : defaultSelectedLibraryIds
+
+    // `resolveSelectedLibraryIds` may await storage; a newer attempt (or a server change)
+    // can have started meanwhile, so check before touching state.
+    if (options.shouldApplyResult && !options.shouldApplyResult()) {
+      return
+    }
+
     const availableLibraryIdSet = new Set(defaultSelectedLibraryIds)
     const normalizedSelectedLibraryIds = [...new Set(resolvedSelectedLibraryIds.filter((libraryId) => {
       return availableLibraryIdSet.has(libraryId)
@@ -207,6 +214,9 @@ export async function runOnboardingLogin<
     )
     options.state.loginPending = false
     options.state.password = ""
+    if (libraries.length === 0) {
+      options.state.libraryError = "Signed in, but no libraries are available to this account. Check library access for this user on the server."
+    }
     options.persistRememberedUsername()
     options.persistRememberedServer()
 

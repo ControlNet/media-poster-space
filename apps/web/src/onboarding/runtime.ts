@@ -8,6 +8,8 @@ import {
   ONBOARDING_WALL_PATHNAME,
   WALL_IDLE_HIDE_MS,
   clearOnboardingSessionArtifacts,
+  clearPersistedPosterCaches,
+  clearOnboardingWallHandoff,
   isOnboardingWallRouteActive,
   persistRememberedString,
   readOnboardingActiveSession,
@@ -37,7 +39,8 @@ import {
   createOnboardingDiagnosticsController,
   createOnboardingElementFactory,
   getOrCreateDeviceId,
-  parseJson,
+  parsePosterCacheSnapshot,
+  ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES,
   safeGetStorage,
   toAuthErrorMessage,
   toLibraryCheckboxTestId,
@@ -223,7 +226,9 @@ export function createOnboardingAppRuntime(
   const platform = options.platform ?? webPlatformCapabilities
   const state = createOnboardingState(localStorageRef)
   const deviceId = getOrCreateDeviceId(localStorageRef)
-  const posterCache = createPosterCache<MediaItem>()
+  const posterCache = createPosterCache<MediaItem>({
+    maxTotalSizeBytes: ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES
+  })
   const diagnosticsLogStore = createDiagnosticsLogStore()
   let diagnosticsLastExportAt: string | null = null
   let diagnosticsExportError: string | null = null
@@ -368,9 +373,7 @@ export function createOnboardingAppRuntime(
     state,
     localStorageRef,
     posterCache,
-    parseSnapshot: (value) => {
-      return parseJson<ReturnType<typeof posterCache.toSnapshot>>(value)
-    },
+    parseSnapshot: parsePosterCacheSnapshot,
     toPosterCacheStorageKey,
     createRuntime: ({ session, selectedLibraryIds, onStateChange }) => {
       return createMediaIngestionRuntime({
@@ -922,7 +925,13 @@ export function createOnboardingAppRuntime(
   function saveSession(session: ProviderSession): void {
     state.selectedProviderId = session.providerId === "emby" ? "emby" : "jellyfin"
     saveOnboardingSession(sessionStorageRef, session)
-    saveOnboardingSession(localStorageRef, session)
+    // The access token only outlives the tab when the user asked this device to remember
+    // the server; otherwise it stays in sessionStorage and is gone when the tab closes.
+    if (state.rememberServer) {
+      saveOnboardingSession(localStorageRef, session)
+    } else {
+      localStorageRef?.removeItem(AUTH_SESSION_STORAGE_KEY)
+    }
   }
 
   function saveWallHandoff(handoff: WallHandoff): void {
@@ -1035,30 +1044,20 @@ export function createOnboardingAppRuntime(
   }
 
   async function handleLogout(): Promise<void> {
-    const activeSession = parseJson<ProviderSession>(
-      sessionStorageRef?.getItem(AUTH_SESSION_STORAGE_KEY) ?? null
-    )
+    const activeSession = readOnboardingActiveSession({
+      currentSession: null,
+      sessionStorageRef
+    })
 
-    if (activeSession) {
-      const activeProvider = resolveProviderForSession(activeSession)
-      try {
-        await activeProvider.invalidateSession(activeSession)
-      } catch (error) {
-        appendDiagnosticsLog({
-          timestamp: new Date().toISOString(),
-          level: "warn",
-          event: "auth.logout.invalidate-session-failed",
-          details: {
-            message: error instanceof Error ? error.message : "Unknown logout invalidation failure"
-          }
-        })
-      }
-    }
-
+    // Clear the local session first so logout is immediate even when the server is slow
+    // or unreachable; revoking the token on the server happens in the background.
     await runOnboardingLogoutReset({
       state,
       disposeIngestionRuntime,
       clearSessionArtifacts,
+      onAfterCommonStateReset: () => {
+        clearPersistedPosterCaches(localStorageRef)
+      },
       onResetDiagnostics: () => {
         diagnosticsLastExportAt = null
         diagnosticsExportError = null
@@ -1069,6 +1068,20 @@ export function createOnboardingAppRuntime(
       },
       onRenderRequest: render
     })
+
+    if (activeSession) {
+      const activeProvider = resolveProviderForSession(activeSession)
+      void activeProvider.invalidateSession(activeSession).catch((error: unknown) => {
+        appendDiagnosticsLog({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          event: "auth.logout.invalidate-session-failed",
+          details: {
+            message: error instanceof Error ? error.message : "Unknown logout invalidation failure"
+          }
+        })
+      })
+    }
   }
 
   function handleChangeServer(): void {
@@ -1318,6 +1331,10 @@ export function createOnboardingAppRuntime(
             wallInteractionController.scheduleIdleHide()
           },
           dismissActiveDetailCard,
+          clearWallHandoff: () => {
+            clearOnboardingWallHandoff(sessionStorageRef)
+            clearOnboardingWallHandoff(localStorageRef)
+          },
           navigateToOnboarding: () => {
             window.history.pushState({}, "", ONBOARDING_PATHNAME)
           },

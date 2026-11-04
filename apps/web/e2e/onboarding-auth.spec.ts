@@ -820,6 +820,7 @@ test("change server returns to login step and clears saved session before enteri
 
   await page.getByTestId("server-url-input").fill(TEST_SERVER)
   await triggerServerStatusCheck(page)
+  await page.getByTestId("remember-server-checkbox").check()
   await page.getByTestId("username-input").fill("demo-user")
   await page.getByTestId("password-input").fill("secret-pass")
   await page.getByTestId("login-submit").click()
@@ -852,6 +853,46 @@ test("change server returns to login step and clears saved session before enteri
   expect(sessionStateAfterStepBack.persistedSession).toBeNull()
   expect(sessionStateAfterStepBack.tabWallHandoff).toBeNull()
   expect(sessionStateAfterStepBack.persistedWallHandoff).toBeNull()
+})
+
+test("keeps the access token tab-scoped unless remember server is checked", async ({ page }) => {
+  await wireSuccessfulPreflight(page)
+  await wireAuthentication(page, { allowLogin: true })
+
+  await page.route("**/Users/user-1/Views", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        Items: [
+          {
+            Id: "movies-main",
+            Name: "Movies",
+            CollectionType: "movies"
+          }
+        ]
+      })
+    })
+  })
+
+  await page.getByTestId("server-url-input").fill(TEST_SERVER)
+  await triggerServerStatusCheck(page)
+  await expect(page.getByTestId("remember-server-checkbox")).not.toBeChecked()
+  await page.getByTestId("username-input").fill("demo-user")
+  await page.getByTestId("password-input").fill("secret-pass")
+  await page.getByTestId("login-submit").click()
+
+  await expect(page.getByTestId("library-checkbox-movies-main")).toBeVisible()
+
+  const sessionState = await page.evaluate(() => ({
+    tabSession: window.sessionStorage.getItem("mps.auth.session"),
+    persistedSession: window.localStorage.getItem("mps.auth.session")
+  }))
+
+  expect(sessionState.tabSession).toContain("token-abc")
+  expect(sessionState.persistedSession).toBeNull()
 })
 
 test("reopens root route into the wall when a saved session and handoff exist", async ({ page }) => {

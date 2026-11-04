@@ -8,7 +8,7 @@ import type {
 import {
   createOnboardingBaseState,
   createOnboardingIngestionController,
-  parseJson,
+  parsePosterCacheSnapshot,
   toPosterCacheStorageKey,
   toReconnectGuideReason
 } from "../../src/runtime";
@@ -356,9 +356,7 @@ function createControllerHarness(options: {
     state: options.state,
     localStorageRef: null,
     posterCache,
-    parseSnapshot: (value: string | null) => {
-      return parseJson<ReturnType<typeof posterCache.toSnapshot>>(value);
-    },
+    parseSnapshot: parsePosterCacheSnapshot,
     toPosterCacheStorageKey,
     createRuntime,
     appendDiagnosticsLog: (entry) => {

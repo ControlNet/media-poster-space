@@ -1,4 +1,5 @@
-import type { ProviderErrorCategory, ProviderSession } from "../types"
+import type { PosterCacheSnapshot } from "../cache"
+import type { MediaItem, ProviderErrorCategory, ProviderSession } from "../types"
 import type { WallHandoff, WallInteractionTransitionResult } from "../wall"
 import {
   createDiagnosticsSampler,
@@ -18,6 +19,12 @@ export const ONBOARDING_WALL_CACHE_STORAGE_KEY_PREFIX = "mps.wall.poster-cache.v
 export const ONBOARDING_RECONNECT_INITIAL_BACKOFF_MS = 2_000
 export const ONBOARDING_RECONNECT_MAX_BACKOFF_MS = 60_000
 export const ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS = 60_000
+// Samples drive the live diagnostics view every second, but only one in this many is
+// kept in the retained log so a days-long wall session does not fill memory with them.
+export const DIAGNOSTICS_SAMPLE_LOG_EVERY = 60
+// The poster cache is persisted as one localStorage value. Browsers allow roughly 5M
+// UTF-16 characters per origin, so keep the serialized cache well below that.
+export const ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES = 1_500_000
 
 export interface OnboardingAppRuntime {
   start: () => void
@@ -171,6 +178,7 @@ export function createOnboardingDiagnosticsController(options: {
 }): OnboardingDiagnosticsController {
   let diagnosticsSampler: ReturnType<typeof createDiagnosticsSampler> | null = null
   let diagnosticsLatestSample: DiagnosticsSample | null = null
+  let diagnosticsSampleCount = 0
 
   const appendLog = (entry: DiagnosticsLogEntry): void => {
     options.logStore.append(entry)
@@ -190,18 +198,22 @@ export function createOnboardingDiagnosticsController(options: {
         }),
         onSample: (sample) => {
           diagnosticsLatestSample = sample
+          const shouldLogSample = diagnosticsSampleCount % DIAGNOSTICS_SAMPLE_LOG_EVERY === 0
+          diagnosticsSampleCount += 1
 
-          appendLog({
-            timestamp: sample.sampledAt,
-            level: "info",
-            event: "diagnostics.sample",
-            details: {
-              fps: sample.fps,
-              memoryMb: sample.memoryMb,
-              reconnectAttempt: sample.reconnectAttempt,
-              reconnectNextDelayMs: sample.reconnectNextDelayMs
-            }
-          })
+          if (shouldLogSample) {
+            appendLog({
+              timestamp: sample.sampledAt,
+              level: "info",
+              event: "diagnostics.sample",
+              details: {
+                fps: sample.fps,
+                memoryMb: sample.memoryMb,
+                reconnectAttempt: sample.reconnectAttempt,
+                reconnectNextDelayMs: sample.reconnectNextDelayMs
+              }
+            })
+          }
 
           if (options.isWallRouteActive()) {
             options.onDiagnosticsRenderRequest(sample)
@@ -209,6 +221,7 @@ export function createOnboardingDiagnosticsController(options: {
         }
       })
 
+      diagnosticsSampleCount = 0
       diagnosticsSampler.start()
       appendLog({
         timestamp: new Date().toISOString(),
@@ -294,7 +307,7 @@ export function readRememberedLibrarySelection(options: {
   session: Pick<ProviderSession, "providerId" | "serverUrl" | "userId">
   availableLibraryIds: readonly string[]
 }): readonly string[] | null {
-  const rememberedLibraryIds = parseJson<readonly string[]>(
+  const rememberedLibraryIds = parseJson(
     options.storage?.getItem(toRememberedLibrarySelectionStorageKey(options.session)) ?? null
   )
 
@@ -319,6 +332,10 @@ export function clearOnboardingSessionArtifacts(sessionStorageRef: Storage | nul
   sessionStorageRef?.removeItem(ONBOARDING_WALL_HANDOFF_STORAGE_KEY)
 }
 
+export function clearOnboardingWallHandoff(storageRef: Storage | null): void {
+  storageRef?.removeItem(ONBOARDING_WALL_HANDOFF_STORAGE_KEY)
+}
+
 export function saveOnboardingSession(sessionStorageRef: Storage | null, session: ProviderSession): void {
   sessionStorageRef?.setItem(ONBOARDING_AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
 }
@@ -327,8 +344,150 @@ export function saveOnboardingWallHandoff(sessionStorageRef: Storage | null, han
   sessionStorageRef?.setItem(ONBOARDING_WALL_HANDOFF_STORAGE_KEY, JSON.stringify(handoff))
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
+
+export function isWallHandoff(value: unknown): value is WallHandoff {
+  if (!isRecord(value) || !Array.isArray(value.selectedLibraryIds) || !isRecord(value.preferences)) {
+    return false
+  }
+
+  const preferences = value.preferences
+  return value.selectedLibraryIds.every((libraryId) => typeof libraryId === "string")
+    && typeof preferences.rememberServer === "boolean"
+    && typeof preferences.rememberUsername === "boolean"
+    && typeof preferences.rememberPasswordRequested === "boolean"
+}
+
+export function isPersistedProviderSession(value: unknown): value is ProviderSession {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return isNonEmptyString(value.providerId)
+    && isNonEmptyString(value.serverUrl)
+    && isNonEmptyString(value.userId)
+    && typeof value.username === "string"
+    && isNonEmptyString(value.accessToken)
+    && typeof value.createdAt === "string"
+    && (value.expiresAt === undefined || typeof value.expiresAt === "string")
+    && (value.refreshToken === undefined || typeof value.refreshToken === "string")
+}
+
+// The wall only needs these fields; anything else in a cached item is optional metadata.
+export function isPersistedMediaItem(value: unknown): value is MediaItem {
+  if (!isRecord(value) || !isRecord(value.poster)) {
+    return false
+  }
+
+  return isNonEmptyString(value.id)
+    && isNonEmptyString(value.providerId)
+    && isNonEmptyString(value.libraryId)
+    && typeof value.kind === "string"
+    && typeof value.title === "string"
+    && isNonEmptyString(value.poster.url)
+    && Array.isArray(value.genres)
+    && Array.isArray(value.tags)
+    && Array.isArray(value.people)
+}
+
+/**
+ * Reads a persisted value and drops it when it is malformed, so a corrupted or
+ * outdated entry cannot break every later page load.
+ */
+function readValidatedStorageValue<T>(
+  storage: Storage | null,
+  key: string,
+  isValid: (value: unknown) => value is T
+): T | null {
+  const raw = storage?.getItem(key) ?? null
+  if (raw === null) {
+    return null
+  }
+
+  const parsed = parseJson(raw)
+  if (isValid(parsed)) {
+    return parsed
+  }
+
+  console.warn(`[mps] Discarding malformed persisted value for "${key}".`)
+  storage?.removeItem(key)
+  return null
+}
+
 export function readOnboardingWallHandoff(sessionStorageRef: Storage | null): WallHandoff | null {
-  return parseJson<WallHandoff>(sessionStorageRef?.getItem(ONBOARDING_WALL_HANDOFF_STORAGE_KEY) ?? null)
+  return readValidatedStorageValue(sessionStorageRef, ONBOARDING_WALL_HANDOFF_STORAGE_KEY, isWallHandoff)
+}
+
+/**
+ * Parses a persisted poster cache snapshot, keeping only entries whose value is a usable
+ * media item. Returns null for a missing or unrecognised snapshot.
+ */
+export function parsePosterCacheSnapshot(value: string | null): PosterCacheSnapshot<MediaItem> | null {
+  const parsed = parseJson(value)
+  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+    if (parsed !== null) {
+      console.warn("[mps] Ignoring unrecognised persisted poster cache snapshot.")
+    }
+    return null
+  }
+
+  const entries: PosterCacheSnapshot<MediaItem>["entries"] = []
+  for (const entry of parsed.entries) {
+    if (
+      isRecord(entry)
+      && typeof entry.key === "string"
+      && isPersistedMediaItem(entry.value)
+      && typeof entry.sizeBytes === "number"
+      && typeof entry.createdAtMs === "number"
+      && typeof entry.lastAccessedAtMs === "number"
+      && typeof entry.expiresAtMs === "number"
+      && typeof entry.accessCount === "number"
+    ) {
+      entries.push({
+        key: entry.key,
+        value: entry.value,
+        sizeBytes: entry.sizeBytes,
+        createdAtMs: entry.createdAtMs,
+        lastAccessedAtMs: entry.lastAccessedAtMs,
+        expiresAtMs: entry.expiresAtMs,
+        accessCount: entry.accessCount,
+        preheated: entry.preheated === true
+      })
+    }
+  }
+
+  if (entries.length !== parsed.entries.length) {
+    console.warn(
+      `[mps] Dropped ${parsed.entries.length - entries.length} malformed poster cache entries.`
+    )
+  }
+
+  return { version: 1, entries }
+}
+
+/** Removes every persisted poster cache (all servers/users/library selections). */
+export function clearPersistedPosterCaches(storage: Storage | null): void {
+  if (!storage) {
+    return
+  }
+
+  const keys: string[] = []
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (key?.startsWith(ONBOARDING_WALL_CACHE_STORAGE_KEY_PREFIX)) {
+      keys.push(key)
+    }
+  }
+
+  for (const key of keys) {
+    storage.removeItem(key)
+  }
 }
 
 export function readOnboardingActiveSession(options: {
@@ -339,8 +498,10 @@ export function readOnboardingActiveSession(options: {
     return options.currentSession
   }
 
-  return parseJson<ProviderSession>(
-    options.sessionStorageRef?.getItem(ONBOARDING_AUTH_SESSION_STORAGE_KEY) ?? null
+  return readValidatedStorageValue(
+    options.sessionStorageRef,
+    ONBOARDING_AUTH_SESSION_STORAGE_KEY,
+    isPersistedProviderSession
   )
 }
 
@@ -363,19 +524,35 @@ export function isOnboardingWallRouteActive(locationHref: string, wallPathname: 
 export function safeGetStorage(type: "local" | "session"): Storage | null {
   try {
     return type === "local" ? window.localStorage : window.sessionStorage
-  } catch {
+  } catch (error) {
+    // Storage access throws when it is disabled (privacy settings, sandboxed frames).
+    // The app still runs; nothing is remembered across reloads.
+    console.warn(
+      `[mps] ${type}Storage is unavailable; continuing without persistence.`,
+      error instanceof Error ? error.name : String(error)
+    )
     return null
   }
 }
 
-export function parseJson<T>(value: string | null): T | null {
+/**
+ * Parses JSON from storage. Returns `unknown` on purpose: callers must narrow the value
+ * with a type guard. Malformed input yields null with a warning (the error message is not
+ * logged because it can quote the stored value, which may hold a token).
+ */
+export function parseJson(value: string | null): unknown {
   if (!value) {
     return null
   }
 
   try {
-    return JSON.parse(value) as T
-  } catch {
+    const parsed: unknown = JSON.parse(value)
+    return parsed
+  } catch (error) {
+    console.warn(
+      "[mps] Ignoring malformed persisted JSON.",
+      error instanceof Error ? error.name : String(error)
+    )
     return null
   }
 }

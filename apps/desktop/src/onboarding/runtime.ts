@@ -8,6 +8,8 @@ import {
   ONBOARDING_WALL_PATHNAME,
   WALL_IDLE_HIDE_MS,
   clearOnboardingSessionArtifacts,
+  clearPersistedPosterCaches,
+  clearOnboardingWallHandoff,
   isOnboardingWallRouteActive,
   persistRememberedString,
   readOnboardingActiveSession,
@@ -34,7 +36,8 @@ import {
   createOnboardingDiagnosticsController,
   createOnboardingElementFactory,
   getOrCreateDeviceId,
-  parseJson,
+  parsePosterCacheSnapshot,
+  ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES,
   safeGetStorage,
   toAuthErrorMessage,
   toLibraryCheckboxTestId,
@@ -236,7 +239,9 @@ export function createDesktopOnboardingAppRuntime(
         warningLogger.warn(warning)
       }
     })
-  const posterCache = createPosterCache<MediaItem>()
+  const posterCache = createPosterCache<MediaItem>({
+    maxTotalSizeBytes: ONBOARDING_POSTER_CACHE_MAX_TOTAL_SIZE_BYTES
+  })
   let platformInitNonce = 0
   let isDisposed = false
 
@@ -402,9 +407,7 @@ export function createDesktopOnboardingAppRuntime(
     state,
     localStorageRef,
     posterCache,
-    parseSnapshot: (value) => {
-      return parseJson<ReturnType<typeof posterCache.toSnapshot>>(value)
-    },
+    parseSnapshot: parsePosterCacheSnapshot,
     toPosterCacheStorageKey,
     createRuntime: ({ session, selectedLibraryIds, onStateChange }) => {
       return createMediaIngestionRuntime({
@@ -1134,6 +1137,7 @@ export function createDesktopOnboardingAppRuntime(
         await passwordVault.clearAll()
       },
       onAfterCommonStateReset: () => {
+        clearPersistedPosterCaches(localStorageRef)
         resetAutomaticWallEntryAttempt()
         state.password = ""
         state.libraryError = null
@@ -1498,6 +1502,10 @@ export function createDesktopOnboardingAppRuntime(
             wallInteractionController.scheduleIdleHide()
           },
           dismissActiveDetailCard,
+          clearWallHandoff: () => {
+            clearOnboardingWallHandoff(sessionStorageRef)
+            clearOnboardingWallHandoff(localStorageRef)
+          },
           navigateToOnboarding: () => {
             window.history.pushState({}, "", "/")
           },

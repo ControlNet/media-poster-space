@@ -131,10 +131,10 @@ export function createRuntimePosterQueueRefillFetchAdapter(
         cursor = normalizeOptionalString(ingestionResult.nextCursor)
 
         if (cursor === null) {
-          const fetchedAt = normalizeOptionalString(ingestionResult.fetchedAt)
-          if (fetchedAt) {
-            updatedSince = fetchedAt
-          }
+          // The pass is complete. Start the next one from the beginning as a full pass:
+          // a changes-only (`updatedSince`) query returns nothing for a library that
+          // has not changed, which would starve the wall for good.
+          updatedSince = null
         }
 
         return dedupeRuntimePosterQueueItems(ingestionResult.items)

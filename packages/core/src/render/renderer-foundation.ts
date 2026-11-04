@@ -35,7 +35,13 @@ function getDefaultWebGLContext(canvas: HTMLCanvasElement): WebGLRenderingContex
     const context = canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl");
 
     return context as WebGLRenderingContext | null;
-  } catch {
+  } catch (error) {
+    // Some browsers throw instead of returning null when WebGL is blocked. The renderer
+    // then falls back to the non-WebGL mode; say why instead of failing silently.
+    console.warn(
+      "[mps] WebGL context creation failed; using the fallback renderer.",
+      error instanceof Error ? error.message : String(error)
+    );
     return null;
   }
 }
