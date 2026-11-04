@@ -245,3 +245,8 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR
   `web-artifacts/v<ver>/web/mps-web-v<ver>-static.tar`, not at the artifact root (bug found this way).
 - An AppImage built on ubuntu-24.04 needs glibc 2.38 and fails on 22.04 (`GLIBC_2.38 not found` in the
   bundled libs); the Linux native job builds on ubuntu-22.04.
+- Verified 2026-11-04 on run 41886111197: the full rehearsal passes (`sha256sum -c` OK for all four
+  assets; Windows PE32+, macOS app with executable bit, Linux ELF AppImage, web tar), and the
+  22.04-built AppImage renders the onboarding UI on an Ubuntu 22.04 host under Xvfb (window appears
+  after ~28 s because xdg-desktop-portal waits for a Secret Service that the temp session lacks).
+- Not exercised: `gh release create` itself (needs a new `v*` tag; `v0.1.0` is already released).
