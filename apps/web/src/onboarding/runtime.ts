@@ -531,6 +531,9 @@ export function createOnboardingAppRuntime(
 
   function requestWallPatchFallbackOnce(): void {
     if (wallPatchFallbackRequested || wallPatchFallbackIncidentActive) {
+      // The remount for this incident already happened; still reflect the latest
+      // ingestion state (e.g. re-enable the refresh button once ingestion is ready).
+      syncWallIngestionTelemetry()
       return
     }
 
@@ -615,9 +618,15 @@ export function createOnboardingAppRuntime(
     }
 
     const streamApplyResult = wallPatchReadiness.applyStreamItems(state.ingestionItems)
+    // `hasPosterTiles` was read before the apply; an "applied" result has just mounted
+    // tiles, so it is not a reason to remount (same rule as desktop).
     const shouldFallbackToRender =
       streamApplyResult.status === "unavailable"
-      || (state.ingestionItems.length > 0 && !wallPatchReadiness.hasPosterTiles)
+      || (
+        state.ingestionItems.length > 0
+        && !wallPatchReadiness.hasPosterTiles
+        && streamApplyResult.status !== "applied"
+      )
     if (shouldFallbackToRender) {
       requestWallPatchFallbackOnce()
       return

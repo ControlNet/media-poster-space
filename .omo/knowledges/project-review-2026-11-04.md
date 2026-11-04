@@ -9,8 +9,9 @@ how to run them and which ones assert correct vs buggy behaviour).
 Quick checks:
 - Server version (finding 1 applies to 12.x; upgrading from 10.x flips it via migration):
   `curl -s https://<server>/System/Info/Public | jq -r .Version`
-- Turbo blind spot (finding 8), expect `0`:
-  `pnpm -s -w turbo run typecheck --dry=json | grep -c 'packages/core/src'`
+- Turbo blind spot (finding 8): at review time (turbo 1) `pnpm -s -w turbo run typecheck --dry=json | grep -c 'packages/core/src'`
+  printed `0`. Since the fix (turbo 2, `^typecheck` deps) that grep no longer applies; instead compare the
+  `@mps/web#typecheck` hash in `--dry=json` before/after touching `packages/core/src/index.ts` — it changes.
 - Stream freeze on a live server (finding 2): once the wall stops changing, the network tab shows an
   `Items?…MinDateLastSavedForUser=…` request about every second returning `TotalRecordCount: 0`.
 
@@ -180,3 +181,22 @@ Pitfall: `parseJson` now returns `unknown` — narrow with `isWallHandoff` / `is
 
 Follow-ups not done: refill adapter does not forward an `AbortSignal` (late results are already
 dropped by the lifecycle nonce); apps do not pass a signal to preflight/listLibraries.
+
+CI/build/test batch (merged from the infra branch): 7 (CI runs all web e2e + gates; `web-chromium` /
+`web-gates` Playwright projects), 8 (turbo 2 with `^` deps, `globalDependencies: scripts/**`,
+`dist/**` outputs), 21 (placeholder desktop packages removed; `finalize-release-assets.mjs` +
+`SHA256SUMS`; release job needs the artifact job), 22 (`scripts/run-gates.mjs` + `verify-thresholds.mjs
+--since`; PNG headers read, no self-written fps/size), 23 (unwired wall-contract verifier deleted),
+28 (desktop gate split into `vitest.gates.config.ts`), 29 (tracked CHANGELOG removed;
+`verify:versions` checks all package.json + tauri.conf.json + Cargo.toml), 30 (`pnpm audit` clean:
+vitest 4, vite 6, jsdom 26, turbo 2 + overrides), 31 (fake timers / `page.clock`). 32 (dead code) left as is.
+
+Web flake found by the infra work and fixed: "limits fallback to one remount per incident" failed ~1 in
+10–15 runs. Cause: web read `hasPosterTiles` *before* applying the stream, so an `applied` result that
+had just mounted tiles still triggered a remount, and during an active fallback incident the telemetry
+sync (which re-enables the refresh button) was skipped. Check:
+`pnpm --filter @mps/web exec playwright test --project=web-chromium --grep "one remount" --repeat-each=15`.
+
+Command meaning changes (AGENTS.md not edited — only on explicit request): `pnpm --filter @mps/web e2e`
+no longer runs `e2e/gates/`; `pnpm -w e2e:web` runs the full suite then the gates; `pnpm -w test` no
+longer runs the desktop Chromium gate; new `pnpm -w verify:versions`.
