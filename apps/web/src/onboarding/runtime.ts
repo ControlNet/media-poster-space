@@ -97,7 +97,7 @@ const DETAIL_CARD_TRANSITION_MS = resolveWallTransitionMs()
 const RECONNECT_INITIAL_BACKOFF_MS = ONBOARDING_RECONNECT_INITIAL_BACKOFF_MS
 const RECONNECT_MAX_BACKOFF_MS = ONBOARDING_RECONNECT_MAX_BACKOFF_MS
 const RECONNECT_GUIDE_THRESHOLD_MS = ONBOARDING_RECONNECT_GUIDE_THRESHOLD_MS
-const WEB_APP_VERSION = "0.1.0"
+const WEB_APP_VERSION = "0.1.1"
 const WALL_STREAM_INTERVAL_MS = DIAGNOSTICS_SAMPLING_INTERVAL_MS
 const WALL_CLOCK_TICK_MS = 1_000
 const WALL_FULLSCREEN_ENTER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`

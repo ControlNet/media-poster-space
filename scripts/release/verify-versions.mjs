@@ -13,6 +13,11 @@ const PACKAGE_JSON_SOURCES = [
 ]
 const TAURI_CONFIG_SOURCE = "apps/desktop/src-tauri/tauri.conf.json"
 const CARGO_TOML_SOURCE = "apps/desktop/src-tauri/Cargo.toml"
+// App versions baked into crash packages; they must follow the manifests.
+const SOURCE_CONSTANTS = [
+  { source: "apps/web/src/onboarding/runtime.ts", name: "WEB_APP_VERSION" },
+  { source: "apps/desktop/src/onboarding/runtime.ts", name: "DESKTOP_APP_VERSION" }
+]
 
 function parseArgs(argv) {
   let tag = null
@@ -79,6 +84,15 @@ function readCargoPackageVersion(cargoToml, sourceLabel) {
   throw new Error(`${sourceLabel} has no [package] version`)
 }
 
+function readSourceConstant(sourceText, { source, name }) {
+  const match = sourceText.match(new RegExp(`^const ${name} = "([^"]+)"$`, "m"))
+  if (!match?.[1]) {
+    throw new Error(`${source} has no \`const ${name} = "<version>"\` line`)
+  }
+
+  return match[1]
+}
+
 async function collectVersions() {
   const versions = []
   for (const source of PACKAGE_JSON_SOURCES) {
@@ -90,6 +104,12 @@ async function collectVersions() {
     source: `${CARGO_TOML_SOURCE} [package]`,
     version: readCargoPackageVersion(await readText(CARGO_TOML_SOURCE), CARGO_TOML_SOURCE)
   })
+  for (const constant of SOURCE_CONSTANTS) {
+    versions.push({
+      source: `${constant.source} ${constant.name}`,
+      version: readSourceConstant(await readText(constant.source), constant)
+    })
+  }
 
   return versions
 }

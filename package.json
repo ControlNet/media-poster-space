@@ -1,6 +1,6 @@
 {
   "name": "media-poster-space",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "packageManager": "pnpm@8.10.0",
   "workspaces": [
