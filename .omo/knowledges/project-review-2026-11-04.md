@@ -250,3 +250,12 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR
   22.04-built AppImage renders the onboarding UI on an Ubuntu 22.04 host under Xvfb (window appears
   after ~28 s because xdg-desktop-portal waits for a Secret Service that the temp session lacks).
 - Not exercised: `gh release create` itself (needs a new `v*` tag; `v0.1.0` is already released).
+
+## v0.1.1 release (2026-11-05)
+
+- Bump: the six manifests checked by `verify-versions.mjs`, `Cargo.lock` (`cargo update -p mps-desktop`)
+  and the crash-package constants `WEB_APP_VERSION` / `DESKTOP_APP_VERSION`, which the script now checks.
+- Tag run 42044425340: every job green, `github-release` created
+  https://github.com/ControlNet/media-poster-space/releases/tag/v0.1.1 (5 assets incl. `SHA256SUMS`).
+- Downloaded assets pass `sha256sum -c`; the released AppImage renders on Ubuntu 22.04 under Xvfb.
+- Release notes are only the auto "Full Changelog" link (`--generate-notes` with no merged PRs).
