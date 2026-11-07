@@ -14,6 +14,7 @@ import {
   createWallPosterTileFillOrder,
   getWallPosterTileMediaIdentity,
   resolveWallPosterRowTileCount,
+  resolveWallPosterTileCount,
   toWallPosterMediaIdentity,
   WALL_POSTER_GRID_STREAM_APPLIER_KEY
 } from "../src/wall/ui/presentation-sections"
@@ -411,6 +412,51 @@ describe("wall poster grid stream helpers", () => {
     ])
   })
 
+  it("swaps an on-screen repeat for a poster that is not on the wall, but keeps on-screen originals", () => {
+    vi.stubGlobal("window", { innerWidth: 400, innerHeight: 100 })
+
+    const repeated = createMediaItem("repeated")
+    const unique = createMediaItem("unique")
+    const incoming = [1, 2].map((index) => createMediaItem(`incoming-${index}`))
+    // Every tile is on screen: tiles 0 and 2 repeat one poster, tile 1 shows one of its own.
+    const tiles = [0, 1, 2].map(() => createMutableWallPosterTileState({ rect: createWallPosterRect(500, 600) }))
+    const seed = (index: number, item: MediaItem): void => {
+      const tileState = tiles[index]?.tileState
+      if (!tileState) {
+        throw new Error(`expected tile ${index}`)
+      }
+      applyWallPosterGridStreamState(
+        createWallPosterGridStreamState({ rows: [createWallPosterGridRowState([0], { tiles: [tileState] })] }),
+        [item]
+      )
+    }
+    seed(0, repeated)
+    seed(1, unique)
+    seed(2, repeated)
+    tiles[0]?.setRect(createWallPosterRect(0, 100))
+    tiles[1]?.setRect(createWallPosterRect(120, 220))
+    tiles[2]?.setRect(createWallPosterRect(240, 340))
+    const rowState = createWallPosterGridRowState(createWallPosterEntryEdgeIndices(3, "normal"), {
+      tiles: tiles.map((tile) => tile.tileState)
+    })
+    const streamState = createWallPosterGridStreamState({ rows: [rowState] })
+
+    expect(applyWallPosterGridStreamState(streamState, incoming)).toEqual({
+      status: "applied",
+      queuedItemCount: 2,
+      appliedItemCount: 1,
+      pendingItemCount: 1
+    })
+
+    // One copy of the repeat takes the new poster; once nothing repeats, on-screen tiles are kept
+    // and the second poster waits for a tile to scroll off.
+    const identities = rowState.tiles.map((tileState) => getWallPosterTileMediaIdentity(tileState.tile))
+    expect(identities.filter((identity) => identity === toWallPosterMediaIdentity(repeated))).toHaveLength(1)
+    expect(identities).toContain(toWallPosterMediaIdentity(unique))
+    expect(identities).toContain(toWallPosterMediaIdentity(incoming[0] ?? repeated))
+    expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(["incoming-2"])
+  })
+
   it("does not put a second copy of a poster that is already on the wall", () => {
     vi.stubGlobal("window", { innerWidth: 100, innerHeight: 100 })
 
@@ -441,6 +487,13 @@ describe("wall poster grid stream helpers", () => {
     expect(resolveWallPosterRowTileCount(1280)).toBe(13)
     expect(resolveWallPosterRowTileCount(1920)).toBe(18)
     expect(resolveWallPosterRowTileCount(3840)).toBe(34)
+  })
+
+  it("counts the wall's tiles for a viewport", () => {
+    expect(resolveWallPosterTileCount(1024, 768)).toBe(5 * 11)
+    expect(resolveWallPosterTileCount(1920, 1080)).toBe(5 * 18)
+    expect(resolveWallPosterTileCount(2560, 1440)).toBe(6 * 24)
+    expect(resolveWallPosterTileCount(3840, 2160)).toBe(8 * 34)
   })
 
   it("fills the always-visible middle columns before the row ends", () => {

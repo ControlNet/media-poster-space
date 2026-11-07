@@ -53,3 +53,20 @@ export const validProviderSession: ProviderSession = {
   createdAt: "2026-02-23T12:00:00.000Z",
   expiresAt: "2026-02-23T13:00:00.000Z"
 };
+
+// Test-only random sources for code that shuffles posters.
+// `keepDeliveredOrder` makes a Fisher-Yates shuffle swap every item with itself, so tests that
+// assert on delivery order keep it.
+export const keepDeliveredOrder = (): number => 1 - Number.EPSILON;
+
+// Deterministic PRNG (mulberry32) returning values in [0, 1).
+export function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}

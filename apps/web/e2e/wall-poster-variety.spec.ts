@@ -90,18 +90,52 @@ async function takeWallPosterCensus(page: Page): Promise<WallPosterCensus> {
   })
 }
 
-test("shows a different poster on every visible tile of a 1080p wall", async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1080 })
-  await wireLargeLibraryServer(page)
-  await enterWall(page)
+for (const wall of [
+  { width: 1920, height: 1080, rows: 5, tilesPerRow: 18 },
+  { width: 3840, height: 2160, rows: 8, tilesPerRow: 34 }
+]) {
+  test(`shows a different poster on every tile of a ${wall.width}x${wall.height} wall`, async ({ page }) => {
+    await page.setViewportSize({ width: wall.width, height: wall.height })
+    await wireLargeLibraryServer(page)
+    await enterWall(page)
 
-  const census = await takeWallPosterCensus(page)
+    // Each row is sized to its scroll range (it used to be 5 x 160 tiles at any size). The pool is
+    // sized to the wall: 120 posters at 1080p, 363 at 4K.
+    const tileCount = wall.rows * wall.tilesPerRow
+    await expect.poll(async () => {
+      const census = await takeWallPosterCensus(page)
+      return new Set(census.posterIdsInWall).size
+    }).toBe(tileCount)
+    const census = await takeWallPosterCensus(page)
+    expect(census.tileCount).toBe(tileCount)
+    expect(census.visibleTileCount).toBeGreaterThan(wall.rows * 6)
+    expect(census.visiblePosterCount).toBe(census.visibleTileCount)
+  })
+}
 
-  // 5 rows of 18 tiles, each row sized to its scroll range (it used to be 5 x 160 tiles).
-  expect(census.tileCount).toBe(90)
-  expect(census.visibleTileCount).toBeGreaterThan(30)
-  expect(census.visiblePosterCount).toBe(census.visibleTileCount)
-  expect(new Set(census.posterIdsInWall).size).toBe(census.tileCount)
+test("lays the posters out in a different order on every launch", async ({ browser }) => {
+  const launchOrder = async (): Promise<string[]> => {
+    const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } })
+    try {
+      const page = await context.newPage()
+      await wireLargeLibraryServer(page)
+      await enterWall(page)
+      return (await takeWallPosterCensus(page)).posterIdsInWall
+    } finally {
+      await context.close()
+    }
+  }
+
+  const firstLaunch = await launchOrder()
+  const secondLaunch = await launchOrder()
+
+  // Both launches get the same newest-first page from the server; the wall shuffles it. Two
+  // independent shuffles of a 100-poster page agreeing on 90 tiles is not a realistic outcome.
+  expect(firstLaunch).toHaveLength(90)
+  expect(secondLaunch).toHaveLength(90)
+  expect(secondLaunch).not.toEqual(firstLaunch)
+  // The served order (movie-000, movie-001, ...) does not survive onto the wall.
+  expect(firstLaunch.slice(0, 10)).not.toEqual(firstLaunch.slice(0, 10).sort())
 })
 
 test("brings new posters onto the wall as the stream runs", async ({ page }) => {

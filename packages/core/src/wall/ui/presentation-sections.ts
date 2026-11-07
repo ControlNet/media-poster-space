@@ -460,8 +460,9 @@ function countWallPosterTileIdentities(rows: readonly WallPosterGridRowState[]):
 }
 
 /**
- * Picks the tile for the next incoming poster: rows take turns, and within a row the replaceable
- * tile showing a poster that is also on another tile goes first, then the tile written longest ago.
+ * Picks the tile for the next incoming poster: rows take turns. Within a row an off-screen tile
+ * showing a poster that is also on another tile goes first, then an on-screen one, then the
+ * off-screen tile written longest ago. An on-screen tile with a poster shown only there is kept.
  */
 function takeReplaceableWallPosterTile(
   streamState: WallPosterGridStreamState,
@@ -480,24 +481,40 @@ function takeReplaceableWallPosterTile(
     }
 
     const rowState = streamState.rows[rowSelection.rowIndex]
-    const replaceableIndices = replaceableIndicesByRow[rowSelection.rowIndex] ?? []
-    let best: { tileState: WallPosterTileState, duplicateRank: number, sequence: number } | null = null
+    const offScreenIndices = replaceableIndicesByRow[rowSelection.rowIndex] ?? []
+    const offScreenIndexSet = new Set(offScreenIndices)
+    const rowTiles = rowState?.tiles ?? []
+    // Off-screen tiles in their write order (entry side nearest first), then the on-screen ones.
+    const candidateIndices = [
+      ...offScreenIndices,
+      ...rowTiles.map((_, tileIndex) => tileIndex).filter((tileIndex) => !offScreenIndexSet.has(tileIndex))
+    ]
+    let best: { tileState: WallPosterTileState, rank: number, sequence: number } | null = null
 
-    for (const tileIndex of replaceableIndices) {
-      const tileState = rowState?.tiles[tileIndex]
+    for (const tileIndex of candidateIndices) {
+      const tileState = rowTiles[tileIndex]
       if (!tileState || usedTiles.has(tileState.tile)) {
         continue
       }
 
       const identity = wallPosterTileIdentityByElement.get(tileState.tile)
-      const duplicateRank = identity && (identityCounts.get(identity) ?? 0) > 1 ? 0 : 1
+      const isDuplicate = identity !== undefined && (identityCounts.get(identity) ?? 0) > 1
+      const isOffScreen = offScreenIndexSet.has(tileIndex)
+      // On-screen tiles are left alone unless they repeat a poster shown elsewhere (a wall that
+      // was first drawn from a pool smaller than itself): then a poster that is not on the wall
+      // yet is the better picture.
+      const rank = isOffScreen ? (isDuplicate ? 0 : 2) : (isDuplicate ? 1 : null)
+      if (rank === null) {
+        continue
+      }
+
       const sequence = wallPosterTileWriteSequenceByElement.get(tileState.tile) ?? 0
       if (
         best === null
-        || duplicateRank < best.duplicateRank
-        || (duplicateRank === best.duplicateRank && sequence < best.sequence)
+        || rank < best.rank
+        || (rank === best.rank && sequence < best.sequence)
       ) {
-        best = { tileState, duplicateRank, sequence }
+        best = { tileState, rank, sequence }
       }
     }
 
@@ -682,6 +699,30 @@ export function resolveWallPosterRowTileCount(viewportWidth: number): number {
     normalizedWidth * (WALL_POSTER_ROW_LEADING_OFFSET_RATIO + 1 + WALL_POSTER_ROW_SHIFT_RATIO)
 
   return Math.ceil(coveredWidthPx / WALL_POSTER_TILE_STRIDE_PX) + WALL_POSTER_ROW_BUFFER_TILES
+}
+
+// Enough rows to cover the tilted wall vertically (5 at 1080p, 8 at 2160p).
+export function resolveWallPosterRowCount(viewportHeight: number): number {
+  const normalizedHeight = Number.isFinite(viewportHeight) ? Math.max(viewportHeight, 1) : 1080
+  return Math.max(5, Math.min(10, Math.ceil((normalizedHeight * 1.25) / 340)))
+}
+
+export function resolveWallPosterTileCount(viewportWidth: number, viewportHeight: number): number {
+  return resolveWallPosterRowCount(viewportHeight) * resolveWallPosterRowTileCount(viewportWidth)
+}
+
+function readWallPosterViewportSize(): { width: number; height: number } {
+  if (typeof window === "undefined") {
+    return { width: 1920, height: 1080 }
+  }
+
+  return { width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight) }
+}
+
+// Tile count of a wall built for the current window (90 at 1920x1080, 272 at 3840x2160).
+export function resolveWallPosterViewportTileCount(): number {
+  const viewport = readWallPosterViewportSize()
+  return resolveWallPosterTileCount(viewport.width, viewport.height)
 }
 
 /**
@@ -910,13 +951,8 @@ export function createWallPosterGridSection(
     return posterGrid
   }
 
-  const viewportWidth = typeof window === "undefined"
-    ? 1920
-    : Math.max(1, window.innerWidth)
-  const viewportHeight = typeof window === "undefined"
-    ? 1080
-    : Math.max(1, window.innerHeight)
-  const rowCount = Math.max(5, Math.min(10, Math.ceil((viewportHeight * 1.25) / 340)))
+  const { width: viewportWidth, height: viewportHeight } = readWallPosterViewportSize()
+  const rowCount = resolveWallPosterRowCount(viewportHeight)
   const tilesPerRow = resolveWallPosterRowTileCount(viewportWidth)
   // One shuffle laid across the whole wall: a poster repeats only when the wall has more tiles
   // than there are posters, and the repeats land on tiles that scroll off screen.

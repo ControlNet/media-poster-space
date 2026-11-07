@@ -14,6 +14,7 @@ import {
 } from "../../src/runtime";
 import type { CreateOnboardingIngestionControllerOptions } from "../../src/runtime";
 import { createPosterCache } from "../../src/cache";
+import { keepDeliveredOrder } from "../fixtures";
 import {
   applyWallPosterGridStreamState,
   createWallPosterEntryEdgeIndices,
@@ -389,7 +390,8 @@ function createControllerHarness(options: {
     reconnectInitialBackoffMs: options.reconnectInitialBackoffMs ?? 2_000,
     reconnectMaxBackoffMs: options.reconnectMaxBackoffMs ?? 60_000,
     reconnectGuideThresholdMs: options.reconnectGuideThresholdMs ?? 60_000,
-    cacheTtlMs: 60_000
+    cacheTtlMs: 60_000,
+    random: keepDeliveredOrder
   };
 
   const controller = options.queueFetchItems

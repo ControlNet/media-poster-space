@@ -14,6 +14,7 @@ import {
   toReconnectGuideReason
 } from "../../src/runtime";
 import { createPosterCache } from "../../src/cache";
+import { createSeededRandom, keepDeliveredOrder } from "../fixtures";
 import type { MediaPage, MediaQuery } from "../../src/provider";
 import type {
   MediaItem,
@@ -85,6 +86,8 @@ function harness(options: {
   now?: () => number;
   // Defaults to a further page: the runtime delivered the first page of a larger library.
   runtimeNextCursor?: string | null;
+  random?: () => number;
+  wallTileCount?: number;
 }) {
   const state = createOnboardingBaseState<
     ProviderSession,
@@ -148,6 +151,8 @@ function harness(options: {
     reconnectMaxBackoffMs: 60_000,
     reconnectGuideThresholdMs: 60_000,
     cacheTtlMs: 60_000,
+    random: options.random ?? keepDeliveredOrder,
+    ...(options.wallTileCount !== undefined ? { resolveWallTileCount: () => options.wallTileCount ?? 0 } : {}),
     ...(options.now ? { now: options.now } : {})
   });
 
@@ -417,24 +422,34 @@ describe("onboarding ingestion poster stream regressions", () => {
     const fetchItems = vi.fn(async () => batch(61, 5_000));
     const h = harness({
       runtimeItems: batch(120, 1),
+      random: createSeededRandom(7),
       adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
     });
 
     h.controller.ensureRuntime(SESSION, ["movies"]);
     await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
 
-    // A refresh republishes the same page (status "refreshing", then "ready").
+    const consumedIds: string[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      consumedIds.push((await h.controller.consumeNextPosterForStream())?.id ?? "null");
+    }
+    // A refresh republishes the same page (status "refreshing", then "ready"). The page arrives in
+    // delivery order while the queue reads it shuffled; it must still be recognised as the same.
     h.hooks.onStateChange?.({
       status: "refreshing", trigger: "manual", items: batch(120, 1), fetchedAt: "2026-03-01T12:00:00.000Z", nextCursor: null, error: null
     });
-    for (let i = 0; i < 61; i += 1) {
-      await h.controller.consumeNextPosterForStream();
+    await flush();
+    expect(h.state.ingestionItemCount).toBe(90);
+    for (let i = 0; i < 31; i += 1) {
+      consumedIds.push((await h.controller.consumeNextPosterForStream())?.id ?? "null");
     }
     await flush();
 
-    // The page was already used up, so the refill asks the adapter instead of re-serving 1..61.
+    // The page was already used up (in its shuffled order), so the refill asks the adapter
+    // instead of re-serving posters that were just shown.
     expect(fetchItems).toHaveBeenCalledTimes(1);
-    expect(h.state.ingestionItems.map((m) => m.id)).not.toContain("media-0001");
+    const queuedIds = h.state.ingestionItems.map((m) => m.id);
+    expect(consumedIds.filter((id) => queuedIds.includes(id))).toEqual([]);
   });
 
   it("cycles a library that fits in one page from memory instead of fetching it every tick", async () => {
@@ -491,5 +506,79 @@ describe("onboarding ingestion poster stream regressions", () => {
       expect(wallIds).toContain(newItem.id);
     }
     expect(fetchItems).not.toHaveBeenCalled();
+  });
+
+  it("shuffles the delivered posters into a different order on every launch", async () => {
+    const launch = async (seed: number): Promise<string[]> => {
+      const h = harness({
+        runtimeItems: batch(120, 1),
+        random: createSeededRandom(seed),
+        adapter: () => ({ fetchItems: async () => [], getState: () => ({ cursor: null, updatedSince: null }) })
+      });
+      h.controller.ensureRuntime(SESSION, ["movies"]);
+      await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
+      return h.state.ingestionItems.map((m) => m.id);
+    };
+
+    const deliveredOrder = batch(120, 1).map((m) => m.id);
+    const firstLaunch = await launch(1);
+    const secondLaunch = await launch(2);
+
+    expect([...firstLaunch].sort()).toEqual(deliveredOrder);
+    expect([...secondLaunch].sort()).toEqual(deliveredOrder);
+    expect(firstLaunch).not.toEqual(deliveredOrder);
+    expect(secondLaunch).not.toEqual(firstLaunch);
+    expect(firstLaunch.slice(0, 20)).not.toEqual(secondLaunch.slice(0, 20));
+  });
+
+  it("shuffles posters fetched by the adapter and each pass over a small library", async () => {
+    const fetchItems = vi.fn(async (n: number) => batch(n, 1_000));
+    const h = harness({
+      runtimeItems: batch(100, 1),
+      random: createSeededRandom(3),
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
+
+    // The adapter delivered media-1000..1019 in that order; the queue holds them shuffled.
+    const adapterIds = h.state.ingestionItems.slice(100).map((m) => m.id);
+    expect([...adapterIds].sort()).toEqual(batch(20, 1_000).map((m) => m.id));
+    expect(adapterIds).not.toEqual(batch(20, 1_000).map((m) => m.id));
+
+    // A library that fits in one page is cycled from memory; consecutive passes differ.
+    const small = harness({
+      runtimeItems: batch(24, 1),
+      runtimeNextCursor: null,
+      random: createSeededRandom(4),
+      adapter: () => ({ fetchItems: async () => [], getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+    small.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(small.state.ingestionItemCount).toBe(24));
+    const consumed: string[] = [];
+    for (let tick = 0; tick < 72; tick += 1) {
+      consumed.push((await small.controller.consumeNextPosterForStream())?.id ?? "null");
+      await flush();
+    }
+    // Without a new order per pass the stream would repeat with a period of the library size.
+    expect(new Set(consumed).size).toBe(24);
+    expect(consumed.slice(24, 48)).not.toEqual(consumed.slice(48, 72));
+  });
+
+  it("sizes the poster pool to a 4K wall", async () => {
+    const fetchItems = vi.fn(async (n: number) => batch(n, 1_000));
+    const h = harness({
+      runtimeItems: batch(100, 1),
+      wallTileCount: 272,
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+
+    // 272 tiles (8 rows of 34) need a pool of 363: the 100-poster page plus 263 from the adapter.
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(363));
+    expect(fetchItems).toHaveBeenCalledWith(263);
+    expect(new Set(h.state.ingestionItems.map((m) => m.id)).size).toBe(363);
   });
 });

@@ -10,14 +10,16 @@ import type {
 } from "../types"
 import type { DiagnosticsLogEntry } from "./diagnostics"
 import type { OnboardingBaseState } from "./onboarding-shared"
+import { resolveWallPosterViewportTileCount } from "../wall"
 import {
-  DEFAULT_RUNTIME_POSTER_QUEUE_POLICY,
   consumeRuntimePosterQueueItem,
   createRuntimePosterQueuePolicy,
   createRuntimePosterQueueRefillRuntime,
   createRuntimePosterQueueState,
   enqueueRuntimePosterQueueItems,
   getRuntimePosterQueueRefillIntent,
+  resolveRuntimePosterQueuePolicyForWallTileCount,
+  shuffleRuntimePosterQueueItems,
   toRuntimePosterQueueMediaIdentity,
   type RuntimePosterQueuePolicy,
   type RuntimePosterQueueRefillReason,
@@ -96,6 +98,12 @@ export interface CreateOnboardingIngestionControllerOptions<Snapshot = unknown> 
   cacheSetPreheated?: boolean
   markHydratedItemsAsPreheated?: boolean
   now?: () => number
+  // Tile count of the wall the queue feeds; sizes the poster pool. Defaults to a wall built for
+  // the current window.
+  resolveWallTileCount?: () => number
+  // Shuffles every batch of posters entering the queue, so each launch shows a different order.
+  // Defaults to Math.random; tests pass a seeded generator.
+  random?: () => number
   setTimeoutFn?: typeof setTimeout
   clearTimeoutFn?: typeof clearTimeout
 }
@@ -120,6 +128,8 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   options: CreateOnboardingIngestionControllerOptions<Snapshot>
 ): OnboardingIngestionController {
   const now = options.now ?? Date.now
+  const random = options.random ?? Math.random
+  const resolveWallTileCount = options.resolveWallTileCount ?? resolveWallPosterViewportTileCount
   const providerErrorCategories: readonly ProviderErrorCategory[] = [
     "auth",
     "network",
@@ -135,7 +145,10 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   let reconnectBackoffMs = options.reconnectInitialBackoffMs
   let posterQueueState: RuntimePosterQueueState = createRuntimePosterQueueState()
   let posterQueueRefillRuntime = createRuntimePosterQueueRefillRuntime()
+  // The delivered page in shuffled order, and the page's identities in the order it arrived (used
+  // to recognise the same page when the runtime publishes it again).
   let queueRefillSourceItems: MediaItem[] = []
+  let queueRefillSourcePageIdentities: string[] = []
   let queueRefillSourceCursor = 0
   let queueRefillFetchAdapter: RuntimePosterQueueRefillFetchAdapter | null = null
   // The adapter is created on first use so that it continues after the page the ingestion runtime
@@ -168,6 +181,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     posterQueueState = createRuntimePosterQueueState()
     posterQueueRefillRuntime = createRuntimePosterQueueRefillRuntime()
     queueRefillSourceItems = []
+    queueRefillSourcePageIdentities = []
     queueRefillSourceCursor = 0
     queueRefillFetchAdapter = null
     queueRefillAdapterSource = null
@@ -184,11 +198,9 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   }
 
   function hasSameQueueRefillSourceItems(items: readonly MediaItem[]): boolean {
-    return items.length === queueRefillSourceItems.length
+    return items.length === queueRefillSourcePageIdentities.length
       && items.every((item, index) => {
-        const current = queueRefillSourceItems[index]
-        return current !== undefined
-          && toRuntimePosterQueueMediaIdentity(current) === toRuntimePosterQueueMediaIdentity(item)
+        return queueRefillSourcePageIdentities[index] === toRuntimePosterQueueMediaIdentity(item)
       })
   }
 
@@ -200,17 +212,20 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       return false
     }
 
-    queueRefillSourceItems = [...items]
+    queueRefillSourceItems = shuffleRuntimePosterQueueItems(items, random)
+    queueRefillSourcePageIdentities = items.map((item) => toRuntimePosterQueueMediaIdentity(item))
     queueRefillSourceCursor = 0
     return true
   }
 
-  // A library smaller than the default pool can never fill it; aim for the whole library instead,
-  // so the queue refills from memory every half library rather than on every stream tick.
+  // The pool is sized to the wall. A library smaller than that pool can never fill it; aim for the
+  // whole library instead, so the queue refills from memory every half library rather than on
+  // every stream tick.
   function resolveQueuePolicy(): RuntimePosterQueuePolicy {
+    const wallPolicy = resolveRuntimePosterQueuePolicyForWallTileCount(resolveWallTileCount())
     const librarySize = queueRefillSourceItems.length
-    if (!wholeLibraryDelivered || librarySize === 0 || librarySize >= DEFAULT_RUNTIME_POSTER_QUEUE_POLICY.refillTarget) {
-      return DEFAULT_RUNTIME_POSTER_QUEUE_POLICY
+    if (!wholeLibraryDelivered || librarySize === 0 || librarySize >= wallPolicy.refillTarget) {
+      return wallPolicy
     }
 
     return createRuntimePosterQueuePolicy({
@@ -252,6 +267,8 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
           break
         }
 
+        // Each pass over the delivered posters gets a new order.
+        queueRefillSourceItems = shuffleRuntimePosterQueueItems(queueRefillSourceItems, random)
         queueRefillSourceCursor = 0
       }
 
@@ -303,7 +320,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     if (adapter) {
       const fetchedItems = await adapter.fetchItems(requestedCount)
       if (fetchedItems.length > 0) {
-        return fetchedItems
+        return shuffleRuntimePosterQueueItems(fetchedItems, random)
       }
     }
 

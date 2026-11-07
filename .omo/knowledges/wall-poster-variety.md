@@ -34,7 +34,25 @@ User report: "the posters still look very repetitive". Root causes and fixes, wi
 
 `apps/desktop/test/onboarding-auth.test.ts` clicked "refresh" while the previous refresh request was still in flight; a click then joins the in-flight refresh instead of starting a request. The tests only passed because of the old per-tick re-fetch spam. Wait for outstanding fetches (`Promise.allSettled(fetch.mock.results...)`) and for the button to be enabled before clicking.
 
+## Follow-up: 4K pool and shuffled order (2026-11-07)
+
+The user runs a 4K display and asked for a shuffled order on every launch.
+
+- **Pool sized to the wall.** `resolveRuntimePosterQueuePolicyForWallTileCount(tiles)` gives target `max(120, ceil(tiles * 4/3))` and low watermark `max(60, ceil(target/2))`. That is 120/60 at 1080p (90 tiles) and 363/182 at 4K (272 tiles = 8 rows x 34). At 2560x1440 (a 4K panel at 150% scaling) it is 144 tiles, giving 192/96. The controller reads `resolveWallTileCount` (default `resolveWallPosterViewportTileCount()`, the window the grid is built for) on every policy call, so it follows resize and fullscreen.
+- **On-screen repeats.** The first render uses the first page (100 posters) for a 272-tile wall, and the stream only wrote to off-screen tiles, so visible repeats stayed until a tile scrolled off. The middle columns never scroll off. The replacement ranking is now: off-screen duplicate, then on-screen duplicate, then oldest off-screen tile. An on-screen tile showing a poster that appears only there is never touched. 4K e2e results: before, 230 / 272 distinct overall and 85 / 127 visible; after, 272 / 272 and 127 / 127 right after entering the wall.
+- **Shuffle.** The controller shuffles (Fisher-Yates, `random` option, default `Math.random`):
+  - every runtime page;
+  - the cache-hydrate seed, which goes through the same `setQueueRefillSourceItems`;
+  - every adapter batch;
+  - each wrap-around pass over a library delivered whole.
+- **Page comparison.** A republished page is recognised by its identities *in delivery order* (`queueRefillSourcePageIdentities`). Comparing against the shuffled copy resets the read position; the test "keeps its place in a page that the runtime publishes again" catches that.
+- **Paging is unchanged.** The server still pages `SortBy=DateCreated` desc. Server-side `SortBy=Random` was rejected: each request is independently random, so cursor pages overlap and whole-library and continue-after-page detection break.
+- **Cold-start caveat.** A first run, or a run after the cache expired, shows the newest pages shuffled. A warm start shows the cached pool (wherever the last session drifted to) shuffled. A truly random start position in the library would need `TotalRecordCount` on `MediaPage` plus a provider-side random offset.
+- **Test helpers** in `packages/core/test/fixtures.ts`:
+  - `keepDeliveredOrder` (`1 - Number.EPSILON`): Fisher-Yates swaps each item with itself, for tests that assert on order;
+  - `createSeededRandom(seed)` (mulberry32).
+
 ## Known follow-ups (not done)
 
 - Rows jump back at the end of each `mps-wall-row-scroll` cycle, and the middle columns never leave the screen; a continuous conveyor animation would fix both and let the centre refresh too.
-- Ordering is newest-first (`SortBy=DateCreated` desc) on every launch; a shuffled start is a product decision.
+- Random start position across the whole library (see cold-start caveat above).

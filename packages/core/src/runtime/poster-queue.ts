@@ -15,6 +15,37 @@ export const DEFAULT_RUNTIME_POSTER_QUEUE_POLICY = {
   refillTarget: RUNTIME_POSTER_QUEUE_REFILL_TARGET
 } as const satisfies RuntimePosterQueuePolicy
 
+// The pool has to exceed the wall's tile count for every tile to show a different poster; a third
+// more leaves room for the stream to rotate. 1080p (90 tiles) keeps the default 60/120; a 4K wall
+// (272 tiles) gets 182/363.
+export function resolveRuntimePosterQueuePolicyForWallTileCount(tileCount: number): RuntimePosterQueuePolicy {
+  const normalizedTileCount = Number.isFinite(tileCount) ? Math.max(Math.trunc(tileCount), 0) : 0
+  const refillTarget = Math.max(RUNTIME_POSTER_QUEUE_REFILL_TARGET, Math.ceil((normalizedTileCount * 4) / 3))
+
+  return {
+    lowWatermark: Math.max(RUNTIME_POSTER_QUEUE_LOW_WATERMARK, Math.ceil(refillTarget / 2)),
+    refillTarget
+  }
+}
+
+// Fisher-Yates shuffle into a new array; `random` returns values in [0, 1) like Math.random.
+export function shuffleRuntimePosterQueueItems(items: readonly MediaItem[], random: () => number): MediaItem[] {
+  const shuffled = [...items]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.min(Math.floor(random() * (index + 1)), index)
+    const current = shuffled[index]
+    const swap = shuffled[swapIndex]
+    if (current === undefined || swap === undefined) {
+      continue
+    }
+
+    shuffled[index] = swap
+    shuffled[swapIndex] = current
+  }
+
+  return shuffled
+}
+
 export type RuntimePosterQueueRefillReason = "bootstrap" | "low-watermark"
 
 export interface RuntimePosterQueueState {

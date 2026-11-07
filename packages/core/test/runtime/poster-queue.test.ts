@@ -8,8 +8,11 @@ import {
   createRuntimePosterQueueState,
   enqueueRuntimePosterQueueItems,
   getRuntimePosterQueueRefillIntent,
+  resolveRuntimePosterQueuePolicyForWallTileCount,
+  shuffleRuntimePosterQueueItems,
   toRuntimePosterQueueMediaIdentity
 } from "../../src/runtime";
+import { createSeededRandom, keepDeliveredOrder } from "../fixtures";
 import type { MediaItem } from "../../src/types";
 
 // Queue mechanics are exercised with a small explicit policy; the default sizes are pinned in
@@ -183,5 +186,29 @@ describe("runtime poster queue model", () => {
     expect(reenqueue.acceptedCount).toBe(1);
     expect(reenqueue.duplicateCount).toBe(0);
     expect(reenqueue.nextState.items).toHaveLength(2);
+  });
+
+  it("sizes the pool a third larger than the wall it feeds, never below the default", () => {
+    expect(resolveRuntimePosterQueuePolicyForWallTileCount(55)).toEqual({ lowWatermark: 60, refillTarget: 120 });
+    expect(resolveRuntimePosterQueuePolicyForWallTileCount(90)).toEqual({ lowWatermark: 60, refillTarget: 120 });
+    expect(resolveRuntimePosterQueuePolicyForWallTileCount(144)).toEqual({ lowWatermark: 96, refillTarget: 192 });
+    expect(resolveRuntimePosterQueuePolicyForWallTileCount(272)).toEqual({ lowWatermark: 182, refillTarget: 363 });
+    expect(resolveRuntimePosterQueuePolicyForWallTileCount(Number.NaN)).toEqual({ lowWatermark: 60, refillTarget: 120 });
+  });
+
+  it("shuffles posters into a seed-dependent permutation without losing or repeating any", () => {
+    const items = createMediaBatch(50);
+    const ids = items.map((item) => item.id);
+
+    const first = shuffleRuntimePosterQueueItems(items, createSeededRandom(1)).map((item) => item.id);
+    const again = shuffleRuntimePosterQueueItems(items, createSeededRandom(1)).map((item) => item.id);
+    const other = shuffleRuntimePosterQueueItems(items, createSeededRandom(2)).map((item) => item.id);
+
+    expect([...first].sort()).toEqual([...ids].sort());
+    expect(first).not.toEqual(ids);
+    expect(again).toEqual(first);
+    expect(other).not.toEqual(first);
+    expect(shuffleRuntimePosterQueueItems(items, keepDeliveredOrder).map((item) => item.id)).toEqual(ids);
+    expect(items.map((item) => item.id)).toEqual(ids);
   });
 });
