@@ -259,3 +259,12 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 HOME=$T XDG_RUNTIME_DIR=$T/run MPS_PORTABLE_DIR
   https://github.com/ControlNet/media-poster-space/releases/tag/v0.1.1 (5 assets incl. `SHA256SUMS`).
 - Downloaded assets pass `sha256sum -c`; the released AppImage renders on Ubuntu 22.04 under Xvfb.
 - Release notes are only the auto "Full Changelog" link (`--generate-notes` with no merged PRs).
+
+## CI runner note (2026-11-07)
+
+- GitHub retired the `macos-14` runner image: the `desktop-native-macos-arm64` job was cancelled within a second with
+  the annotation "The configuration 'macos-14-arm64-us-default' is not supported" (no steps, no runner). Switched to
+  `macos-15` (arm64) in `.github/workflows/quality-gates.yml`; run 42333199782 green on every job.
+- A cancelled job with zero steps is a runner/image problem, not a code problem; read the check-run annotations:
+  `gh api repos/ControlNet/media-poster-space/check-runs/<job-id>/annotations -q '.[].message'`.
+- A Linux AppImage job can fail with `failed to bundle project 'http status: 504'` (bundler download); re-run it.
