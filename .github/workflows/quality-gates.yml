@@ -125,7 +125,7 @@ jobs:
             artifact_name: desktop-windows-x64-native
             artifact_path: apps/desktop/src-tauri/target/release/mps-desktop.exe
           - id: macos-arm64
-            runs_on: macos-14
+            runs_on: macos-15
             build_command: pnpm --filter @mps/desktop exec tauri build --config src-tauri/tauri.conf.json --bundles app
             artifact_name: desktop-macos-arm64-native
             artifact_path: apps/desktop/src-tauri/target/release/bundle/macos/*.app
