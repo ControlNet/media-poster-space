@@ -162,6 +162,12 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   // page: the delivered items are the whole library, so fetching again would only repeat them.
   let wholeLibraryDelivered = false
   let lastReadyIngestionNextCursor: string | null = null
+  // Distinct posters of the current pass over the library (the runtime's first page, then the
+  // adapter's pages), and whether that pass began at the start of the library. A pass that ends
+  // smaller than the wall's pool is the whole library: it is cycled from memory like a one-page
+  // library instead of being fetched again on every stream tick.
+  let libraryPassItems = new Map<string, MediaItem>()
+  let libraryPassStartedAtBeginning = false
   let queueLifecycleNonce = 0
   let runtimeGeneration = 0
   let refillRetryNotBeforeMs: number | null = null
@@ -188,6 +194,8 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     latestIngestionNextCursor = null
     wholeLibraryDelivered = false
     lastReadyIngestionNextCursor = null
+    libraryPassItems = new Map()
+    libraryPassStartedAtBeginning = false
     refillRetryNotBeforeMs = null
     refillRetryBackoffMs = options.reconnectInitialBackoffMs
   }
@@ -221,8 +229,12 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   // The pool is sized to the wall. A library smaller than that pool can never fill it; aim for the
   // whole library instead, so the queue refills from memory every half library rather than on
   // every stream tick.
+  function resolveWallQueuePolicy(): RuntimePosterQueuePolicy {
+    return resolveRuntimePosterQueuePolicyForWallTileCount(resolveWallTileCount())
+  }
+
   function resolveQueuePolicy(): RuntimePosterQueuePolicy {
-    const wallPolicy = resolveRuntimePosterQueuePolicyForWallTileCount(resolveWallTileCount())
+    const wallPolicy = resolveWallQueuePolicy()
     const librarySize = queueRefillSourceItems.length
     if (!wholeLibraryDelivered || librarySize === 0 || librarySize >= wallPolicy.refillTarget) {
       return wallPolicy
@@ -319,6 +331,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     const adapter = wholeLibraryDelivered ? null : resolveQueueRefillFetchAdapter()
     if (adapter) {
       const fetchedItems = await adapter.fetchItems(requestedCount)
+      recordLibraryPass(fetchedItems, adapter.getState().cursor === null)
       if (fetchedItems.length > 0) {
         return shuffleRuntimePosterQueueItems(fetchedItems, random)
       }
@@ -329,6 +342,27 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     return takeQueueRefillSourceItems(requestedCount, {
       allowWrap: true
     })
+  }
+
+  function recordLibraryPass(items: readonly MediaItem[], passEnded: boolean): void {
+    for (const item of items) {
+      libraryPassItems.set(toRuntimePosterQueueMediaIdentity(item), item)
+    }
+
+    if (!passEnded) {
+      return
+    }
+
+    const libraryItems = [...libraryPassItems.values()]
+    const passCoveredLibrary = libraryPassStartedAtBeginning
+    // The adapter starts its next pass at the beginning of the library.
+    libraryPassItems = new Map()
+    libraryPassStartedAtBeginning = true
+
+    if (passCoveredLibrary && libraryItems.length > 0 && libraryItems.length < resolveWallQueuePolicy().refillTarget) {
+      wholeLibraryDelivered = true
+      setQueueRefillSourceItems(libraryItems)
+    }
   }
 
   function toQueueRefillFetchAdapterStateSnapshot(): RuntimePosterQueueRefillFetchAdapterState | null {
@@ -650,10 +684,11 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     options.state.ingestionStatus = nextState.status
     options.state.ingestionTrigger = nextState.trigger
 
+    let pageStartedAtBeginning = false
     if (nextState.status === "ready") {
       // A scheduled refresh continues from the previous page's cursor; any other refresh, or one
       // after the last page, starts at the beginning of the library.
-      const pageStartedAtBeginning =
+      pageStartedAtBeginning =
         nextState.trigger !== "scheduled" || lastReadyIngestionNextCursor === null
       wholeLibraryDelivered = pageStartedAtBeginning && nextState.nextCursor === null
       lastReadyIngestionNextCursor = nextState.nextCursor
@@ -663,6 +698,12 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       const pageChanged = setQueueRefillSourceItems(nextState.items)
       if (!queueRefillFetchAdapter) {
         latestIngestionNextCursor = nextState.nextCursor
+        if (nextState.status === "ready") {
+          // The adapter will continue after this page, so the pass over the library starts here.
+          libraryPassItems = new Map()
+          libraryPassStartedAtBeginning = pageStartedAtBeginning
+          recordLibraryPass(nextState.items, false)
+        }
       }
       if (posterQueueState.items.length === 0) {
         seedPosterQueueFromSource()

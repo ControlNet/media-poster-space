@@ -581,4 +581,41 @@ describe("onboarding ingestion poster stream regressions", () => {
     expect(fetchItems).toHaveBeenCalledWith(263);
     expect(new Set(h.state.ingestionItems.map((m) => m.id)).size).toBe(363);
   });
+
+  for (const scenario of [
+    { librarySize: 250, wallTileCount: 272, label: "a 4K wall" },
+    { librarySize: 110, wallTileCount: 90, label: "a 1080p wall" }
+  ]) {
+    it(`cycles a ${scenario.librarySize}-poster library spread over pages from memory on ${scenario.label}`, async () => {
+      const library = batch(scenario.librarySize, 1);
+      const jf = fakeJellyfin(library);
+      const h = harness({
+        runtimeItems: library.slice(0, 100),
+        runtimeNextCursor: "100",
+        wallTileCount: scenario.wallTileCount,
+        random: createSeededRandom(11),
+        adapter: (session) =>
+          createRuntimePosterQueueRefillFetchAdapter({
+            provider: { listMedia: jf.listMedia },
+            session,
+            selectedLibraryIds: ["movies"],
+            cursor: "100"
+          })
+      });
+
+      h.controller.ensureRuntime(SESSION, ["movies"]);
+      await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(scenario.librarySize));
+      const consumedIds: string[] = [];
+      for (let tick = 0; tick < 3 * scenario.librarySize; tick += 1) {
+        consumedIds.push((await h.controller.consumeNextPosterForStream())?.id ?? "null");
+        await flush();
+      }
+
+      // The library is smaller than the wall's pool. Once a pass has shown how big it is, the
+      // queue cycles what it already has instead of asking the server again on every tick.
+      expect(jf.listMedia.mock.calls.length).toBeLessThanOrEqual(3);
+      expect(new Set(consumedIds).size).toBe(scenario.librarySize);
+      expect(h.state.ingestionItemCount).toBeGreaterThan(0);
+    });
+  }
 });
