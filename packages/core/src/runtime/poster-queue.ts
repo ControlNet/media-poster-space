@@ -1,7 +1,9 @@
 import type { MediaItem } from "../types"
 
-export const RUNTIME_POSTER_QUEUE_LOW_WATERMARK = 10
-export const RUNTIME_POSTER_QUEUE_REFILL_TARGET = 40
+// The queue is the wall's poster pool: a 1080p wall has 90 tiles (5 rows of 18), so the pool
+// must hold more than that for every tile to show a different poster.
+export const RUNTIME_POSTER_QUEUE_LOW_WATERMARK = 60
+export const RUNTIME_POSTER_QUEUE_REFILL_TARGET = 120
 
 export interface RuntimePosterQueuePolicy {
   lowWatermark: number

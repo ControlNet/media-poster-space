@@ -80,6 +80,7 @@ function createMediaBatch(count: number, startIndex = 1): MediaItem[] {
   });
 }
 
+// The runtime page is the first page of a larger library, so the queue tops up through the adapter.
 function createReadyState(
   items: readonly MediaItem[],
   trigger: MediaIngestionRefreshTrigger
@@ -89,7 +90,7 @@ function createReadyState(
     trigger,
     items: [...items],
     fetchedAt: "2026-03-01T12:00:00.000Z",
-    nextCursor: null,
+    nextCursor: String(items.length),
     error: null
   };
 }
@@ -171,11 +172,9 @@ function createWallPosterTileState(options: {
 function createWallPosterGridRowState(options: {
   entryIndices: number[];
   tiles: WallPosterTileState[];
-  nextEntryPointer?: number;
 }): WallPosterGridRowState {
   return {
     entryIndices: [...options.entryIndices],
-    nextEntryPointer: options.nextEntryPointer ?? 0,
     tiles: [...options.tiles]
   };
 }
@@ -195,7 +194,8 @@ function createWallPosterGridStreamState(options: {
     ),
     nextIncomingRowPointer: options.nextIncomingRowPointer ?? 0,
     pendingIncomingItems: [...(options.pendingIncomingItems ?? [])],
-    rows: [...(options.rows ?? [])]
+    rows: [...(options.rows ?? [])],
+    nextWriteSequence: 0
   };
 }
 
@@ -220,8 +220,10 @@ function createDeferredWallRows(rowCount: number): {
     return createWallPosterGridRowState({
       entryIndices: createWallPosterEntryEdgeIndices(6, "normal"),
       tiles: [
-        createWallPosterTileState({ rect: createWallPosterRect(-240, -140) }),
-        createWallPosterTileState({ rect: createWallPosterRect(-120, -20) }),
+        // Tiles 0-3 stay on screen; only tiles 4 and 5 become replaceable once they move past the
+        // right edge of the 100px viewport.
+        createWallPosterTileState({ rect: createWallPosterRect(-90, 10) }),
+        createWallPosterTileState({ rect: createWallPosterRect(-60, 40) }),
         createWallPosterTileState({ rect: createWallPosterRect(-40, 60) }),
         createWallPosterTileState({ rect: createWallPosterRect(60, 160) }),
         createWallPosterTileState({
@@ -416,12 +418,12 @@ function createControllerHarness(options: {
 }
 
 describe("onboarding ingestion queue integration", () => {
-  it("bootstraps to 40 and refills under low watermark with one in-flight fetch", async () => {
+  it("bootstraps to the queue target and refills under low watermark with one in-flight fetch", async () => {
     const state = createTestOnboardingState();
     const runtimeItems = createMediaBatch(120, 1);
     const underflowRefill = createDeferredPromise<readonly MediaItem[]>();
     const queueFetchItems = vi.fn(async (requestedCount: number) => {
-      expect(requestedCount).toBe(31);
+      expect(requestedCount).toBe(61);
       return underflowRefill.promise;
     });
 
@@ -434,15 +436,15 @@ describe("onboarding ingestion queue integration", () => {
     harness.controller.ensureRuntime(TEST_SESSION, ["movies"]);
 
     await vi.waitFor(() => {
-      expect(state.ingestionItemCount).toBe(40);
+      expect(state.ingestionItemCount).toBe(120);
     });
     expect(queueFetchItems).not.toHaveBeenCalled();
 
-    for (let index = 0; index < 31; index += 1) {
+    for (let index = 0; index < 61; index += 1) {
       await harness.controller.consumeNextPosterForStream();
     }
 
-    expect(state.ingestionItemCount).toBe(9);
+    expect(state.ingestionItemCount).toBe(59);
     await vi.waitFor(() => {
       expect(queueFetchItems).toHaveBeenCalledTimes(1);
     });
@@ -450,9 +452,9 @@ describe("onboarding ingestion queue integration", () => {
     await harness.controller.refreshNow();
     expect(queueFetchItems).toHaveBeenCalledTimes(1);
 
-    underflowRefill.resolve(createMediaBatch(31, 1_000));
+    underflowRefill.resolve(createMediaBatch(61, 1_000));
     await vi.waitFor(() => {
-      expect(state.ingestionItemCount).toBe(40);
+      expect(state.ingestionItemCount).toBe(120);
     });
 
     expect(harness.runtimeRefreshNow).toHaveBeenCalledTimes(1);
@@ -488,14 +490,14 @@ describe("onboarding ingestion queue integration", () => {
       harness.controller.ensureRuntime(TEST_SESSION, ["movies"]);
 
       await vi.waitFor(() => {
-        expect(state.ingestionItemCount).toBe(40);
+        expect(state.ingestionItemCount).toBe(120);
       });
 
-      for (let index = 0; index < 31; index += 1) {
+      for (let index = 0; index < 61; index += 1) {
         await harness.controller.consumeNextPosterForStream();
       }
 
-      expect(state.ingestionItemCount).toBe(9);
+      expect(state.ingestionItemCount).toBe(59);
       await vi.waitFor(() => {
         expect(queueFetchItems).toHaveBeenCalledTimes(1);
       });
@@ -517,9 +519,9 @@ describe("onboarding ingestion queue integration", () => {
       expect(state.reconnectGuideVisible).toBe(false);
       expect(harness.diagnosticsEvents).toContain("ingestion.reconnect-scheduled");
 
-      underflowRefill.resolve(createMediaBatch(31, 2_000));
+      underflowRefill.resolve(createMediaBatch(61, 2_000));
       await vi.waitFor(() => {
-        expect(state.ingestionItemCount).toBeGreaterThanOrEqual(31);
+        expect(state.ingestionItemCount).toBeGreaterThanOrEqual(61);
       });
     } finally {
       vi.useRealTimers();
@@ -559,7 +561,7 @@ describe("onboarding ingestion queue integration", () => {
     refillRequest.resolve([]);
   });
 
-  it("defers incoming posters until entry slots reopen without dropping them", async () => {
+  it("defers incoming posters until replaceable tiles open up without dropping them", async () => {
     vi.stubGlobal("window", {
       innerWidth: 100,
       innerHeight: 100
@@ -567,9 +569,9 @@ describe("onboarding ingestion queue integration", () => {
 
     const state = createTestOnboardingState();
     const runtimeItems = createMediaBatch(120, 1);
-    const deferredRefillItems = createMediaBatch(31, 1_000);
+    const deferredRefillItems = createMediaBatch(61, 1_000);
     const queueFetchItems = vi.fn(async (requestedCount: number) => {
-      expect(requestedCount).toBe(31);
+      expect(requestedCount).toBe(61);
       return deferredRefillItems;
     });
 
@@ -578,12 +580,12 @@ describe("onboarding ingestion queue integration", () => {
       runtimeItems,
       queueFetchItems
     });
-    const deferredWall = createDeferredWallRows(16);
+    const deferredWall = createDeferredWallRows(31);
 
     harness.controller.ensureRuntime(TEST_SESSION, ["movies"]);
 
     await vi.waitFor(() => {
-      expect(state.ingestionItemCount).toBe(40);
+      expect(state.ingestionItemCount).toBe(120);
     });
 
     const streamState = createWallPosterGridStreamState({
@@ -591,12 +593,12 @@ describe("onboarding ingestion queue integration", () => {
       rows: deferredWall.rows
     });
 
-    for (let index = 0; index < 31; index += 1) {
+    for (let index = 0; index < 61; index += 1) {
       await harness.controller.consumeNextPosterForStream();
     }
 
     await vi.waitFor(() => {
-      expect(state.ingestionItemCount).toBe(40);
+      expect(state.ingestionItemCount).toBe(120);
     });
     expect(queueFetchItems).toHaveBeenCalledTimes(1);
     expect(state.ingestionStatus).toBe("ready");
@@ -605,9 +607,9 @@ describe("onboarding ingestion queue integration", () => {
     const deferredApplyResult = applyWallPosterGridStreamState(streamState, state.ingestionItems);
     expect(deferredApplyResult).toEqual({
       status: "deferred",
-      queuedItemCount: 31,
+      queuedItemCount: 61,
       appliedItemCount: 0,
-      pendingItemCount: 31
+      pendingItemCount: 61
     });
     expect(deferredApplyResult.status).not.toBe("unavailable");
     expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(
@@ -618,9 +620,9 @@ describe("onboarding ingestion queue integration", () => {
     const secondDeferredApplyResult = applyWallPosterGridStreamState(streamState, state.ingestionItems);
     expect(secondDeferredApplyResult).toEqual({
       status: "deferred",
-      queuedItemCount: 31,
+      queuedItemCount: 61,
       appliedItemCount: 0,
-      pendingItemCount: 31
+      pendingItemCount: 61
     });
     expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(
       deferredRefillItems.map((item) => item.id)
@@ -637,8 +639,8 @@ describe("onboarding ingestion queue integration", () => {
     const drainedApplyResult = applyWallPosterGridStreamState(streamState, state.ingestionItems);
     expect(drainedApplyResult).toEqual({
       status: "applied",
-      queuedItemCount: 31,
-      appliedItemCount: 31,
+      queuedItemCount: 61,
+      appliedItemCount: 61,
       pendingItemCount: 0
     });
     expect(streamState.pendingIncomingItems).toEqual([]);

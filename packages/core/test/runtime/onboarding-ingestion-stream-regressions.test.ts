@@ -83,6 +83,8 @@ function harness(options: {
   };
   storage?: Storage;
   now?: () => number;
+  // Defaults to a further page: the runtime delivered the first page of a larger library.
+  runtimeNextCursor?: string | null;
 }) {
   const state = createOnboardingBaseState<
     ProviderSession,
@@ -94,6 +96,7 @@ function harness(options: {
   const events: Array<{ event: string; details?: unknown }> = [];
   const posterCache = createPosterCache<MediaItem>();
   const adapterUpdatedSince: Array<string | null> = [];
+  const adapterCursors: Array<string | null> = [];
   const hooks: { onStateChange: ((s: MediaIngestionState) => void) | null } = { onStateChange: null };
 
   const controller = createOnboardingIngestionController({
@@ -109,7 +112,7 @@ function harness(options: {
         trigger: "initial",
         items: [...options.runtimeItems],
         fetchedAt: "2026-03-01T12:00:00.000Z",
-        nextCursor: null,
+        nextCursor: options.runtimeNextCursor === undefined ? "next-page" : options.runtimeNextCursor,
         error: null
       };
       return {
@@ -129,8 +132,9 @@ function harness(options: {
         dispose: () => {}
       };
     },
-    createQueueRefillFetchAdapter: ({ session, updatedSince }) => {
+    createQueueRefillFetchAdapter: ({ session, cursor, updatedSince }) => {
       adapterUpdatedSince.push(updatedSince);
+      adapterCursors.push(cursor);
       return options.adapter(session, updatedSince);
     },
     appendDiagnosticsLog: (entry) => {
@@ -147,7 +151,7 @@ function harness(options: {
     ...(options.now ? { now: options.now } : {})
   });
 
-  return { controller, state, events, posterCache, adapterUpdatedSince, hooks };
+  return { controller, state, events, posterCache, adapterUpdatedSince, adapterCursors, hooks };
 }
 
 // Emulates the Jellyfin listMedia contract used by the adapter:
@@ -187,9 +191,9 @@ describe("onboarding ingestion poster stream regressions", () => {
     });
 
     h.controller.ensureRuntime(SESSION, ["movies"]);
-    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(40));
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
 
-    for (let i = 0; i < 31; i += 1) {
+    for (let i = 0; i < 61; i += 1) {
       await h.controller.consumeNextPosterForStream();
     }
     await vi.waitFor(() => expect(fetchItems).toHaveBeenCalledTimes(1));
@@ -199,15 +203,15 @@ describe("onboarding ingestion poster stream regressions", () => {
       const consumed = await h.controller.consumeNextPosterForStream();
       consumedWhileInFlight.push(consumed?.id ?? "null");
     }
-    expect(h.state.ingestionItemCount).toBe(6);
+    expect(h.state.ingestionItemCount).toBe(56);
     expect(fetchItems).toHaveBeenCalledTimes(1);
 
-    pending.resolve(batch(31, 1_000));
+    pending.resolve(batch(61, 1_000));
     await flush();
 
     const queueIds = h.state.ingestionItems.map((m) => m.id);
     expect(consumedWhileInFlight.filter((id) => queueIds.includes(id))).toEqual([]);
-    expect(queueIds).toHaveLength(37);
+    expect(queueIds).toHaveLength(117);
     expect(h.events.filter((e) => e.event === "queue.refill-completed")).toHaveLength(1);
   });
 
@@ -226,7 +230,7 @@ describe("onboarding ingestion poster stream regressions", () => {
     });
 
     h.controller.ensureRuntime(SESSION, ["movies"]);
-    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(40));
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBeGreaterThanOrEqual(100));
 
     const consumedIds: string[] = [];
     for (let tick = 0; tick < 1000; tick += 1) {
@@ -261,14 +265,15 @@ describe("onboarding ingestion poster stream regressions", () => {
     });
 
     h.controller.ensureRuntime(SESSION, ["movies"]);
-    expect(h.adapterUpdatedSince).toEqual([null]);
     expect(h.state.ingestionFetchedAt).not.toBeNull();
-    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(40));
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBeGreaterThanOrEqual(40));
     for (let tick = 0; tick < 60; tick += 1) {
       await h.controller.consumeNextPosterForStream();
       await flush();
     }
 
+    // The adapter is only created once the delivered page is used up, and always as a full pass.
+    expect(h.adapterUpdatedSince).toEqual([null]);
     expect(jf.queries[0]?.updatedSince).toBeUndefined();
     expect(h.state.ingestionItemCount).toBeGreaterThan(1);
   });
@@ -281,21 +286,21 @@ describe("onboarding ingestion poster stream regressions", () => {
       });
     });
     const h = harness({
-      runtimeItems: batch(40, 1),
+      runtimeItems: batch(120, 1),
       adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) }),
       now: () => nowMs
     });
 
     h.controller.ensureRuntime(SESSION, ["movies"]);
-    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(40));
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
     for (let tick = 0; tick < 100; tick += 1) {
       await h.controller.consumeNextPosterForStream();
       await flush();
       nowMs += 1_000;
     }
 
-    // The queue drops below the low watermark around tick 31, leaving ~70 s of failures.
-    // With 2 s -> 60 s exponential backoff that is a handful of attempts, not ~70.
+    // The queue drops below the low watermark around tick 61, leaving ~40 s of failures.
+    // With 2 s -> 60 s exponential backoff that is a handful of attempts, not ~40.
     expect(fetchItems.mock.calls.length).toBeGreaterThan(0);
     expect(fetchItems.mock.calls.length).toBeLessThanOrEqual(6);
     expect(h.events.filter((e) => e.event === "queue.refill-requested").length)
@@ -310,8 +315,8 @@ describe("onboarding ingestion poster stream regressions", () => {
       adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
     });
     h.controller.ensureRuntime(SESSION, ["movies"]);
-    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(40));
-    for (let i = 0; i < 31; i += 1) {
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
+    for (let i = 0; i < 61; i += 1) {
       await h.controller.consumeNextPosterForStream();
     }
     await vi.waitFor(() => expect(fetchItems).toHaveBeenCalledTimes(1));
@@ -321,7 +326,7 @@ describe("onboarding ingestion poster stream regressions", () => {
     });
     expect(h.state.ingestionItemCount).toBe(0);
 
-    pending.resolve(batch(31, 1_000));
+    pending.resolve(batch(61, 1_000));
     await flush();
     expect(h.state.ingestionItemCount).toBe(0);
     expect(h.posterCache.getStats().itemCount).toBe(0);
@@ -356,5 +361,135 @@ describe("onboarding ingestion poster stream regressions", () => {
     expect(
       h.posterCache.list({ touch: false, sortByScore: false }).some((entry) => entry.key.startsWith("media-9"))
     ).toBe(false);
+  });
+
+  it("uses the rest of the delivered page before asking the adapter for more", async () => {
+    const fetchItems = vi.fn(async () => [] as readonly MediaItem[]);
+    const h = harness({
+      runtimeItems: batch(200, 1),
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
+    for (let i = 0; i < 61; i += 1) {
+      await h.controller.consumeNextPosterForStream();
+    }
+    await flush();
+
+    // Items 121..181 come from the page the runtime already delivered, not from a second fetch.
+    expect(fetchItems).not.toHaveBeenCalled();
+    expect(h.adapterCursors).toEqual([]);
+    expect(h.state.ingestionItems.map((m) => m.id)).toContain("media-0181");
+    expect(h.state.ingestionItems.map((m) => m.id)).not.toContain("media-0001");
+  });
+
+  it("continues the adapter after the page the ingestion runtime delivered", async () => {
+    const library = batch(300, 1);
+    const jf = fakeJellyfin(library);
+    const h = harness({
+      runtimeItems: library.slice(0, 100),
+      runtimeNextCursor: "100",
+      adapter: (session) =>
+        createRuntimePosterQueueRefillFetchAdapter({
+          provider: { listMedia: jf.listMedia },
+          session,
+          selectedLibraryIds: ["movies"],
+          cursor: "100"
+        })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBeGreaterThanOrEqual(100));
+    await flush();
+
+    expect(h.adapterCursors).toEqual(["100"]);
+    expect(jf.queries[0]?.cursor).toBe("100");
+    // The bootstrap top-up brings new posters (101..120), not a second copy of 1..20.
+    expect(h.state.ingestionItems.map((m) => m.id)).toContain("media-0120");
+    expect(h.events.find((e) => e.event === "queue.refill-completed")?.details).toMatchObject({
+      acceptedCount: 20,
+      duplicateCount: 0
+    });
+  });
+
+  it("keeps its place in a page that the runtime publishes again", async () => {
+    const fetchItems = vi.fn(async () => batch(61, 5_000));
+    const h = harness({
+      runtimeItems: batch(120, 1),
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(120));
+
+    // A refresh republishes the same page (status "refreshing", then "ready").
+    h.hooks.onStateChange?.({
+      status: "refreshing", trigger: "manual", items: batch(120, 1), fetchedAt: "2026-03-01T12:00:00.000Z", nextCursor: null, error: null
+    });
+    for (let i = 0; i < 61; i += 1) {
+      await h.controller.consumeNextPosterForStream();
+    }
+    await flush();
+
+    // The page was already used up, so the refill asks the adapter instead of re-serving 1..61.
+    expect(fetchItems).toHaveBeenCalledTimes(1);
+    expect(h.state.ingestionItems.map((m) => m.id)).not.toContain("media-0001");
+  });
+
+  it("cycles a library that fits in one page from memory instead of fetching it every tick", async () => {
+    const fetchItems = vi.fn(async () => batch(24, 1));
+    const h = harness({
+      runtimeItems: batch(24, 1),
+      runtimeNextCursor: null,
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(24));
+    const consumedIds: string[] = [];
+    for (let tick = 0; tick < 60; tick += 1) {
+      const consumed = await h.controller.consumeNextPosterForStream();
+      consumedIds.push(consumed?.id ?? "null");
+      await flush();
+    }
+
+    // The runtime's page was the whole library: no adapter, no network.
+    expect(h.adapterCursors).toEqual([]);
+    expect(fetchItems).not.toHaveBeenCalled();
+    // The pool is the library (24), refilled from memory when half of it has been shown.
+    expect(h.events.filter((e) => e.event === "queue.refill-requested").length).toBeLessThanOrEqual(6);
+    expect(new Set(consumedIds).size).toBe(24);
+    expect(h.state.ingestionItemCount).toBeGreaterThan(0);
+  });
+
+  it("puts posters from a changed page on the wall without waiting for the queue to drain", async () => {
+    const fetchItems = vi.fn(async () => [] as readonly MediaItem[]);
+    const h = harness({
+      runtimeItems: batch(24, 1),
+      runtimeNextCursor: null,
+      adapter: () => ({ fetchItems, getState: () => ({ cursor: null, updatedSince: null }) })
+    });
+
+    h.controller.ensureRuntime(SESSION, ["movies"]);
+    await vi.waitFor(() => expect(h.state.ingestionItemCount).toBe(24));
+
+    // A refresh finds six new titles. The queue is still full (the pool is the 24-item library),
+    // so without an immediate enqueue they would only arrive after half of it had been shown.
+    h.hooks.onStateChange?.({
+      status: "ready",
+      trigger: "manual",
+      items: [...batch(6, 900), ...batch(24, 1)],
+      fetchedAt: "2026-03-01T12:05:00.000Z",
+      nextCursor: null,
+      error: null
+    });
+    await flush();
+
+    const wallIds = h.state.ingestionItems.map((m) => m.id);
+    for (const newItem of batch(6, 900)) {
+      expect(wallIds).toContain(newItem.id);
+    }
+    expect(fetchItems).not.toHaveBeenCalled();
   });
 });

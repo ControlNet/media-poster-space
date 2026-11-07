@@ -12,6 +12,10 @@ import {
 } from "../../src/runtime";
 import type { MediaItem } from "../../src/types";
 
+// Queue mechanics are exercised with a small explicit policy; the default sizes are pinned in
+// "defines explicit default queue policy constants and bootstrap intent" (poster-queue.test.ts).
+const SMALL_TEST_POLICY = { lowWatermark: 10, refillTarget: 40 } as const;
+
 function createMediaItem(overrides: Partial<MediaItem> & Pick<MediaItem, "id">): MediaItem {
   return {
     id: overrides.id,
@@ -38,11 +42,11 @@ function createMediaBatch(count: number, startIndex = 1): MediaItem[] {
 
 describe("runtime poster queue model", () => {
   it("defines explicit default queue policy constants and bootstrap intent", () => {
-    expect(RUNTIME_POSTER_QUEUE_LOW_WATERMARK).toBe(10);
-    expect(RUNTIME_POSTER_QUEUE_REFILL_TARGET).toBe(40);
+    expect(RUNTIME_POSTER_QUEUE_LOW_WATERMARK).toBe(60);
+    expect(RUNTIME_POSTER_QUEUE_REFILL_TARGET).toBe(120);
     expect(DEFAULT_RUNTIME_POSTER_QUEUE_POLICY).toEqual({
-      lowWatermark: 10,
-      refillTarget: 40
+      lowWatermark: 60,
+      refillTarget: 120
     });
 
     const initialState = createRuntimePosterQueueState();
@@ -52,10 +56,10 @@ describe("runtime poster queue model", () => {
     expect(refillIntent).toEqual({
       shouldRefill: true,
       reason: "bootstrap",
-      requestedCount: 40,
+      requestedCount: 120,
       currentSize: 0,
-      lowWatermark: 10,
-      targetSize: 40
+      lowWatermark: 60,
+      targetSize: 120
     });
   });
 
@@ -77,6 +81,7 @@ describe("runtime poster queue model", () => {
     });
 
     const enqueueResult = enqueueRuntimePosterQueueItems({
+      policy: SMALL_TEST_POLICY,
       state: createRuntimePosterQueueState(),
       items: [
         firstJellyfin,
@@ -100,18 +105,19 @@ describe("runtime poster queue model", () => {
 
   it("emits deterministic refill intent transitions for queue sizes 40, 39, 10, and 9", () => {
     const seededState = createRuntimePosterQueueState({
+      policy: SMALL_TEST_POLICY,
       items: createMediaBatch(40)
     });
 
     expect(seededState.bootstrapPending).toBe(false);
-    expect(getRuntimePosterQueueRefillIntent({ state: seededState })).toMatchObject({
+    expect(getRuntimePosterQueueRefillIntent({ policy: SMALL_TEST_POLICY, state: seededState })).toMatchObject({
       shouldRefill: false,
       reason: null,
       currentSize: 40,
       requestedCount: 0
     });
 
-    const consumeAt39 = consumeRuntimePosterQueueItem({ state: seededState });
+    const consumeAt39 = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state: seededState });
     expect(consumeAt39.nextState.items).toHaveLength(39);
     expect(consumeAt39.refillIntent).toMatchObject({
       shouldRefill: false,
@@ -122,18 +128,18 @@ describe("runtime poster queue model", () => {
 
     let stateAt10 = consumeAt39.nextState;
     for (let index = 0; index < 29; index += 1) {
-      stateAt10 = consumeRuntimePosterQueueItem({ state: stateAt10 }).nextState;
+      stateAt10 = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state: stateAt10 }).nextState;
     }
 
     expect(stateAt10.items).toHaveLength(10);
-    expect(getRuntimePosterQueueRefillIntent({ state: stateAt10 })).toMatchObject({
+    expect(getRuntimePosterQueueRefillIntent({ policy: SMALL_TEST_POLICY, state: stateAt10 })).toMatchObject({
       shouldRefill: false,
       reason: null,
       currentSize: 10,
       requestedCount: 0
     });
 
-    const consumeAt9 = consumeRuntimePosterQueueItem({ state: stateAt10 });
+    const consumeAt9 = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state: stateAt10 });
     expect(consumeAt9.nextState.items).toHaveLength(9);
     expect(consumeAt9.refillIntent).toEqual({
       shouldRefill: true,
@@ -147,11 +153,13 @@ describe("runtime poster queue model", () => {
 
   it("keeps consume behavior pure and allows re-enqueue after dequeue", () => {
     const initialState = createRuntimePosterQueueState({
+      policy: SMALL_TEST_POLICY,
       items: [createMediaItem({ id: "requeue-001" }), createMediaItem({ id: "requeue-002" })]
     });
 
-    const firstConsume = consumeRuntimePosterQueueItem({ state: initialState });
+    const firstConsume = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state: initialState });
     const secondConsumeFromOriginalState = consumeRuntimePosterQueueItem({
+      policy: SMALL_TEST_POLICY,
       state: initialState
     });
 
@@ -167,6 +175,7 @@ describe("runtime poster queue model", () => {
     expect(firstConsume.nextState.items).toHaveLength(1);
 
     const reenqueue = enqueueRuntimePosterQueueItems({
+      policy: SMALL_TEST_POLICY,
       state: firstConsume.nextState,
       items: [firstConsume.consumedItem]
     });

@@ -11,11 +11,15 @@ import type {
 import type { DiagnosticsLogEntry } from "./diagnostics"
 import type { OnboardingBaseState } from "./onboarding-shared"
 import {
+  DEFAULT_RUNTIME_POSTER_QUEUE_POLICY,
   consumeRuntimePosterQueueItem,
+  createRuntimePosterQueuePolicy,
   createRuntimePosterQueueRefillRuntime,
   createRuntimePosterQueueState,
   enqueueRuntimePosterQueueItems,
   getRuntimePosterQueueRefillIntent,
+  toRuntimePosterQueueMediaIdentity,
+  type RuntimePosterQueuePolicy,
   type RuntimePosterQueueRefillReason,
   type RuntimePosterQueueState
 } from "./poster-queue"
@@ -134,6 +138,17 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   let queueRefillSourceItems: MediaItem[] = []
   let queueRefillSourceCursor = 0
   let queueRefillFetchAdapter: RuntimePosterQueueRefillFetchAdapter | null = null
+  // The adapter is created on first use so that it continues after the page the ingestion runtime
+  // already delivered instead of fetching that page a second time.
+  let queueRefillAdapterSource: {
+    session: ProviderSession
+    selectedLibraryIds: readonly string[]
+  } | null = null
+  let latestIngestionNextCursor: string | null = null
+  // True when the runtime's page started at the beginning of the library and reported no further
+  // page: the delivered items are the whole library, so fetching again would only repeat them.
+  let wholeLibraryDelivered = false
+  let lastReadyIngestionNextCursor: string | null = null
   let queueLifecycleNonce = 0
   let runtimeGeneration = 0
   let refillRetryNotBeforeMs: number | null = null
@@ -155,6 +170,10 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     queueRefillSourceItems = []
     queueRefillSourceCursor = 0
     queueRefillFetchAdapter = null
+    queueRefillAdapterSource = null
+    latestIngestionNextCursor = null
+    wholeLibraryDelivered = false
+    lastReadyIngestionNextCursor = null
     refillRetryNotBeforeMs = null
     refillRetryBackoffMs = options.reconnectInitialBackoffMs
   }
@@ -164,9 +183,55 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     options.state.ingestionItemCount = posterQueueState.items.length
   }
 
-  function setQueueRefillSourceItems(items: readonly MediaItem[]): void {
+  function hasSameQueueRefillSourceItems(items: readonly MediaItem[]): boolean {
+    return items.length === queueRefillSourceItems.length
+      && items.every((item, index) => {
+        const current = queueRefillSourceItems[index]
+        return current !== undefined
+          && toRuntimePosterQueueMediaIdentity(current) === toRuntimePosterQueueMediaIdentity(item)
+      })
+  }
+
+  // Returns whether the page changed.
+  function setQueueRefillSourceItems(items: readonly MediaItem[]): boolean {
+    // The runtime republishes the same page (e.g. while a refresh is in flight); keep the read
+    // position so those posters are not handed out a second time.
+    if (hasSameQueueRefillSourceItems(items)) {
+      return false
+    }
+
     queueRefillSourceItems = [...items]
     queueRefillSourceCursor = 0
+    return true
+  }
+
+  // A library smaller than the default pool can never fill it; aim for the whole library instead,
+  // so the queue refills from memory every half library rather than on every stream tick.
+  function resolveQueuePolicy(): RuntimePosterQueuePolicy {
+    const librarySize = queueRefillSourceItems.length
+    if (!wholeLibraryDelivered || librarySize === 0 || librarySize >= DEFAULT_RUNTIME_POSTER_QUEUE_POLICY.refillTarget) {
+      return DEFAULT_RUNTIME_POSTER_QUEUE_POLICY
+    }
+
+    return createRuntimePosterQueuePolicy({
+      refillTarget: librarySize,
+      lowWatermark: Math.max(1, Math.floor(librarySize / 2))
+    })
+  }
+
+  function resolveQueueRefillFetchAdapter(): RuntimePosterQueueRefillFetchAdapter | null {
+    if (!queueRefillFetchAdapter && queueRefillAdapterSource && options.createQueueRefillFetchAdapter) {
+      queueRefillFetchAdapter = options.createQueueRefillFetchAdapter({
+        session: queueRefillAdapterSource.session,
+        selectedLibraryIds: queueRefillAdapterSource.selectedLibraryIds,
+        cursor: latestIngestionNextCursor,
+        // Always a full pass: a changes-only query returns nothing for a library that has not
+        // changed, which used to starve a warm-started wall.
+        updatedSince: null
+      })
+    }
+
+    return queueRefillFetchAdapter
   }
 
   function takeQueueRefillSourceItems(requestedCount: number, options: {
@@ -203,7 +268,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
   }
 
   function seedPosterQueueFromSource(): void {
-    const bootstrapIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState })
+    const bootstrapIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState, policy: resolveQueuePolicy() })
     if (!bootstrapIntent.shouldRefill || bootstrapIntent.requestedCount === 0) {
       syncWallItemsFromQueue()
       return
@@ -219,25 +284,31 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
 
     posterQueueState = enqueueRuntimePosterQueueItems({
       state: posterQueueState,
+      policy: resolveQueuePolicy(),
       items: bootstrapItems
     }).nextState
     syncWallItemsFromQueue()
   }
 
   async function fetchQueueRefillItems(requestedCount: number): Promise<readonly MediaItem[]> {
-    if (queueRefillFetchAdapter) {
-      const fetchedItems = await queueRefillFetchAdapter.fetchItems(requestedCount)
+    // Posters the ingestion runtime already delivered but the queue has not used yet come first.
+    const unusedSourceItems = takeQueueRefillSourceItems(requestedCount, {
+      allowWrap: false
+    })
+    if (unusedSourceItems.length > 0) {
+      return unusedSourceItems
+    }
+
+    const adapter = wholeLibraryDelivered ? null : resolveQueueRefillFetchAdapter()
+    if (adapter) {
+      const fetchedItems = await adapter.fetchItems(requestedCount)
       if (fetchedItems.length > 0) {
         return fetchedItems
       }
-
-      // An empty page (e.g. the end of a pass) must not starve the wall: keep rotating
-      // through the items the ingestion runtime already delivered.
-      return takeQueueRefillSourceItems(requestedCount, {
-        allowWrap: true
-      })
     }
 
+    // An empty page (e.g. the end of a pass) must not starve the wall: keep rotating
+    // through the items the ingestion runtime already delivered.
     return takeQueueRefillSourceItems(requestedCount, {
       allowWrap: true
     })
@@ -256,7 +327,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       return
     }
 
-    const refillIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState })
+    const refillIntent = getRuntimePosterQueueRefillIntent({ state: posterQueueState, policy: resolveQueuePolicy() })
     if (!refillIntent.shouldRefill || refillIntent.reason === null || refillIntent.requestedCount === 0) {
       return
     }
@@ -288,6 +359,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     try {
       const refillResult = await posterQueueRefillRuntime.refillIfNeeded({
         state: posterQueueState,
+        policy: resolveQueuePolicy(),
         fetchItems: fetchQueueRefillItems
       })
 
@@ -302,6 +374,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
       // was in flight. Add the fetched items to the queue as it is now.
       posterQueueState = enqueueRuntimePosterQueueItems({
         state: posterQueueState,
+        policy: resolveQueuePolicy(),
         items: refillResult.acceptedItems
       }).nextState
       syncWallItemsFromQueue()
@@ -560,10 +633,31 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     options.state.ingestionStatus = nextState.status
     options.state.ingestionTrigger = nextState.trigger
 
+    if (nextState.status === "ready") {
+      // A scheduled refresh continues from the previous page's cursor; any other refresh, or one
+      // after the last page, starts at the beginning of the library.
+      const pageStartedAtBeginning =
+        nextState.trigger !== "scheduled" || lastReadyIngestionNextCursor === null
+      wholeLibraryDelivered = pageStartedAtBeginning && nextState.nextCursor === null
+      lastReadyIngestionNextCursor = nextState.nextCursor
+    }
+
     if (nextState.items.length > 0) {
-      setQueueRefillSourceItems(nextState.items)
+      const pageChanged = setQueueRefillSourceItems(nextState.items)
+      if (!queueRefillFetchAdapter) {
+        latestIngestionNextCursor = nextState.nextCursor
+      }
       if (posterQueueState.items.length === 0) {
         seedPosterQueueFromSource()
+      } else if (pageChanged) {
+        // A different page (the library changed, or the next page of a large library): offer its
+        // posters to the wall now rather than once the queue has drained to its low watermark.
+        posterQueueState = enqueueRuntimePosterQueueItems({
+          state: posterQueueState,
+          policy: resolveQueuePolicy(),
+          items: takeQueueRefillSourceItems(queueRefillSourceItems.length, { allowWrap: false })
+        }).nextState
+        syncWallItemsFromQueue()
       }
 
       if (ingestionRuntimeKey) {
@@ -653,14 +747,7 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
     const generation = runtimeGeneration
     ingestionRuntimeKey = runtimeKey
     hydratePosterCache(runtimeKey)
-    // Always start with a full pass: a changes-only first query returns nothing for a
-    // library that has not changed, which used to starve a warm-started wall.
-    queueRefillFetchAdapter = options.createQueueRefillFetchAdapter?.({
-      session,
-      selectedLibraryIds,
-      cursor: null,
-      updatedSince: null
-    }) ?? null
+    queueRefillAdapterSource = { session, selectedLibraryIds }
     ingestionRuntime = options.createRuntime({
       session,
       selectedLibraryIds,
@@ -684,7 +771,8 @@ export function createOnboardingIngestionController<Snapshot = unknown>(
 
     const currentQueueItems = [...posterQueueState.items]
     const consumeResult = consumeRuntimePosterQueueItem({
-      state: posterQueueState
+      state: posterQueueState,
+      policy: resolveQueuePolicy()
     })
 
     const shouldRetainLastVisiblePoster =

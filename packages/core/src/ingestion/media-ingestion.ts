@@ -234,7 +234,7 @@ export function createMediaIngestionRuntime(
         nextCursor: page.nextCursor ?? null,
         error: null
       };
-      publishState();
+      publishFinalRefreshState();
 
       return cloneState(state);
     } catch (error) {
@@ -249,7 +249,7 @@ export function createMediaIngestionRuntime(
         trigger,
         error: mapUnknownErrorToProviderError(error)
       };
-      publishState();
+      publishFinalRefreshState();
 
       return cloneState(state);
     } finally {
@@ -259,16 +259,26 @@ export function createMediaIngestionRuntime(
     }
   }
 
+  // The refresh is over once its final state is published: listeners re-enable refresh controls on
+  // that state, so a refresh they request right then must start a new request, not join this one.
+  function publishFinalRefreshState(): void {
+    refreshPromise = null;
+    publishState();
+  }
+
   async function refresh(trigger: MediaIngestionRefreshTrigger): Promise<MediaIngestionState> {
     if (refreshPromise) {
       return refreshPromise;
     }
 
-    refreshPromise = performRefresh(trigger).finally(() => {
-      refreshPromise = null;
+    const currentRefresh = performRefresh(trigger).finally(() => {
+      if (refreshPromise === currentRefresh) {
+        refreshPromise = null;
+      }
     });
+    refreshPromise = currentRefresh;
 
-    return refreshPromise;
+    return currentRefresh;
   }
 
   return {

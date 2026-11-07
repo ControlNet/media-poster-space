@@ -8,6 +8,10 @@ import {
 import type { RuntimePosterQueueState } from "../../src/runtime";
 import type { MediaItem } from "../../src/types";
 
+// Queue mechanics are exercised with a small explicit policy; the default sizes are pinned in
+// "defines explicit default queue policy constants and bootstrap intent" (poster-queue.test.ts).
+const SMALL_TEST_POLICY = { lowWatermark: 10, refillTarget: 40 } as const;
+
 function createMediaItem(overrides: Partial<MediaItem> & Pick<MediaItem, "id">): MediaItem {
   return {
     id: overrides.id,
@@ -96,6 +100,7 @@ describe("runtime poster queue refill runtime", () => {
       });
 
       const result = await runtime.refillIfNeeded({
+        policy: SMALL_TEST_POLICY,
         state,
         fetchItems
       });
@@ -126,13 +131,14 @@ describe("runtime poster queue refill runtime", () => {
     });
 
     let state = createRuntimePosterQueueState({
+      policy: SMALL_TEST_POLICY,
       items: catalog.slice(0, 40)
     });
     const consumedIds: string[] = [];
     let refillCount = 0;
 
     for (let index = 0; index < 40; index += 1) {
-      const consumeResult = consumeRuntimePosterQueueItem({ state });
+      const consumeResult = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state });
       if (!consumeResult.consumedItem) {
         throw new Error("Expected queue consume to return a media item before cycle exhaustion");
       }
@@ -142,6 +148,7 @@ describe("runtime poster queue refill runtime", () => {
 
       if (consumeResult.refillIntent.shouldRefill) {
         const refillResult = await runtime.refillIfNeeded({
+          policy: SMALL_TEST_POLICY,
           state,
           fetchItems
         });
@@ -172,7 +179,7 @@ describe("runtime poster queue refill runtime", () => {
     const consumedBeforeRefill: string[] = [];
 
     for (let index = 0; index < 3; index += 1) {
-      const consumeResult = consumeRuntimePosterQueueItem({ state });
+      const consumeResult = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state });
       if (!consumeResult.consumedItem) {
         throw new Error("Expected seeded queue consume to return a media item");
       }
@@ -184,6 +191,7 @@ describe("runtime poster queue refill runtime", () => {
     expect(state.items).toHaveLength(9);
 
     const refillResult = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems
     });
@@ -202,7 +210,7 @@ describe("runtime poster queue refill runtime", () => {
     const consumedAfterRefill: string[] = [];
     let postRefillState = refillResult.nextState;
     for (let index = 0; index < 12; index += 1) {
-      const consumeResult = consumeRuntimePosterQueueItem({ state: postRefillState });
+      const consumeResult = consumeRuntimePosterQueueItem({ policy: SMALL_TEST_POLICY, state: postRefillState });
       if (!consumeResult.consumedItem) {
         throw new Error("Expected refill state consume to return a media item");
       }
@@ -224,6 +232,7 @@ describe("runtime poster queue refill runtime", () => {
     const fetchItems = vi.fn(async (requestedCount: number) => createMediaBatch(requestedCount, 100));
 
     const result = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems
     });
@@ -257,6 +266,7 @@ describe("runtime poster queue refill runtime", () => {
     }
 
     const result = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems: async () => [
         firstQueuedItem,
@@ -286,6 +296,7 @@ describe("runtime poster queue refill runtime", () => {
     };
 
     const result = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems: async () => []
     });
@@ -315,10 +326,12 @@ describe("runtime poster queue refill runtime", () => {
     });
 
     const firstRefillPromise = runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems
     });
     const secondRefillPromise = runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems
     });
@@ -354,6 +367,7 @@ describe("runtime poster queue refill runtime", () => {
     });
 
     const result = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state,
       fetchItems
     });

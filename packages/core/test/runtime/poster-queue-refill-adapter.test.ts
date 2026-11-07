@@ -9,6 +9,10 @@ import {
 import type { MediaProvider } from "../../src/provider";
 import type { ProviderSession, MediaItem, ProviderError } from "../../src/types";
 
+// Queue mechanics are exercised with a small explicit policy; the default sizes are pinned in
+// "defines explicit default queue policy constants and bootstrap intent" (poster-queue.test.ts).
+const SMALL_TEST_POLICY = { lowWatermark: 10, refillTarget: 40 } as const;
+
 const TEST_SESSION: ProviderSession = {
   providerId: "jellyfin",
   serverUrl: "https://jellyfin.local",
@@ -100,6 +104,7 @@ describe("runtime poster queue refill fetch adapter", () => {
 
     const runtime = createRuntimePosterQueueRefillRuntime();
     const firstRefill = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state: {
         items: createMediaBatch(9),
         bootstrapPending: false
@@ -118,15 +123,18 @@ describe("runtime poster queue refill fetch adapter", () => {
     });
 
     const afterFirstConsume = consumeRuntimePosterQueueItem({
+      policy: SMALL_TEST_POLICY,
       state: firstRefill.nextState
     }).nextState;
     const lowWatermarkState = consumeRuntimePosterQueueItem({
+      policy: SMALL_TEST_POLICY,
       state: afterFirstConsume
     }).nextState;
 
     expect(lowWatermarkState.items).toHaveLength(9);
 
     const secondRefill = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state: lowWatermarkState,
       fetchItems: adapter.fetchItems
     });
@@ -148,12 +156,14 @@ describe("runtime poster queue refill fetch adapter", () => {
     });
 
     const afterSecondConsume = consumeRuntimePosterQueueItem({
+      policy: SMALL_TEST_POLICY,
       state: secondRefill.nextState
     }).nextState;
 
     expect(afterSecondConsume.items).toHaveLength(9);
 
     const thirdRefill = await runtime.refillIfNeeded({
+      policy: SMALL_TEST_POLICY,
       state: afterSecondConsume,
       fetchItems: adapter.fetchItems
     });

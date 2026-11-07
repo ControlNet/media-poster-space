@@ -322,4 +322,30 @@ describe("media ingestion", () => {
     expect(states.map((state) => state.status)).toEqual(["refreshing"]);
     expect(runtime.getState().error).toBeNull();
   });
+
+  it("starts a new refresh when one is requested from the state that ends the previous refresh", async () => {
+    const listMedia = vi.fn(async (): Promise<MediaPage> => ({
+      items: [],
+      fetchedAt: "2026-03-01T12:00:00.000Z"
+    }));
+    let requestedFromListener = false;
+    const runtime = createMediaIngestionRuntime({
+      provider: { listMedia },
+      session: TEST_SESSION,
+      selectedLibraryIds: ["movies"],
+      onStateChange: (state) => {
+        // The UI re-enables its refresh button on this state; a click right then must not be lost.
+        if (state.status === "ready" && !requestedFromListener) {
+          requestedFromListener = true;
+          void runtime.refreshNow();
+        }
+      }
+    });
+
+    await runtime.refreshNow();
+    await vi.waitFor(() => {
+      expect(listMedia).toHaveBeenCalledTimes(2);
+    });
+    runtime.dispose();
+  });
 });

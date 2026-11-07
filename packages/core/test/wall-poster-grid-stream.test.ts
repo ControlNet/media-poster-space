@@ -5,15 +5,15 @@ import {
   applyWallPosterGridStreamState,
   collectIncomingWallPosterItems,
   collectPendingWallPosterIncomingItems,
-  collectEntrySideWallPosterWritableIndices,
-  collectOrderedWallPosterWritableIndices,
+  collectReplaceableWallPosterTileIndices,
   collectVisibleWallPosterTileIndices,
   consumeWallPosterIncomingRowIndex,
   createWallPosterGridSection,
   createWallPosterEntryEdgeIndices,
   createWallPosterRowOrder,
+  createWallPosterTileFillOrder,
   getWallPosterTileMediaIdentity,
-  resolveWallPosterEntryBufferEligibility,
+  resolveWallPosterRowTileCount,
   toWallPosterMediaIdentity,
   WALL_POSTER_GRID_STREAM_APPLIER_KEY
 } from "../src/wall/ui/presentation-sections"
@@ -115,7 +115,6 @@ function createWallPosterGridRowState(
     | {
         tileCount?: number
         tiles?: WallPosterTileState[]
-        nextEntryPointer?: number
       } = entryIndices.length
 ): WallPosterGridRowState {
   const options = typeof tileCountOrOptions === "number"
@@ -126,7 +125,6 @@ function createWallPosterGridRowState(
 
   return {
     entryIndices: [...entryIndices],
-    nextEntryPointer: options.nextEntryPointer ?? 0,
     tiles: options.tiles ?? Array.from(
       { length: options.tileCount ?? entryIndices.length },
       () => createWallPosterTileState()
@@ -149,7 +147,8 @@ function createWallPosterGridStreamState(options?: {
     ),
     nextIncomingRowPointer: options?.nextIncomingRowPointer ?? 0,
     pendingIncomingItems: [...(options?.pendingIncomingItems ?? [])],
-    rows: [...(options?.rows ?? [])]
+    rows: [...(options?.rows ?? [])],
+    nextWriteSequence: 0
   }
 }
 
@@ -181,6 +180,8 @@ function createMockElementFactory(): ElementFactory {
       style: createMockStyle(),
       append(...nodes: unknown[]) {
         children.push(...nodes)
+      },
+      addEventListener() {
       },
       get children(): HTMLCollection {
         return children as unknown as HTMLCollection
@@ -250,7 +251,7 @@ describe("wall poster grid stream helpers", () => {
     expect(createWallPosterEntryEdgeIndices(0, "normal")).toEqual([])
   })
 
-  it("computes right-side writable entry buffer for normal rows", () => {
+  it("lists off-screen tiles of a normal row: entry side nearest first, then the exit side", () => {
     const viewportRect = createWallPosterRect(0, 100)
     const tileRects = [
       createWallPosterRect(-240, -140),
@@ -263,23 +264,12 @@ describe("wall poster grid stream helpers", () => {
     ]
 
     expect(collectVisibleWallPosterTileIndices(viewportRect, tileRects)).toEqual([2, 3])
-    expect(collectEntrySideWallPosterWritableIndices(viewportRect, tileRects, "normal")).toEqual([
-      6,
-      5,
-      4
+    expect(collectReplaceableWallPosterTileIndices(viewportRect, tileRects, "normal")).toEqual([
+      4, 5, 6, 1, 0
     ])
-    expect(collectOrderedWallPosterWritableIndices(viewportRect, tileRects, "normal")).toEqual([
-      4,
-      5
-    ])
-    expect(resolveWallPosterEntryBufferEligibility(viewportRect, tileRects, "normal")).toEqual({
-      visibleIndices: [2, 3],
-      entrySideWritableIndices: [6, 5, 4],
-      orderedWritableIndices: [4, 5]
-    })
   })
 
-  it("treats any viewport intersection as protected for reverse rows", () => {
+  it("lists off-screen tiles of a reverse row with the left edge as the entry side", () => {
     const viewportRect = createWallPosterRect(0, 100)
     const tileRects = [
       createWallPosterRect(-340, -240),
@@ -291,18 +281,12 @@ describe("wall poster grid stream helpers", () => {
     ]
 
     expect(collectVisibleWallPosterTileIndices(viewportRect, tileRects)).toEqual([3, 4])
-    expect(collectEntrySideWallPosterWritableIndices(viewportRect, tileRects, "reverse")).toEqual([
-      0,
-      1,
-      2
-    ])
-    expect(collectOrderedWallPosterWritableIndices(viewportRect, tileRects, "reverse")).toEqual([
-      2,
-      1
+    expect(collectReplaceableWallPosterTileIndices(viewportRect, tileRects, "reverse")).toEqual([
+      2, 1, 0, 5
     ])
   })
 
-  it("makes tiles writable again only after full viewport exit", () => {
+  it("never lists a tile that still overlaps the viewport by a pixel", () => {
     const viewportRect = createWallPosterRect(0, 100)
     const tileRects = [
       createWallPosterRect(99, 199),
@@ -310,7 +294,199 @@ describe("wall poster grid stream helpers", () => {
     ]
 
     expect(collectVisibleWallPosterTileIndices(viewportRect, tileRects)).toEqual([0])
-    expect(collectOrderedWallPosterWritableIndices(viewportRect, tileRects, "normal")).toEqual([1])
+    expect(collectReplaceableWallPosterTileIndices(viewportRect, tileRects, "normal")).toEqual([1])
+  })
+
+  it("writes incoming posters to off-screen tiles on either side and never to visible ones", () => {
+    vi.stubGlobal("window", { innerWidth: 100, innerHeight: 100 })
+
+    const visibleMedia1 = createMediaItem("visible-1")
+    const visibleMedia2 = createMediaItem("visible-2")
+    const incoming = [1, 2, 3, 4, 5].map((index) => createMediaItem(`incoming-${index}`))
+    const rowState = createWallPosterGridRowState(createWallPosterEntryEdgeIndices(6, "normal"), {
+      tiles: [
+        createWallPosterTileState({ rect: createWallPosterRect(-240, -140), initialItem: createMediaItem("exit-0") }),
+        createWallPosterTileState({ rect: createWallPosterRect(-120, -20), initialItem: createMediaItem("exit-1") }),
+        createWallPosterTileState({ rect: createWallPosterRect(-40, 60), initialItem: visibleMedia1 }),
+        createWallPosterTileState({ rect: createWallPosterRect(60, 160), initialItem: visibleMedia2 }),
+        createWallPosterTileState({ rect: createWallPosterRect(100, 200) }),
+        createWallPosterTileState({ rect: createWallPosterRect(220, 320) })
+      ]
+    })
+    const streamState = createWallPosterGridStreamState({
+      items: [visibleMedia1, visibleMedia2],
+      rows: [rowState]
+    })
+
+    expect(applyWallPosterGridStreamState(streamState, [visibleMedia1, visibleMedia2, ...incoming])).toEqual({
+      status: "applied",
+      queuedItemCount: 5,
+      appliedItemCount: 4,
+      pendingItemCount: 1
+    })
+    expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(["incoming-5"])
+    expect(rowState.tiles.map((tileState) => tileState.posterThumb.style.backgroundImage)).toEqual([
+      `url(${incoming[3]?.poster.url})`,
+      `url(${incoming[2]?.poster.url})`,
+      `url(${visibleMedia1.poster.url})`,
+      `url(${visibleMedia2.poster.url})`,
+      `url(${incoming[0]?.poster.url})`,
+      `url(${incoming[1]?.poster.url})`
+    ])
+    expect(getWallPosterTileMediaIdentity(rowState.tiles[4]?.tile ?? {})).toBe(
+      toWallPosterMediaIdentity(incoming[0] ?? visibleMedia1)
+    )
+  })
+
+  it("rotates through off-screen tiles, replacing the one written longest ago", () => {
+    vi.stubGlobal("window", { innerWidth: 100, innerHeight: 100 })
+
+    const rowState = createWallPosterGridRowState(createWallPosterEntryEdgeIndices(3, "normal"), {
+      tiles: [
+        createWallPosterTileState({ rect: createWallPosterRect(0, 100) }),
+        createWallPosterTileState({ rect: createWallPosterRect(120, 220) }),
+        createWallPosterTileState({ rect: createWallPosterRect(240, 340) })
+      ]
+    })
+    const streamState = createWallPosterGridStreamState({ rows: [rowState] })
+    const written: string[] = []
+
+    let queue: MediaItem[] = []
+    for (let step = 1; step <= 4; step += 1) {
+      queue = [...queue, createMediaItem(`step-${step}`)]
+      applyWallPosterGridStreamState(streamState, queue)
+      written.push(rowState.tiles.map((tileState) => {
+        return tileState.posterThumb.style.backgroundImage.replace(/^url\(https:\/\/posters\.test\/|\.jpg\)$/g, "") || "-"
+      }).join(","))
+    }
+
+    // The nearest tile first, then the other one, then back to the first: never the same tile twice
+    // in a row while another has been waiting longer.
+    expect(written).toEqual([
+      "-,step-1,-",
+      "-,step-1,step-2",
+      "-,step-3,step-2",
+      "-,step-3,step-4"
+    ])
+  })
+
+  it("replaces tiles that repeat a poster before tiles that show a unique one", () => {
+    vi.stubGlobal("window", { innerWidth: 100, innerHeight: 100 })
+
+    const repeated = createMediaItem("repeated")
+    const unique = createMediaItem("unique")
+    const incoming = createMediaItem("incoming")
+    const offScreen = createWallPosterRect(500, 600)
+    const tiles = [0, 1, 2].map(() => createMutableWallPosterTileState({ rect: offScreen }))
+    // Give tiles 0 and 2 the same poster and tile 1 a unique one, through one-tile walls.
+    const seed = (index: number, item: MediaItem): void => {
+      const tileState = tiles[index]?.tileState
+      if (!tileState) {
+        throw new Error(`expected tile ${index}`)
+      }
+      applyWallPosterGridStreamState(
+        createWallPosterGridStreamState({ rows: [createWallPosterGridRowState([0], { tiles: [tileState] })] }),
+        [item]
+      )
+    }
+    seed(0, repeated)
+    seed(1, unique)
+    seed(2, repeated)
+    tiles[0]?.setRect(createWallPosterRect(0, 100))
+    tiles[1]?.setRect(createWallPosterRect(120, 220))
+    tiles[2]?.setRect(createWallPosterRect(240, 340))
+    const rowState = createWallPosterGridRowState(createWallPosterEntryEdgeIndices(3, "normal"), {
+      tiles: tiles.map((tile) => tile.tileState)
+    })
+    const streamState = createWallPosterGridStreamState({ rows: [rowState] })
+
+    applyWallPosterGridStreamState(streamState, [incoming])
+
+    // Tile 1 is nearer to the edge but unique, so the repeat on tile 2 takes the new poster.
+    const identities = rowState.tiles.map((tileState) => getWallPosterTileMediaIdentity(tileState.tile))
+    expect(identities).toEqual([
+      toWallPosterMediaIdentity(repeated),
+      toWallPosterMediaIdentity(unique),
+      toWallPosterMediaIdentity(incoming)
+    ])
+  })
+
+  it("does not put a second copy of a poster that is already on the wall", () => {
+    vi.stubGlobal("window", { innerWidth: 100, innerHeight: 100 })
+
+    const shown = createMediaItem("shown")
+    const rowState = createWallPosterGridRowState(createWallPosterEntryEdgeIndices(2, "normal"), {
+      tiles: [
+        createWallPosterTileState({ rect: createWallPosterRect(120, 220) }),
+        createWallPosterTileState({ rect: createWallPosterRect(240, 340) })
+      ]
+    })
+    const streamState = createWallPosterGridStreamState({ rows: [rowState] })
+    applyWallPosterGridStreamState(streamState, [shown])
+
+    // The poster leaves the queue and comes back (the library wrapped around).
+    applyWallPosterGridStreamState(streamState, [])
+    expect(applyWallPosterGridStreamState(streamState, [shown])).toEqual({
+      status: "noop",
+      queuedItemCount: 1,
+      appliedItemCount: 0,
+      pendingItemCount: 0
+    })
+    expect(rowState.tiles.filter((tileState) => {
+      return getWallPosterTileMediaIdentity(tileState.tile) === toWallPosterMediaIdentity(shown)
+    })).toHaveLength(1)
+  })
+
+  it("sizes a row to its scroll range instead of repeating the poster list", () => {
+    expect(resolveWallPosterRowTileCount(1280)).toBe(13)
+    expect(resolveWallPosterRowTileCount(1920)).toBe(18)
+    expect(resolveWallPosterRowTileCount(3840)).toBe(34)
+  })
+
+  it("fills the always-visible middle columns before the row ends", () => {
+    const fillOrder = createWallPosterTileFillOrder(2, 18, 1920)
+
+    expect([...fillOrder].sort((left, right) => left - right)).toEqual(Array.from({ length: 36 }, (_, index) => index))
+    // At 1920px the middle of the scroll range is column 9; both rows' column 9 come first and the
+    // row ends (columns 0 and 17) come last.
+    expect(fillOrder.slice(0, 2)).toEqual([9, 27])
+    expect(fillOrder.slice(-2)).toEqual([0, 18])
+  })
+
+  it("builds a wall where every tile shows a different poster when there are enough posters", () => {
+    vi.stubGlobal("window", { innerWidth: 1920, innerHeight: 1080 })
+    const items = Array.from({ length: 120 }, (_, index) => createMediaItem(`poster-${index}`))
+    const posterGrid = createWallPosterGridSection(createMockElementFactory(), { items })
+    const rows = [...(posterGrid.children as unknown as HTMLElement[])]
+    const backgrounds = rows.flatMap((row) => {
+      return [...(row.children as unknown as HTMLElement[])].map((tile) => {
+        const thumb = (tile.children as unknown as HTMLElement[])[0]
+        return thumb?.style.backgroundImage ?? ""
+      })
+    })
+
+    expect(rows).toHaveLength(5)
+    expect(backgrounds).toHaveLength(5 * 18)
+    expect(new Set(backgrounds).size).toBe(5 * 18)
+  })
+
+  it("keeps repeats off the always-visible columns when there are fewer posters than tiles", () => {
+    vi.stubGlobal("window", { innerWidth: 1920, innerHeight: 1080 })
+    const items = Array.from({ length: 60 }, (_, index) => createMediaItem(`poster-${index}`))
+    const posterGrid = createWallPosterGridSection(createMockElementFactory(), { items })
+    const rows = [...(posterGrid.children as unknown as HTMLElement[])]
+    const middleColumns = rows.flatMap((row) => {
+      return [...(row.children as unknown as HTMLElement[])].slice(7, 12).map((tile) => {
+        return (tile.children as unknown as HTMLElement[])[0]?.style.backgroundImage ?? ""
+      })
+    })
+    const testIds = rows.flatMap((row) => {
+      return [...(row.children as unknown as HTMLElement[])].map((tile) => tile.dataset.testid).filter(Boolean)
+    })
+
+    expect(new Set(middleColumns).size).toBe(middleColumns.length)
+    expect(new Set(testIds).size).toBe(60)
+    expect(testIds).toContain("poster-item-0")
   })
 
   it("creates deterministic row orders with full index coverage", () => {
@@ -406,80 +582,7 @@ describe("wall poster grid stream helpers", () => {
     expect(streamState.pendingIncomingItems).toEqual([])
   })
 
-  it("applies incoming posters only to eligible entry-buffer tiles", () => {
-    vi.stubGlobal("window", {
-      innerWidth: 100,
-      innerHeight: 100
-    })
-
-    const visibleMedia1 = createMediaItem("visible-1")
-    const visibleMedia2 = createMediaItem("visible-2")
-    const writableMedia1 = createMediaItem("writable-1")
-    const writableMedia2 = createMediaItem("writable-2")
-    const incomingMedia1 = createMediaItem("incoming-1")
-    const incomingMedia2 = createMediaItem("incoming-2")
-    const incomingMedia3 = createMediaItem("incoming-3")
-    const rowState = createWallPosterGridRowState(
-      createWallPosterEntryEdgeIndices(6, "normal"),
-      {
-        tiles: [
-          createWallPosterTileState({
-            rect: createWallPosterRect(-240, -140),
-            initialItem: createMediaItem("exit-0")
-          }),
-          createWallPosterTileState({
-            rect: createWallPosterRect(-120, -20),
-            initialItem: createMediaItem("exit-1")
-          }),
-          createWallPosterTileState({
-            rect: createWallPosterRect(-40, 60),
-            initialItem: visibleMedia1
-          }),
-          createWallPosterTileState({
-            rect: createWallPosterRect(60, 160),
-            initialItem: visibleMedia2
-          }),
-          createWallPosterTileState({
-            rect: createWallPosterRect(100, 200),
-            initialItem: writableMedia1
-          }),
-          createWallPosterTileState({
-            rect: createWallPosterRect(220, 320),
-            initialItem: writableMedia2
-          })
-        ]
-      }
-    )
-    const streamState = createWallPosterGridStreamState({
-      items: [visibleMedia1, visibleMedia2],
-      rows: [rowState]
-    })
-
-    expect(
-      applyWallPosterGridStreamState(
-        streamState,
-        [visibleMedia1, visibleMedia2, incomingMedia1, incomingMedia2, incomingMedia3]
-      )
-    ).toEqual({
-      status: "applied",
-      queuedItemCount: 3,
-      appliedItemCount: 2,
-      pendingItemCount: 1
-    })
-    expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(["incoming-3"])
-    expect(rowState.tiles[2]?.posterThumb.style.backgroundImage).toBe(`url(${visibleMedia1.poster.url})`)
-    expect(rowState.tiles[3]?.posterThumb.style.backgroundImage).toBe(`url(${visibleMedia2.poster.url})`)
-    expect(rowState.tiles[4]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia1.poster.url})`)
-    expect(rowState.tiles[5]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia2.poster.url})`)
-    expect(getWallPosterTileMediaIdentity(rowState.tiles[4]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(incomingMedia1)
-    )
-    expect(getWallPosterTileMediaIdentity(rowState.tiles[5]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(incomingMedia2)
-    )
-  })
-
-  it("reclassifies writable entry slots after viewport expansion without mutating visible tiles", () => {
+  it("reclassifies replaceable tiles after viewport expansion without mutating visible tiles", () => {
     vi.stubGlobal("window", {
       innerWidth: 100,
       innerHeight: 100
@@ -553,10 +656,12 @@ describe("wall poster grid stream helpers", () => {
       appliedItemCount: 1,
       pendingItemCount: 0
     })
+    // Tile 4 is now on screen; tile 5 just received incoming-2, so the never-written tile 6 is
+    // replaced instead of overwriting a poster before it has been seen.
     expect(rowState.tiles[3]?.posterThumb.style.backgroundImage).toBe(`url(${visibleMedia2.poster.url})`)
     expect(rowState.tiles[4]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia1.poster.url})`)
-    expect(rowState.tiles[5]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia3.poster.url})`)
-    expect(rowState.tiles[6]?.posterThumb.style.backgroundImage).toBe(`url(${farBufferMedia.poster.url})`)
+    expect(rowState.tiles[5]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia2.poster.url})`)
+    expect(rowState.tiles[6]?.posterThumb.style.backgroundImage).toBe(`url(${incomingMedia3.poster.url})`)
   })
 
   it("makes fully exited tiles writable again after viewport contraction", () => {
@@ -684,72 +789,4 @@ describe("wall poster grid stream helpers", () => {
     )
   })
 
-  it("preserves row round-robin distribution while using bounded writable slots", () => {
-    vi.stubGlobal("window", {
-      innerWidth: 100,
-      innerHeight: 100
-    })
-
-    const media1 = createMediaItem("media-1")
-    const backlog1 = createMediaItem("backlog-1")
-    const backlog2 = createMediaItem("backlog-2")
-    const incoming1 = createMediaItem("incoming-1")
-    const incoming2 = createMediaItem("incoming-2")
-    const incoming3 = createMediaItem("incoming-3")
-    const firstRow = createWallPosterGridRowState(
-      createWallPosterEntryEdgeIndices(6, "normal"),
-      {
-        tiles: [
-          createWallPosterTileState({ rect: createWallPosterRect(-240, -140) }),
-          createWallPosterTileState({ rect: createWallPosterRect(-120, -20) }),
-          createWallPosterTileState({ rect: createWallPosterRect(-40, 60) }),
-          createWallPosterTileState({ rect: createWallPosterRect(60, 160) }),
-          createWallPosterTileState({ rect: createWallPosterRect(100, 200) }),
-          createWallPosterTileState({ rect: createWallPosterRect(220, 320) })
-        ]
-      }
-    )
-    const secondRow = createWallPosterGridRowState(
-      createWallPosterEntryEdgeIndices(6, "reverse"),
-      {
-        tiles: [
-          createWallPosterTileState({ rect: createWallPosterRect(-320, -220) }),
-          createWallPosterTileState({ rect: createWallPosterRect(-200, -100) }),
-          createWallPosterTileState({ rect: createWallPosterRect(-40, 60) }),
-          createWallPosterTileState({ rect: createWallPosterRect(40, 140) }),
-          createWallPosterTileState({ rect: createWallPosterRect(180, 280) }),
-          createWallPosterTileState({ rect: createWallPosterRect(300, 400) })
-        ]
-      }
-    )
-    const streamState = createWallPosterGridStreamState({
-      items: [media1],
-      pendingIncomingItems: [backlog1, backlog2],
-      rows: [firstRow, secondRow]
-    })
-
-    expect(applyWallPosterGridStreamState(streamState, [media1, incoming1, incoming2, incoming3])).toEqual({
-      status: "applied",
-      queuedItemCount: 5,
-      appliedItemCount: 4,
-      pendingItemCount: 1
-    })
-    expect(streamState.pendingIncomingItems.map((item) => item.id)).toEqual(["incoming-3"])
-    expect(firstRow.tiles[4]?.posterThumb.style.backgroundImage).toBe(`url(${backlog1.poster.url})`)
-    expect(firstRow.tiles[5]?.posterThumb.style.backgroundImage).toBe(`url(${incoming1.poster.url})`)
-    expect(secondRow.tiles[1]?.posterThumb.style.backgroundImage).toBe(`url(${backlog2.poster.url})`)
-    expect(secondRow.tiles[0]?.posterThumb.style.backgroundImage).toBe(`url(${incoming2.poster.url})`)
-    expect(getWallPosterTileMediaIdentity(firstRow.tiles[4]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(backlog1)
-    )
-    expect(getWallPosterTileMediaIdentity(firstRow.tiles[5]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(incoming1)
-    )
-    expect(getWallPosterTileMediaIdentity(secondRow.tiles[1]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(backlog2)
-    )
-    expect(getWallPosterTileMediaIdentity(secondRow.tiles[0]?.tile ?? {})).toBe(
-      toWallPosterMediaIdentity(incoming2)
-    )
-  })
 })

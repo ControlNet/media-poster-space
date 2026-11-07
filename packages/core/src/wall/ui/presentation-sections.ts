@@ -13,12 +13,6 @@ export interface WallPosterRect {
   bottom: number
 }
 
-export interface WallPosterEntryBufferEligibility {
-  visibleIndices: number[]
-  entrySideWritableIndices: number[]
-  orderedWritableIndices: number[]
-}
-
 export interface WallPosterTileState {
   tile: object
   posterThumb: Pick<HTMLElement, "style">
@@ -26,7 +20,6 @@ export interface WallPosterTileState {
 
 export interface WallPosterGridRowState {
   entryIndices: number[]
-  nextEntryPointer: number
   tiles: WallPosterTileState[]
 }
 
@@ -36,6 +29,8 @@ export interface WallPosterGridStreamState {
   nextIncomingRowPointer: number
   pendingIncomingItems: MediaItem[]
   rows: WallPosterGridRowState[]
+  // Monotonic counter stamped on a tile when it receives a poster; the oldest stamp is replaced first.
+  nextWriteSequence: number
 }
 
 export type WallPosterGridStreamApplyStatus =
@@ -56,10 +51,20 @@ export type WallPosterGridStreamApplier = (
 ) => WallPosterGridStreamApplyResult
 
 export const WALL_POSTER_GRID_STREAM_APPLIER_KEY = "__mpsApplyWallPosterStreamItems" as const
-export const WALL_POSTER_ENTRY_BUFFER_LIMIT = 2 as const
+// Horizontal distance from one tile to the next: 200px poster + 2.5rem (40px) gap.
+export const WALL_POSTER_TILE_STRIDE_PX = 240
+// Each row scrolls by this fraction of the viewport width before the animation loops.
+export const WALL_POSTER_ROW_SHIFT_RATIO = 0.62
+// The wall layout centres the 168vw-wide grid (shifted by its -8vw margin), so a row's first tile
+// sits about 0.37 viewport widths left of the screen (measured in Chromium at 1280-3840px wide).
+// A row is therefore on screen from that offset (scroll start) to offset + 100vw + 62vw (scroll end).
+const WALL_POSTER_ROW_LEADING_OFFSET_RATIO = 0.38
+// Extra tiles beyond the computed coverage absorb the 3D tilt and float animation of the wall.
+const WALL_POSTER_ROW_BUFFER_TILES = 2
 
 const wallPosterGridStreamStates = new WeakMap<HTMLElement, WallPosterGridStreamState>()
 const wallPosterTileIdentityByElement = new WeakMap<object, string>()
+const wallPosterTileWriteSequenceByElement = new WeakMap<object, number>()
 
 interface WallPosterGridStreamElement extends HTMLElement {
   [WALL_POSTER_GRID_STREAM_APPLIER_KEY]?: WallPosterGridStreamApplier
@@ -231,16 +236,33 @@ export function collectVisibleWallPosterTileIndices(
   return visibleIndices
 }
 
-export function collectEntrySideWallPosterWritableIndices(
+function resolveWallPosterExitSideDistance(
+  viewportRect: WallPosterRect,
+  tileRect: WallPosterRect,
+  direction: WallPosterRowDirection
+): number {
+  if (direction === "normal") {
+    return viewportRect.left - tileRect.right
+  }
+
+  return tileRect.left - viewportRect.right
+}
+
+/**
+ * Off-screen tiles that may receive a new poster. Tiles about to scroll in (entry side, nearest
+ * first) come before tiles that already scrolled out, which come back into view when the row
+ * animation loops. Tiles intersecting the viewport are never returned.
+ */
+export function collectReplaceableWallPosterTileIndices(
   viewportRect: WallPosterRect,
   tileRects: readonly (WallPosterRect | null | undefined)[],
   direction: WallPosterRowDirection
 ): number[] {
   const normalizedViewportRect = normalizeWallPosterRect(viewportRect)
-  const entryIndices = createWallPosterEntryEdgeIndices(tileRects.length, direction)
-  const writableIndices: number[] = []
+  const entrySide: Array<{ tileIndex: number, distance: number }> = []
+  const exitSide: Array<{ tileIndex: number, distance: number }> = []
 
-  for (const tileIndex of entryIndices) {
+  for (let tileIndex = 0; tileIndex < tileRects.length; tileIndex += 1) {
     const tileRect = tileRects[tileIndex]
     if (!tileRect) {
       continue
@@ -251,77 +273,26 @@ export function collectEntrySideWallPosterWritableIndices(
       continue
     }
 
-    if (!isWallPosterEntrySideWritable(normalizedViewportRect, normalizedTileRect, direction)) {
+    if (isWallPosterEntrySideWritable(normalizedViewportRect, normalizedTileRect, direction)) {
+      entrySide.push({
+        tileIndex,
+        distance: resolveWallPosterEntrySideDistance(normalizedViewportRect, normalizedTileRect, direction)
+      })
       continue
     }
 
-    writableIndices.push(tileIndex)
-  }
-
-  return writableIndices
-}
-
-export function collectOrderedWallPosterWritableIndices(
-  viewportRect: WallPosterRect,
-  tileRects: readonly (WallPosterRect | null | undefined)[],
-  direction: WallPosterRowDirection,
-  maxWritableCount = WALL_POSTER_ENTRY_BUFFER_LIMIT
-): number[] {
-  const normalizedMaxWritableCount = Number.isFinite(maxWritableCount)
-    ? Math.max(Math.trunc(maxWritableCount), 0)
-    : 0
-  if (normalizedMaxWritableCount === 0) {
-    return []
-  }
-
-  const normalizedViewportRect = normalizeWallPosterRect(viewportRect)
-
-  return collectEntrySideWallPosterWritableIndices(normalizedViewportRect, tileRects, direction)
-    .map((tileIndex, candidateOrder) => {
-      const tileRect = tileRects[tileIndex]
-      return {
-        tileIndex,
-        candidateOrder,
-        distance: tileRect
-          ? resolveWallPosterEntrySideDistance(
-            normalizedViewportRect,
-            normalizeWallPosterRect(tileRect),
-            direction
-          )
-          : Number.POSITIVE_INFINITY
-      }
+    exitSide.push({
+      tileIndex,
+      distance: resolveWallPosterExitSideDistance(normalizedViewportRect, normalizedTileRect, direction)
     })
-    .sort((left, right) => {
-      if (left.distance !== right.distance) {
-        return left.distance - right.distance
-      }
-
-      return left.candidateOrder - right.candidateOrder
-    })
-    .slice(0, normalizedMaxWritableCount)
-    .map(({ tileIndex }) => tileIndex)
-}
-
-export function resolveWallPosterEntryBufferEligibility(
-  viewportRect: WallPosterRect,
-  tileRects: readonly (WallPosterRect | null | undefined)[],
-  direction: WallPosterRowDirection,
-  maxWritableCount = WALL_POSTER_ENTRY_BUFFER_LIMIT
-): WallPosterEntryBufferEligibility {
-  return {
-    visibleIndices: collectVisibleWallPosterTileIndices(viewportRect, tileRects),
-    entrySideWritableIndices: collectEntrySideWallPosterWritableIndices(
-      viewportRect,
-      tileRects,
-      direction
-    ),
-    orderedWritableIndices: collectOrderedWallPosterWritableIndices(
-      viewportRect,
-      tileRects,
-      direction,
-      maxWritableCount
-    )
   }
+
+  const byDistance = (
+    left: { tileIndex: number, distance: number },
+    right: { tileIndex: number, distance: number }
+  ): number => left.distance - right.distance || left.tileIndex - right.tileIndex
+
+  return [...entrySide.sort(byDistance), ...exitSide.sort(byDistance)].map(({ tileIndex }) => tileIndex)
 }
 
 export function consumeWallPosterIncomingRowIndex(
@@ -458,34 +429,15 @@ function resolveWallPosterRowDirection(entryIndices: readonly number[]): WallPos
   return "normal"
 }
 
-interface WallPosterGridRowWritableSnapshot {
-  orderedWritableIndices: number[]
-  consumedWritableOrders: Set<number>
-}
-
-function resolveWallPosterGridRowEligibilityFromCurrentGeometry(
+function collectReplaceableWallPosterRowTileIndices(
   rowState: WallPosterGridRowState,
   viewportRect: WallPosterRect
-): WallPosterEntryBufferEligibility {
-  const rowDirection = resolveWallPosterRowDirection(rowState.entryIndices)
-
-  return resolveWallPosterEntryBufferEligibility(
+): number[] {
+  return collectReplaceableWallPosterTileIndices(
     viewportRect,
     collectWallPosterTileRects(rowState.tiles),
-    rowDirection
+    resolveWallPosterRowDirection(rowState.entryIndices)
   )
-}
-
-function createWallPosterGridRowWritableSnapshot(
-  rowState: WallPosterGridRowState,
-  viewportRect: WallPosterRect
-): WallPosterGridRowWritableSnapshot {
-  const eligibility = resolveWallPosterGridRowEligibilityFromCurrentGeometry(rowState, viewportRect)
-
-  return {
-    orderedWritableIndices: [...eligibility.orderedWritableIndices],
-    consumedWritableOrders: new Set<number>()
-  }
 }
 
 function applyWallPosterTileMedia(tileState: WallPosterTileState, item: MediaItem): void {
@@ -493,36 +445,66 @@ function applyWallPosterTileMedia(tileState: WallPosterTileState, item: MediaIte
   wallPosterTileIdentityByElement.set(tileState.tile, toWallPosterMediaIdentity(item))
 }
 
-function consumeWallPosterWritableEntryIndex(
-  rowState: WallPosterGridRowState,
-  orderedWritableIndices: readonly number[],
-  consumedWritableOrders: Set<number>
-): number | null {
-  if (orderedWritableIndices.length === 0 || consumedWritableOrders.size >= orderedWritableIndices.length) {
-    return null
+function countWallPosterTileIdentities(rows: readonly WallPosterGridRowState[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const rowState of rows) {
+    for (const tileState of rowState.tiles) {
+      const identity = wallPosterTileIdentityByElement.get(tileState.tile)
+      if (identity) {
+        counts.set(identity, (counts.get(identity) ?? 0) + 1)
+      }
+    }
   }
 
-  const normalizedPointerBase = Number.isFinite(rowState.nextEntryPointer)
-    ? Math.trunc(rowState.nextEntryPointer)
-    : 0
-  const normalizedPointer =
-    ((normalizedPointerBase % orderedWritableIndices.length) + orderedWritableIndices.length)
-    % orderedWritableIndices.length
+  return counts
+}
 
-  for (let offset = 0; offset < orderedWritableIndices.length; offset += 1) {
-    const writableOrder = (normalizedPointer + offset) % orderedWritableIndices.length
-    if (consumedWritableOrders.has(writableOrder)) {
-      continue
+/**
+ * Picks the tile for the next incoming poster: rows take turns, and within a row the replaceable
+ * tile showing a poster that is also on another tile goes first, then the tile written longest ago.
+ */
+function takeReplaceableWallPosterTile(
+  streamState: WallPosterGridStreamState,
+  replaceableIndicesByRow: readonly (readonly number[])[],
+  usedTiles: Set<object>,
+  identityCounts: ReadonlyMap<string, number>
+): WallPosterTileState | null {
+  for (let attempt = 0; attempt < streamState.rows.length; attempt += 1) {
+    const rowSelection = consumeWallPosterIncomingRowIndex(
+      streamState.rows.length,
+      streamState.nextIncomingRowPointer
+    )
+    streamState.nextIncomingRowPointer = rowSelection.nextRowPointer
+    if (rowSelection.rowIndex === null) {
+      return null
     }
 
-    consumedWritableOrders.add(writableOrder)
-    const entryIndex = orderedWritableIndices[writableOrder]
-    if (typeof entryIndex !== "number") {
-      continue
+    const rowState = streamState.rows[rowSelection.rowIndex]
+    const replaceableIndices = replaceableIndicesByRow[rowSelection.rowIndex] ?? []
+    let best: { tileState: WallPosterTileState, duplicateRank: number, sequence: number } | null = null
+
+    for (const tileIndex of replaceableIndices) {
+      const tileState = rowState?.tiles[tileIndex]
+      if (!tileState || usedTiles.has(tileState.tile)) {
+        continue
+      }
+
+      const identity = wallPosterTileIdentityByElement.get(tileState.tile)
+      const duplicateRank = identity && (identityCounts.get(identity) ?? 0) > 1 ? 0 : 1
+      const sequence = wallPosterTileWriteSequenceByElement.get(tileState.tile) ?? 0
+      if (
+        best === null
+        || duplicateRank < best.duplicateRank
+        || (duplicateRank === best.duplicateRank && sequence < best.sequence)
+      ) {
+        best = { tileState, duplicateRank, sequence }
+      }
     }
 
-    rowState.nextEntryPointer = (writableOrder + 1) % orderedWritableIndices.length
-    return entryIndex
+    if (best) {
+      usedTiles.add(best.tileState.tile)
+      return best.tileState
+    }
   }
 
   return null
@@ -566,53 +548,46 @@ export function applyWallPosterGridStreamState(
   }
 
   const viewportRect = resolveCurrentWallPosterViewportRect()
-  const rowWritableSnapshots = streamState.rows.map((rowState) => {
-    return createWallPosterGridRowWritableSnapshot(rowState, viewportRect)
+  const replaceableIndicesByRow = streamState.rows.map((rowState) => {
+    return collectReplaceableWallPosterRowTileIndices(rowState, viewportRect)
   })
+  const identityCounts = countWallPosterTileIdentities(streamState.rows)
+  const usedTiles = new Set<object>()
   const nextPendingIncomingItems: MediaItem[] = []
   let appliedItemCount = 0
 
   for (const incomingItem of streamState.pendingIncomingItems) {
-    const incomingRowSelection = consumeWallPosterIncomingRowIndex(
-      streamState.rows.length,
-      streamState.nextIncomingRowPointer
+    const incomingIdentity = toWallPosterMediaIdentity(incomingItem)
+    // Already on a tile: a second copy would only add repetition.
+    if ((identityCounts.get(incomingIdentity) ?? 0) > 0) {
+      continue
+    }
+
+    const tileState = takeReplaceableWallPosterTile(
+      streamState,
+      replaceableIndicesByRow,
+      usedTiles,
+      identityCounts
     )
-    streamState.nextIncomingRowPointer = incomingRowSelection.nextRowPointer
-
-    if (incomingRowSelection.rowIndex === null) {
-      nextPendingIncomingItems.push(incomingItem)
-      continue
-    }
-
-    const rowState = streamState.rows[incomingRowSelection.rowIndex]
-    if (!rowState) {
-      nextPendingIncomingItems.push(incomingItem)
-      continue
-    }
-
-    const rowWritableSnapshot = rowWritableSnapshots[incomingRowSelection.rowIndex]
-    if (!rowWritableSnapshot) {
-      nextPendingIncomingItems.push(incomingItem)
-      continue
-    }
-
-    const entryIndex = consumeWallPosterWritableEntryIndex(
-      rowState,
-      rowWritableSnapshot.orderedWritableIndices,
-      rowWritableSnapshot.consumedWritableOrders
-    )
-    if (entryIndex === null) {
-      nextPendingIncomingItems.push(incomingItem)
-      continue
-    }
-
-    const tileState = rowState.tiles[entryIndex]
     if (!tileState) {
       nextPendingIncomingItems.push(incomingItem)
       continue
     }
 
+    const replacedIdentity = wallPosterTileIdentityByElement.get(tileState.tile)
+    if (replacedIdentity) {
+      const remaining = (identityCounts.get(replacedIdentity) ?? 1) - 1
+      if (remaining > 0) {
+        identityCounts.set(replacedIdentity, remaining)
+      } else {
+        identityCounts.delete(replacedIdentity)
+      }
+    }
+
     applyWallPosterTileMedia(tileState, incomingItem)
+    streamState.nextWriteSequence += 1
+    wallPosterTileWriteSequenceByElement.set(tileState.tile, streamState.nextWriteSequence)
+    identityCounts.set(incomingIdentity, 1)
     appliedItemCount += 1
   }
 
@@ -625,6 +600,10 @@ export function applyWallPosterGridStreamState(
       appliedItemCount,
       nextPendingIncomingItems.length
     )
+  }
+
+  if (nextPendingIncomingItems.length === 0) {
+    return createWallPosterGridStreamApplyResult("noop", queuedItemCount, 0, 0)
   }
 
   return createWallPosterGridStreamApplyResult(
@@ -691,6 +670,50 @@ export function createWallPosterRowOrder(length: number, rowIndex: number): numb
   }
 
   return indices
+}
+
+/**
+ * Tiles per row so that the row covers the viewport at every point of its scroll animation, plus a
+ * small buffer for the wall's 3D tilt. Tiles past this point would never be on screen.
+ */
+export function resolveWallPosterRowTileCount(viewportWidth: number): number {
+  const normalizedWidth = Number.isFinite(viewportWidth) ? Math.max(viewportWidth, 1) : 1920
+  const coveredWidthPx =
+    normalizedWidth * (WALL_POSTER_ROW_LEADING_OFFSET_RATIO + 1 + WALL_POSTER_ROW_SHIFT_RATIO)
+
+  return Math.ceil(coveredWidthPx / WALL_POSTER_TILE_STRIDE_PX) + WALL_POSTER_ROW_BUFFER_TILES
+}
+
+/**
+ * Order in which the wall's tiles (row-major indices) receive posters. Columns near the middle of
+ * the scroll range never leave the screen, so a poster placed there can never be swapped out
+ * unseen; they are filled first, which keeps any repeats (more tiles than posters) on the row ends
+ * that scroll off screen and get replaced.
+ */
+export function createWallPosterTileFillOrder(
+  rowCount: number,
+  tilesPerRow: number,
+  viewportWidth: number
+): number[] {
+  const normalizedWidth = Number.isFinite(viewportWidth) ? Math.max(viewportWidth, 1) : 1920
+  const alwaysVisibleCenterColumn = (
+    normalizedWidth * (WALL_POSTER_ROW_LEADING_OFFSET_RATIO + 0.5 + WALL_POSTER_ROW_SHIFT_RATIO / 2)
+  ) / WALL_POSTER_TILE_STRIDE_PX
+  const tiles: Array<{ wallTileIndex: number, distance: number, rowIndex: number }> = []
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < tilesPerRow; columnIndex += 1) {
+      tiles.push({
+        wallTileIndex: rowIndex * tilesPerRow + columnIndex,
+        distance: Math.abs(columnIndex + 0.5 - alwaysVisibleCenterColumn),
+        rowIndex
+      })
+    }
+  }
+
+  return tiles
+    .sort((left, right) => left.distance - right.distance || left.rowIndex - right.rowIndex)
+    .map(({ wallTileIndex }) => wallTileIndex)
 }
 
 export function createWallHeadingSection(
@@ -863,7 +886,8 @@ export function createWallPosterGridSection(
     itemIndexByIdentity: createWallPosterItemIndexByIdentity(options.items),
     nextIncomingRowPointer: 0,
     pendingIncomingItems: [],
-    rows: []
+    rows: [],
+    nextWriteSequence: 0
   }
 
   wallPosterGridStreamStates.set(posterGrid, streamState)
@@ -893,19 +917,15 @@ export function createWallPosterGridSection(
     ? 1080
     : Math.max(1, window.innerHeight)
   const rowCount = Math.max(5, Math.min(10, Math.ceil((viewportHeight * 1.25) / 340)))
-  const tileStridePx = 240
-  const baseCycles = 4
-  const defaultHalfWidthPx = options.items.length * baseCycles * tileStridePx * 0.5
-  const requiredHalfWidthPx = viewportWidth * 1.15
-  const cycles = defaultHalfWidthPx >= requiredHalfWidthPx
-    ? baseCycles
-    : Math.min(
-      24,
-      Math.max(
-        baseCycles,
-        Math.ceil((requiredHalfWidthPx * 2) / (options.items.length * tileStridePx))
-      )
-    )
+  const tilesPerRow = resolveWallPosterRowTileCount(viewportWidth)
+  // One shuffle laid across the whole wall: a poster repeats only when the wall has more tiles
+  // than there are posters, and the repeats land on tiles that scroll off screen.
+  const wallOrder = createWallPosterRowOrder(options.items.length, 0)
+  const itemOrderByWallTile = new Map<number, number>()
+  createWallPosterTileFillOrder(rowCount, tilesPerRow, viewportWidth).forEach((wallTileIndex, fillIndex) => {
+    itemOrderByWallTile.set(wallTileIndex, fillIndex % Math.max(wallOrder.length, 1))
+  })
+  const labelledItemIndices = new Set<number>()
   const baseDurations = [84, 96, 90, 104, 88, 100, 86, 102, 92, 108]
   const fixedSpeedScale = 1.8
 
@@ -913,85 +933,82 @@ export function createWallPosterGridSection(
     const row = createElement("div")
     const rowDirection: WallPosterRowDirection = rowIndex % 2 === 0 ? "normal" : "reverse"
     const rowTileStates: WallPosterTileState[] = []
-    const rowOrder = createWallPosterRowOrder(options.items.length, rowIndex)
-    const rowOrderLength = rowOrder.length
     row.style.display = "flex"
     row.style.gap = "2.5rem"
     row.style.width = "max-content"
-    row.style.setProperty("--mps-row-shift-end", `-${Math.round(viewportWidth * 0.62)}px`)
+    row.style.setProperty(
+      "--mps-row-shift-end",
+      `-${Math.round(viewportWidth * WALL_POSTER_ROW_SHIFT_RATIO)}px`
+    )
     const rowDurationSeconds = (baseDurations[rowIndex] ?? 78) * fixedSpeedScale
     row.style.animation = `mps-wall-row-scroll ${rowDurationSeconds}s linear infinite`
     row.style.animationDirection = rowDirection
 
-    for (let cycle = 0; cycle < cycles; cycle += 1) {
-      const cycleOffset = rowOrderLength > 0
-        ? (cycle * (rowIndex + 3)) % rowOrderLength
-        : 0
-
-      for (let orderIndex = 0; orderIndex < rowOrderLength; orderIndex += 1) {
-        const mappedIndex = rowOrder[(orderIndex + cycleOffset) % rowOrderLength]
-        if (typeof mappedIndex !== "number") {
-          continue
-        }
-
-        const item = options.items[mappedIndex]
-        if (!item) {
-          continue
-        }
-
-        const tile = createElement("button", {
-          ...(rowIndex === 0 && cycle === 0 ? { testId: `poster-item-${mappedIndex}` } : {})
-        }) as HTMLButtonElement
-        tile.type = "button"
-        tile.tabIndex = -1
-        tile.style.width = "200px"
-        tile.style.height = "300px"
-        tile.style.padding = "0"
-        tile.style.borderRadius = "16px"
-        tile.style.overflow = "hidden"
-        tile.style.flexShrink = "0"
-        tile.style.position = "relative"
-        tile.style.transformStyle = "preserve-3d"
-        tile.style.cursor = "default"
-        tile.style.background = "#111"
-        tile.style.border = "1px solid rgba(255, 255, 255, 0.05)"
-        tile.style.boxShadow = "0 20px 50px rgba(0, 0, 0, 0.8)"
-        tile.style.transition = "transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.8s ease"
-
-        const posterThumb = createElement("div")
-        posterThumb.style.width = "100%"
-        posterThumb.style.height = "100%"
-        posterThumb.style.backgroundSize = "cover"
-        posterThumb.style.backgroundPosition = "center"
-        posterThumb.style.filter = "grayscale(20%) brightness(0.8)"
-        posterThumb.style.transition = "filter 0.8s ease"
-
-        const tileState: WallPosterTileState = {
-          tile,
-          posterThumb
-        }
-        applyWallPosterTileMedia(tileState, item)
-
-        tile.append(posterThumb)
-        bindMouseOnlyHover(tile, () => {
-          tile.style.transform = "translateZ(50px) scale(1.05)"
-          tile.style.borderColor = "rgba(255, 255, 255, 0.2)"
-          posterThumb.style.filter = "grayscale(0%) brightness(1.1)"
-        }, () => {
-          tile.style.transform = "translateZ(0) scale(1)"
-          tile.style.borderColor = "rgba(255, 255, 255, 0.05)"
-          posterThumb.style.filter = "grayscale(20%) brightness(0.8)"
-        })
-
-        row.append(tile)
-        rowTileStates.push(tileState)
+    for (let columnIndex = 0; columnIndex < tilesPerRow; columnIndex += 1) {
+      const wallTileIndex = rowIndex * tilesPerRow + columnIndex
+      const mappedIndex = wallOrder[itemOrderByWallTile.get(wallTileIndex) ?? 0]
+      if (typeof mappedIndex !== "number") {
+        continue
       }
+
+      const item = options.items[mappedIndex]
+      if (!item) {
+        continue
+      }
+
+      const isFirstTileForItem = !labelledItemIndices.has(mappedIndex)
+      labelledItemIndices.add(mappedIndex)
+      const tile = createElement("button", {
+        ...(isFirstTileForItem ? { testId: `poster-item-${mappedIndex}` } : {})
+      }) as HTMLButtonElement
+      tile.type = "button"
+      tile.tabIndex = -1
+      tile.style.width = "200px"
+      tile.style.height = "300px"
+      tile.style.padding = "0"
+      tile.style.borderRadius = "16px"
+      tile.style.overflow = "hidden"
+      tile.style.flexShrink = "0"
+      tile.style.position = "relative"
+      tile.style.transformStyle = "preserve-3d"
+      tile.style.cursor = "default"
+      tile.style.background = "#111"
+      tile.style.border = "1px solid rgba(255, 255, 255, 0.05)"
+      tile.style.boxShadow = "0 20px 50px rgba(0, 0, 0, 0.8)"
+      tile.style.transition = "transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.8s ease"
+
+      const posterThumb = createElement("div")
+      posterThumb.style.width = "100%"
+      posterThumb.style.height = "100%"
+      posterThumb.style.backgroundSize = "cover"
+      posterThumb.style.backgroundPosition = "center"
+      posterThumb.style.filter = "grayscale(20%) brightness(0.8)"
+      posterThumb.style.transition = "filter 0.8s ease"
+
+      const tileState: WallPosterTileState = {
+        tile,
+        posterThumb
+      }
+      applyWallPosterTileMedia(tileState, item)
+
+      tile.append(posterThumb)
+      bindMouseOnlyHover(tile, () => {
+        tile.style.transform = "translateZ(50px) scale(1.05)"
+        tile.style.borderColor = "rgba(255, 255, 255, 0.2)"
+        posterThumb.style.filter = "grayscale(0%) brightness(1.1)"
+      }, () => {
+        tile.style.transform = "translateZ(0) scale(1)"
+        tile.style.borderColor = "rgba(255, 255, 255, 0.05)"
+        posterThumb.style.filter = "grayscale(20%) brightness(0.8)"
+      })
+
+      row.append(tile)
+      rowTileStates.push(tileState)
     }
 
     posterGrid.append(row)
     streamState.rows.push({
       entryIndices: createWallPosterEntryEdgeIndices(rowTileStates.length, rowDirection),
-      nextEntryPointer: 0,
       tiles: rowTileStates
     })
   }

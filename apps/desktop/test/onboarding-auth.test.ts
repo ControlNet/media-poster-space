@@ -56,6 +56,8 @@ interface FetchHarnessOptions {
   alwaysFailMediaStatus?: number
   mediaFailureStatusAfterFirstSuccess?: number
   movieItemsByCall?: FetchHarnessMovieItem[][]
+  // Reports a larger library than the page holds, so the client sees further pages.
+  movieTotalRecordCount?: number
 }
 
 type FetchMock = ReturnType<typeof vi.fn>
@@ -328,7 +330,7 @@ function createFetchHarness(options: FetchHarnessOptions): FetchMock & typeof fe
 
         return new Response(JSON.stringify({
           Items: movieItems,
-          TotalRecordCount: movieItems.length
+          TotalRecordCount: options.movieTotalRecordCount ?? movieItems.length
         }), {
           status: 200,
           headers: {
@@ -695,7 +697,8 @@ describe("desktop onboarding auth runtime", () => {
       return url.includes("/Users/user-1/Items")
     })
 
-    expect(mediaCallsAfterInitialRefresh.length).toBeGreaterThanOrEqual(2)
+    // The library fits in one page, so the wall does not download it a second time.
+    expect(mediaCallsAfterInitialRefresh.length).toBeGreaterThanOrEqual(1)
     expect(mediaCallsAfterInitialRefresh[0]).toBeTruthy()
     const initialMediaCallUrl = mediaCallsAfterInitialRefresh[0]?.[0]
     const initialMediaUrlValue = typeof initialMediaCallUrl === "string"
@@ -718,7 +721,7 @@ describe("desktop onboarding auth runtime", () => {
         return url.includes("/Users/user-1/Items")
       })
 
-      expect(mediaCalls.length).toBeGreaterThanOrEqual(3)
+      expect(mediaCalls.length).toBeGreaterThan(mediaCallsAfterInitialRefresh.length)
     })
 
     expect(window.localStorage.getItem("mps.onboarding.remembered-server")).toBe(TEST_SERVER)
@@ -1181,6 +1184,10 @@ describe("desktop onboarding auth runtime", () => {
     }
 
     const triggerManualRefresh = async (): Promise<void> => {
+      // The button is disabled while a refresh is in flight; a click then does nothing.
+      await vi.waitFor(() => {
+        expect((getElement("manual-refresh-button") as HTMLButtonElement).disabled).toBe(false)
+      })
       const mediaCallsBeforeRefresh = countMediaCalls()
       clickByTestId("manual-refresh-button")
       await vi.waitFor(() => {
@@ -1266,6 +1273,10 @@ describe("desktop onboarding auth runtime", () => {
     }
 
     const triggerManualRefresh = async (): Promise<void> => {
+      // The button is disabled while a refresh is in flight; a click then does nothing.
+      await vi.waitFor(() => {
+        expect((getElement("manual-refresh-button") as HTMLButtonElement).disabled).toBe(false)
+      })
       const mediaCallsBeforeRefresh = countMediaCalls()
       clickByTestId("manual-refresh-button")
       await vi.waitFor(() => {
@@ -1490,6 +1501,16 @@ describe("desktop onboarding auth runtime", () => {
     }
 
     const triggerManualRefresh = async (): Promise<void> => {
+      // A click while a refresh is still in flight joins that refresh instead of starting a new
+      // request. With the wall readiness hidden the button cannot show that, so wait for the
+      // previous request to finish (and the runtime to publish its result) before clicking.
+      await Promise.allSettled(fetchHarness.mock.results.map((result) => result.value))
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      await vi.waitFor(() => {
+        expect((getElement("manual-refresh-button") as HTMLButtonElement).disabled).toBe(false)
+      })
       const mediaCallsBeforeRefresh = countMediaCalls()
       clickByTestId("manual-refresh-button")
       await vi.waitFor(() => {
@@ -1572,7 +1593,7 @@ describe("desktop onboarding auth runtime", () => {
   })
 
   it("keeps the GitHub repo link available after queue refills on desktop runtime", async () => {
-    const fetchHarness = createFetchHarness({ allowLogin: true })
+    const fetchHarness = createFetchHarness({ allowLogin: true, movieTotalRecordCount: 500 })
     globalThis.fetch = fetchHarness
 
     const runtime = createDesktopOnboardingAppRuntime(document.body)
